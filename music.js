@@ -1,6 +1,7 @@
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.esm.js';
 import RecordPlugin from 'wavesurfer.js/dist/plugins/record.esm.js';
+import { encodeMp3 } from './mp3-encoder.js';
 
 let wavesurfer = null;
 let regions = null;
@@ -708,31 +709,8 @@ async function shareToWhatsApp() {
 
 // === MP3 & WAV Export ===
 async function getMp3Blob(kbps = 128) {
-    const { default: lamejs } = await import('lamejs');
-    const buffer = wavesurfer.getDecodedData();
-    const channels = 1; // Convert to Mono for 50% data saving
-    const sampleRate = buffer.sampleRate;
-    const mp3encoder = new lamejs.Mp3Encoder(channels, sampleRate, kbps);
-    const mp3Data = [];
-    const sampleChunk = 1152;
-
-    const samples = buffer.getChannelData(0);
-    const int16Samples = new Int16Array(samples.length);
-    for (let i = 0; i < samples.length; i++) {
-        let s = Math.max(-1, Math.min(1, samples[i]));
-        int16Samples[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-
-    for (let i = 0; i < int16Samples.length; i += sampleChunk) {
-        const chunk = int16Samples.subarray(i, i + sampleChunk);
-        const mp3buf = mp3encoder.encodeBuffer(chunk);
-        if (mp3buf.length > 0) mp3Data.push(mp3buf);
-    }
-
-    const endBuf = mp3encoder.flush();
-    if (endBuf.length > 0) mp3Data.push(endBuf);
-
-    return new Blob(mp3Data, { type: 'audio/mp3' });
+    // Mono halves the file size, which matters for sharing over mobile data.
+    return encodeMp3(wavesurfer.getDecodedData(), kbps);
 }
 
 async function exportAudio(format) {

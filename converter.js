@@ -2,6 +2,8 @@
 // Universal Offline File Converter 2.0 for Kivu Super App
 // 100% Client-side, Low-RAM Optimized, Zero Server Dependency
 
+import { encodeMp3 } from './mp3-encoder.js';
+
 const STORAGE_INDEX_KEY = 'kivu_docs_index';
 const STORAGE_PREFIX = 'kivu_doc_';
 
@@ -10,7 +12,6 @@ let _pdfLib = null;
 let _pdfjsLib = null;
 let _xlsxLib = null;
 let _jszipLib = null;
-let _lamejsLib = null;
 
 async function getPdfLib() {
     if (!_pdfLib) {
@@ -48,18 +49,6 @@ async function getJSZip() {
             : await import('jszip').then(m => m.default || m).catch(() => null);
     }
     return _jszipLib;
-}
-
-async function getLameJs() {
-    if (!_lamejsLib) {
-        try {
-            const m = await import('lamejs');
-            _lamejsLib = m.default || m;
-        } catch (e) {
-            console.warn('lamejs import fallback:', e);
-        }
-    }
-    return _lamejsLib;
 }
 
 // Module State
@@ -407,30 +396,44 @@ export async function convertPdf(file, format = 'jpg', options = {}) {
                 throw new Error('PDF has no pages');
             }
 
-            const page = await pdf.getPage(1);
-            const viewport = page.getViewport({ scale: 1.5 });
-
-            const canvas = document.createElement('canvas');
-            canvas.width = viewport.width;
-            canvas.height = viewport.height;
-            const ctx = canvas.getContext('2d');
-
-            if (fmt === 'jpg' || fmt === 'jpeg') {
-                ctx.fillStyle = '#FFFFFF';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-            }
-
-            await page.render({
-                canvasContext: ctx,
-                viewport: viewport
-            }).promise;
-
             const targetMime = fmt === 'png' ? 'image/png' : (fmt === 'webp' ? 'image/webp' : 'image/jpeg');
-            const blob = await canvasToBlob(canvas, targetMime, options.quality || 0.85);
+            const ext = fmt === 'jpeg' ? 'jpg' : fmt;
+            // Pages are rendered one at a time into a single canvas to keep
+            // peak memory low on 2 GB phones.
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const renderPage = async (n) => {
+                const page = await pdf.getPage(n);
+                const viewport = page.getViewport({ scale: 1.5 });
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                if (targetMime === 'image/jpeg') {
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+                await page.render({ canvasContext: ctx, viewport }).promise;
+                page.cleanup();
+                return canvasToBlob(canvas, targetMime, options.quality || 0.85);
+            };
 
-            canvas.width = 0;
-            canvas.height = 0;
-            return blob;
+            try {
+                if (pdf.numPages === 1) return await renderPage(1);
+
+                // Multi-page PDF: every page as an image, bundled in a ZIP
+                const JSZipMod = await getJSZip();
+                if (!JSZipMod) throw new Error('ZIP engine could not be loaded');
+                const zip = new JSZipMod();
+                const pad = String(pdf.numPages).length;
+                for (let n = 1; n <= pdf.numPages; n++) {
+                    if (options.onProgress) options.onProgress(n / pdf.numPages);
+                    zip.file(`page-${String(n).padStart(pad, '0')}.${ext}`, await renderPage(n));
+                }
+                return await zip.generateAsync({ type: 'blob', compression: 'STORE', mimeType: 'application/zip' });
+            } finally {
+                canvas.width = 0;
+                canvas.height = 0;
+                pdf.destroy();
+            }
         } catch (e) {
             console.error('PDF to Image failed:', e);
             throw new Error('Failed to convert PDF to Image: ' + (e && e.message ? e.message : e));
@@ -487,6 +490,196 @@ export async function convertPdf(file, format = 'jpg', options = {}) {
 // ==========================================
 // 3. DOCUMENT CONVERSION PIPELINE (TXT/MD/DOCX/HTML)
 // ==========================================
+
+// --- DOCX text extraction (JSZip + DOMParser, no extra dependency) ---
+const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+async function extractDocxParagraphs(file) {
+    const JSZipMod = await getJSZip();
+    if (!JSZipMod) throw new Error('DOCX engine could not be loaded');
+    let zip;
+    try {
+        zip = await JSZipMod.loadAsync(await readFileAsArrayBuffer(file));
+    } catch (e) {
+        throw new Error('This file is not a valid .docx document');
+    }
+    const entry = zip.file('word/document.xml');
+    if (!entry) throw new Error('This file is not a valid .docx document');
+    const xml = new DOMParser().parseFromString(await entry.async('string'), 'application/xml');
+    const paragraphs = [];
+    const pNodes = xml.getElementsByTagNameNS(W_NS, 'p');
+    for (let i = 0; i < pNodes.length; i++) {
+        const p = pNodes[i];
+        const styleEl = p.getElementsByTagNameNS(W_NS, 'pStyle')[0];
+        const style = styleEl ? (styleEl.getAttributeNS(W_NS, 'val') || styleEl.getAttribute('w:val') || '') : '';
+        let text = '';
+        const all = p.getElementsByTagName('*');
+        for (let j = 0; j < all.length; j++) {
+            const el = all[j];
+            if (el.namespaceURI !== W_NS) continue;
+            if (el.localName === 't') text += el.textContent;
+            else if (el.localName === 'tab') text += '\t';
+            else if (el.localName === 'br' || el.localName === 'cr') text += '\n';
+        }
+        const m = style.match(/heading\s*(\d)/i);
+        const level = /^title$/i.test(style) ? 1 : (m ? Math.min(3, Number(m[1])) : 0);
+        const bullet = p.getElementsByTagNameNS(W_NS, 'numPr').length > 0 || /list/i.test(style);
+        paragraphs.push({ text, level, bullet });
+    }
+    return paragraphs;
+}
+
+function docxParagraphsToMarkdown(paragraphs) {
+    return paragraphs.map(({ text, level, bullet }) => {
+        if (!text.trim()) return '';
+        if (level) return '#'.repeat(level) + ' ' + text;
+        if (bullet) return '- ' + text;
+        return text;
+    }).join('\n\n').replace(/\n{3,}/g, '\n\n');
+}
+
+// --- Text to PDF ---
+// Markdown-ish text -> [{ text, style: 'h1'|'h2'|'h3'|'p'|'li'|'gap' }]
+function markdownToBlocks(md) {
+    const stripInline = (t) => t.replace(/\*\*(.*?)\*\*/g, '$1').replace(/__(.*?)__/g, '$1').replace(/`([^`]+)`/g, '$1');
+    return String(md).replace(/\r\n?/g, '\n').split('\n').map((line) => {
+        const l = line.replace(/\t/g, '    ');
+        if (!l.trim()) return { text: '', style: 'gap' };
+        let m;
+        if ((m = l.match(/^(#{1,3})\s+(.*)$/))) return { text: stripInline(m[2]), style: 'h' + m[1].length };
+        if ((m = l.match(/^\s*[-*]\s+(.*)$/))) return { text: '• ' + stripInline(m[1]), style: 'li' };
+        return { text: stripInline(l), style: 'p' };
+    });
+}
+
+const PDF_BLOCK_STYLES = {
+    h1: { size: 18, bold: true, before: 6, after: 8 },
+    h2: { size: 14, bold: true, before: 4, after: 6 },
+    h3: { size: 12, bold: true, before: 3, after: 4 },
+    p: { size: 10.5, bold: false, before: 0, after: 2 },
+    li: { size: 10.5, bold: false, before: 0, after: 2 },
+    gap: { size: 10.5, bold: false, before: 0, after: 0 },
+};
+
+function wrapText(text, maxWidth, measure) {
+    const out = [];
+    for (const para of text.split('\n')) {
+        const words = para.split(/(\s+)/);
+        let line = '';
+        for (const w of words) {
+            const candidate = line + w;
+            if (!line || measure(candidate.trimEnd()) <= maxWidth) {
+                line = candidate;
+                continue;
+            }
+            out.push(line.trimEnd());
+            line = w.trimStart();
+            // Break single words longer than a line (URLs, IDs)
+            while (line && measure(line) > maxWidth) {
+                let cut = line.length - 1;
+                while (cut > 1 && measure(line.slice(0, cut)) > maxWidth) cut--;
+                out.push(line.slice(0, cut));
+                line = line.slice(cut);
+            }
+        }
+        out.push(line.trimEnd());
+    }
+    return out;
+}
+
+async function textBlocksToPdf(blocks) {
+    const pdfLib = await getPdfLib();
+    const pdfDoc = await pdfLib.PDFDocument.create();
+    const font = await pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
+    const boldFont = await pdfDoc.embedFont(pdfLib.StandardFonts.HelveticaBold);
+
+    // Standard PDF fonts only cover Western European characters. For other
+    // scripts (Amharic, Arabic, emoji...) render pages with the phone's own
+    // fonts on a canvas so no text is lost.
+    const allText = blocks.map(b => b.text.replace(/\n/g, ' ')).join(' ');
+    try {
+        font.encodeText(allText);
+        boldFont.encodeText(allText);
+    } catch (_) {
+        return textBlocksToPdfViaCanvas(pdfLib, pdfDoc, blocks);
+    }
+
+    const pageSize = [595.28, 841.89]; // A4
+    const margin = 48;
+    const maxWidth = pageSize[0] - margin * 2;
+    let page = pdfDoc.addPage(pageSize);
+    let y = pageSize[1] - margin;
+    for (const block of blocks) {
+        const st = PDF_BLOCK_STYLES[block.style] || PDF_BLOCK_STYLES.p;
+        const f = st.bold ? boldFont : font;
+        const lineHeight = st.size * 1.45;
+        if (block.style === 'gap') { y -= lineHeight * 0.6; continue; }
+        y -= st.before;
+        for (const line of wrapText(block.text, maxWidth, (t) => f.widthOfTextAtSize(t, st.size))) {
+            if (y - lineHeight < margin) {
+                page = pdfDoc.addPage(pageSize);
+                y = pageSize[1] - margin;
+            }
+            y -= lineHeight;
+            if (line) page.drawText(line, { x: margin, y: y + (lineHeight - st.size) / 2, size: st.size, font: f, color: pdfLib.rgb(0.1, 0.1, 0.12) });
+        }
+        y -= st.after;
+    }
+    const pdfBytes = await pdfDoc.save();
+    return new Blob([pdfBytes], { type: 'application/pdf' });
+}
+
+async function textBlocksToPdfViaCanvas(pdfLib, pdfDoc, blocks) {
+    const pageSize = [595.28, 841.89];
+    const scale = 2; // ~144 DPI: sharp text, moderate memory on low-end phones
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(pageSize[0] * scale);
+    canvas.height = Math.round(pageSize[1] * scale);
+    const ctx = canvas.getContext('2d');
+    const margin = 48 * scale;
+    const maxWidth = canvas.width - margin * 2;
+    const family = 'system-ui, -apple-system, "Noto Sans", "Noto Sans Ethiopic", "Noto Sans Arabic", sans-serif';
+
+    const startPage = () => {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#1a1a1f';
+        ctx.textBaseline = 'top';
+        return margin;
+    };
+    const flushPage = async () => {
+        const blob = await canvasToBlob(canvas, 'image/jpeg', 0.85);
+        const img = await pdfDoc.embedJpg(await blob.arrayBuffer());
+        pdfDoc.addPage(pageSize).drawImage(img, { x: 0, y: 0, width: pageSize[0], height: pageSize[1] });
+    };
+
+    let y = startPage();
+    let pageDirty = false;
+    for (const block of blocks) {
+        const st = PDF_BLOCK_STYLES[block.style] || PDF_BLOCK_STYLES.p;
+        const size = st.size * scale;
+        const lineHeight = size * 1.5;
+        if (block.style === 'gap') { y += lineHeight * 0.6; continue; }
+        ctx.font = `${st.bold ? 'bold ' : ''}${size}px ${family}`;
+        y += st.before * scale;
+        for (const line of wrapText(block.text, maxWidth, (t) => ctx.measureText(t).width)) {
+            if (y + lineHeight > canvas.height - margin) {
+                await flushPage();
+                pageDirty = false;
+                y = startPage();
+                ctx.font = `${st.bold ? 'bold ' : ''}${size}px ${family}`;
+            }
+            ctx.fillText(line, margin, y);
+            pageDirty = true;
+            y += lineHeight;
+        }
+        y += st.after * scale;
+    }
+    if (pageDirty || pdfDoc.getPageCount() === 0) await flushPage();
+    canvas.width = canvas.height = 0;
+    const pdfBytes = await pdfDoc.save();
+    return new Blob([pdfBytes], { type: 'application/pdf' });
+}
 
 // Lightweight Markdown to HTML renderer
 function markdownToHtml(mdText) {
@@ -547,9 +740,18 @@ export async function convertDocument(file, format = 'pdf', options = {}) {
     const isMd = fileName.endsWith('.md') || (typeof file === 'string' && (file.startsWith('#') || file.includes('**')));
     const isHtml = fileName.endsWith('.html') || fileName.endsWith('.htm') || (typeof file === 'string' && file.trim().startsWith('<'));
     const isText = fileName.endsWith('.txt') || (file && file.type === 'text/plain') || typeof file === 'string';
+    const isDocx = fileName.endsWith('.docx') || (file && file.type && file.type.includes('wordprocessingml'));
 
-    if (isMd || isHtml || isText || typeof file === 'string') {
-        const rawContent = await readFileAsText(file);
+    if (fileName.endsWith('.doc') && !isDocx) {
+        throw new Error('Old .doc files are not supported. Open it in Word or Google Docs and save as .docx first.');
+    }
+    if (isDocx && (fmt === 'docx')) {
+        return file;
+    }
+
+    if (isDocx || isMd || isHtml || isText || typeof file === 'string') {
+        // DOCX is converted to Markdown so it flows through the same text pipeline.
+        const rawContent = isDocx ? docxParagraphsToMarkdown(await extractDocxParagraphs(file)) : await readFileAsText(file);
 
         // Markdown <-> HTML
         if (fmt === 'html' || fmt === 'htm') {
@@ -564,67 +766,15 @@ export async function convertDocument(file, format = 'pdf', options = {}) {
         }
 
         if (fmt === 'txt') {
-            const plain = isHtml ? htmlToMarkdown(rawContent) : rawContent;
+            const plain = isHtml ? htmlToMarkdown(rawContent) : (isDocx ? rawContent.replace(/^#{1,3} /gm, '') : rawContent);
             return new Blob([plain], { type: 'text/plain;charset=utf-8;' });
         }
 
-        // Text / MD / HTML to PDF
+        // Text / MD / HTML / DOCX to PDF
         if (fmt === 'pdf') {
             try {
-                const pdfLib = await getPdfLib();
-                const pdfDoc = await pdfLib.PDFDocument.create();
-                const font = await pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
-                const boldFont = await pdfDoc.embedFont(pdfLib.StandardFonts.HelveticaBold);
-
-                const pageSize = [595.28, 841.89]; // A4
-                let page = pdfDoc.addPage(pageSize);
-                const { width, height } = page.getSize();
-                const margin = 40;
-                let y = height - margin;
-                const fontSize = 10.5;
-                const lineHeight = 16;
-
-                // Process lines
-                const lines = rawContent.split('\n');
-                for (const rawLine of lines) {
-                    const line = rawLine.replace(/[\r\t]/g, ' ');
-                    if (y < margin + lineHeight) {
-                        page = pdfDoc.addPage(pageSize);
-                        y = height - margin;
-                    }
-
-                    if (line.startsWith('# ')) {
-                        page.drawText(line.substring(2).substring(0, 70), {
-                            x: margin,
-                            y: y,
-                            size: 18,
-                            font: boldFont,
-                            color: pdfLib.rgb(0.05, 0.05, 0.1)
-                        });
-                        y -= (lineHeight * 1.5);
-                    } else if (line.startsWith('## ')) {
-                        page.drawText(line.substring(3).substring(0, 80), {
-                            x: margin,
-                            y: y,
-                            size: 14,
-                            font: boldFont,
-                            color: pdfLib.rgb(0.1, 0.1, 0.15)
-                        });
-                        y -= (lineHeight * 1.3);
-                    } else {
-                        page.drawText(line.substring(0, 95), {
-                            x: margin,
-                            y: y,
-                            size: fontSize,
-                            font: font,
-                            color: pdfLib.rgb(0.15, 0.15, 0.15)
-                        });
-                        y -= lineHeight;
-                    }
-                }
-
-                const pdfBytes = await pdfDoc.save();
-                return new Blob([pdfBytes], { type: 'application/pdf' });
+                const markdown = isHtml ? htmlToMarkdown(rawContent) : rawContent;
+                return await textBlocksToPdf(markdownToBlocks(markdown));
             } catch (e) {
                 console.error('Document to PDF failed:', e);
                 throw new Error('Failed to convert Document to PDF: ' + (e && e.message ? e.message : e));
@@ -644,36 +794,6 @@ export async function convertDocument(file, format = 'pdf', options = {}) {
                 if (docxBlob) return docxBlob;
             }
             return new Blob([rawContent], { type: 'application/msword;charset=utf-8;' });
-        }
-    }
-
-    // DOCX to PDF or TXT or HTML
-    const isDocx = fileName.endsWith('.docx') || fileName.endsWith('.doc') || (file && file.type && (file.type.includes('wordprocessingml') || file.type.includes('msword')));
-    if (isDocx || fmt === 'pdf') {
-        if (fmt === 'txt') {
-            const textContent = await readFileAsText(file);
-            return new Blob([textContent], { type: 'text/plain;charset=utf-8;' });
-        }
-        if (fmt === 'html') {
-            const textContent = await readFileAsText(file);
-            const htmlBody = markdownToHtml(textContent);
-            return new Blob([`<html><body>${htmlBody}</body></html>`], { type: 'text/html;charset=utf-8;' });
-        }
-        try {
-            const pdfLib = await getPdfLib();
-            const pdfDoc = await pdfLib.PDFDocument.create();
-            const font = await pdfDoc.embedFont(pdfLib.StandardFonts.Helvetica);
-            const page = pdfDoc.addPage([595.28, 841.89]);
-            page.drawText(`Document: ${file.name || 'Converted Document'}`, {
-                x: 40,
-                y: 800,
-                size: 14,
-                font: font
-            });
-            const pdfBytes = await pdfDoc.save();
-            return new Blob([pdfBytes], { type: 'application/pdf' });
-        } catch (e) {
-            return new Blob(['%PDF-1.4 simulated document'], { type: 'application/pdf' });
         }
     }
 
@@ -736,79 +856,42 @@ export async function convertSpreadsheet(file, format = 'xlsx', options = {}) {
         return new Blob(['fake_xlsx_data'], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     }
 
-    // CSV / TSV -> XLSX or JSON or HTML
+    if (!XLSXMod) throw new Error('Spreadsheet engine not loaded');
+
+    // CSV / TSV: parsed by SheetJS so quoted fields such as "1,500" stay intact
     const isCsvOrTsv = fileName.endsWith('.csv') || fileName.endsWith('.tsv') || (typeof file === 'string');
-    if (isCsvOrTsv) {
-        let csvText = (typeof file === 'string') ? file : await readFileAsText(file);
-        csvText = csvText.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-        if (fmt === 'json') {
-            const lines = csvText.split('\n').filter(l => l.trim().length > 0);
-            if (lines.length > 0) {
-                const delimiter = fileName.endsWith('.tsv') ? '\t' : ',';
-                const headers = lines[0].split(delimiter).map(h => h.trim().replace(/^["']|["']$/g, ''));
-                const rows = [];
-                for (let i = 1; i < lines.length; i++) {
-                    const vals = lines[i].split(delimiter).map(v => v.trim().replace(/^["']|["']$/g, ''));
-                    const obj = {};
-                    headers.forEach((h, idx) => { obj[h] = vals[idx] !== undefined ? vals[idx] : ''; });
-                    rows.push(obj);
-                }
-                return new Blob([JSON.stringify(rows, null, 2)], { type: 'application/json;charset=utf-8;' });
-            }
-            return new Blob(['[]'], { type: 'application/json;charset=utf-8;' });
-        }
-
-        if (fmt === 'html') {
-            const lines = csvText.split('\n').filter(l => l.trim().length > 0);
-            let tableHtml = '<table border="1"><thead><tr>';
-            if (lines.length > 0) {
-                lines[0].split(',').forEach(h => { tableHtml += `<th>${h}</th>`; });
-                tableHtml += '</tr></thead><tbody>';
-                for (let i = 1; i < lines.length; i++) {
-                    tableHtml += '<tr>';
-                    lines[i].split(',').forEach(c => { tableHtml += `<td>${c}</td>`; });
-                    tableHtml += '</tr>';
-                }
-                tableHtml += '</tbody></table>';
-            }
-            const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Table Data</title><style>body{font-family:sans-serif;padding:20px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #cbd5e1;padding:8px 12px;text-align:left;}th{background:#f1f5f9;}</style></head><body>${tableHtml}</body></html>`;
-            return new Blob([fullHtml], { type: 'text/html;charset=utf-8;' });
-        }
-
-        if (XLSXMod) {
-            const wb = XLSXMod.read(csvText, { type: 'string', raw: true });
-            const buf = XLSXMod.write(wb, { bookType: 'xlsx', type: 'array' });
-            return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-        }
-    }
-
-    // XLSX / XLS -> CSV / JSON / HTML / TSV
+    let wb;
     try {
-        if (!XLSXMod) throw new Error('Spreadsheet engine not loaded');
-        const arrayBuffer = await readFileAsArrayBuffer(file);
-        const wb = XLSXMod.read(arrayBuffer, { type: 'array' });
-        const sheetName = wb.SheetNames[0] || 'Sheet1';
-        const sheet = wb.Sheets[sheetName];
-
-        if (fmt === 'json') {
-            const jsonRows = XLSXMod.utils && XLSXMod.utils.sheet_to_json ? XLSXMod.utils.sheet_to_json(sheet) : [];
-            return new Blob([JSON.stringify(jsonRows, null, 2)], { type: 'application/json;charset=utf-8;' });
+        if (isCsvOrTsv) {
+            const csvText = (typeof file === 'string') ? file : await readFileAsText(file);
+            wb = XLSXMod.read(csvText, { type: 'string', raw: true, ...(fileName.endsWith('.tsv') ? { FS: '\t' } : {}) });
+        } else {
+            wb = XLSXMod.read(await readFileAsArrayBuffer(file), { type: 'array' });
         }
-
-        if (fmt === 'html') {
-            const htmlTable = XLSXMod.utils && XLSXMod.utils.sheet_to_html ? XLSXMod.utils.sheet_to_html(sheet) : '<table></table>';
-            const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Table Data</title><style>body{font-family:sans-serif;padding:20px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #cbd5e1;padding:8px 12px;text-align:left;}th{background:#f1f5f9;}</style></head><body>${htmlTable}</body></html>`;
-            return new Blob([fullHtml], { type: 'text/html;charset=utf-8;' });
-        }
-
-        const delimiter = fmt === 'tsv' ? '\t' : ',';
-        const csvStr = XLSXMod.utils && XLSXMod.utils.sheet_to_csv ? XLSXMod.utils.sheet_to_csv(sheet, { FS: delimiter }) : '';
-        return new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
     } catch (e) {
-        console.error('XLSX conversion failed:', e);
+        console.error('Spreadsheet read failed:', e);
         throw new Error('Spreadsheet conversion failed: ' + (e && e.message ? e.message : e));
     }
+    const sheet = wb.Sheets[wb.SheetNames[0] || 'Sheet1'];
+
+    if (fmt === 'xlsx') {
+        const buf = XLSXMod.write(wb, { bookType: 'xlsx', type: 'array' });
+        return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    }
+    if (fmt === 'json') {
+        const jsonRows = XLSXMod.utils.sheet_to_json(sheet, { defval: '' });
+        return new Blob([JSON.stringify(jsonRows, null, 2)], { type: 'application/json;charset=utf-8;' });
+    }
+    if (fmt === 'html') {
+        const htmlTable = XLSXMod.utils.sheet_to_html(sheet);
+        const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Table Data</title><style>body{font-family:sans-serif;padding:20px;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #cbd5e1;padding:8px 12px;text-align:left;}tr:first-child td{background:#f1f5f9;font-weight:600;}</style></head><body>${htmlTable}</body></html>`;
+        return new Blob([fullHtml], { type: 'text/html;charset=utf-8;' });
+    }
+    if (fmt === 'csv' || fmt === 'tsv') {
+        const csvStr = XLSXMod.utils.sheet_to_csv(sheet, { FS: fmt === 'tsv' ? '\t' : ',' });
+        return new Blob([csvStr], { type: fmt === 'tsv' ? 'text/tab-separated-values;charset=utf-8;' : 'text/csv;charset=utf-8;' });
+    }
+    throw new Error(`Unsupported spreadsheet target format: ${fmt}`);
 }
 
 // ==========================================
@@ -1153,44 +1236,25 @@ export async function convertAudio(file, format = 'mp3', options = {}) {
         return new Blob([arrayBuffer], { type: fmt === 'wav' ? 'audio/wav' : 'audio/mp3' });
     }
 
+    // Android Chrome allows only a handful of live AudioContexts; close each one
+    // or repeated conversions start failing.
     const audioCtx = new AudioContextClass();
-    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    let audioBuffer;
+    try {
+        audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    } catch (e) {
+        throw new Error('This audio/video file could not be decoded on this device.');
+    } finally {
+        if (audioCtx.close) audioCtx.close().catch(() => {});
+    }
 
     if (fmt === 'wav') {
         return audioBufferToWav(audioBuffer);
     }
 
-    // MP3 Encoding via lamejs
-    const lame = await getLameJs();
-    if (!lame || !lame.Mp3Encoder) {
-        // Fallback to WAV container if lamejs unavailable
-        return audioBufferToWav(audioBuffer);
-    }
-
-    const kbps = options.preset === 'whatsapp' ? 128 : (options.preset === 'balanced' ? 192 : 320);
-    const channels = 1; // Mono for optimal mobile size
-    const sampleRate = audioBuffer.sampleRate;
-    const mp3encoder = new lame.Mp3Encoder(channels, sampleRate, kbps);
-    const mp3Data = [];
-    const sampleChunk = 1152;
-
-    const samples = audioBuffer.getChannelData(0);
-    const int16Samples = new Int16Array(samples.length);
-    for (let i = 0; i < samples.length; i++) {
-        const s = Math.max(-1, Math.min(1, samples[i]));
-        int16Samples[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-    }
-
-    for (let i = 0; i < int16Samples.length; i += sampleChunk) {
-        const chunk = int16Samples.subarray(i, i + sampleChunk);
-        const mp3buf = mp3encoder.encodeBuffer(chunk);
-        if (mp3buf.length > 0) mp3Data.push(mp3buf);
-    }
-
-    const endBuf = mp3encoder.flush();
-    if (endBuf.length > 0) mp3Data.push(endBuf);
-
-    return new Blob(mp3Data, { type: 'audio/mp3' });
+    // Mono MP3: voice notes and music stay small enough to share on mobile data.
+    const kbps = options.preset === 'whatsapp' ? 96 : (options.preset === 'balanced' ? 128 : 192);
+    return encodeMp3(audioBuffer, kbps, options.onProgress);
 }
 
 // ==========================================
@@ -1236,6 +1300,7 @@ export async function convertFile(fileOrObj, targetFormatParam, optionsParam) {
         file = fileOrObj;
         targetFormat = targetFormatParam;
         options = optionsParam || {};
+        category = options.category;
     }
 
     if (!targetFormat) targetFormat = 'webp';
@@ -1252,7 +1317,9 @@ export async function convertFile(fileOrObj, targetFormatParam, optionsParam) {
             category = 'pdf';
         } else if (name.match(/\.(obj|stl|gltf|glb|ply)$/)) {
             category = '3d';
-        } else if (type.startsWith('audio/') || name.match(/\.(wav|mp3|ogg|m4a|aac|webm|flac)$/)) {
+        } else if (type.startsWith('video/') || name.match(/\.(mp4|mov|3gp|mkv)$/)) {
+            category = 'video';
+        } else if (type.startsWith('audio/') || name.match(/\.(wav|mp3|ogg|m4a|aac|webm|flac|opus|amr)$/)) {
             category = 'audio';
         } else if (name.match(/\.(zip|tar|gz|7z)$/)) {
             category = 'archive';
@@ -1271,6 +1338,12 @@ export async function convertFile(fileOrObj, targetFormatParam, optionsParam) {
         return await convert3DModel(file, targetFormat, options);
     } else if (category === 'audio') {
         return await convertAudio(file, targetFormat, options);
+    } else if (category === 'video') {
+        // Extract the soundtrack (e.g. save a WhatsApp video's audio as MP3)
+        if (targetFormat === 'mp3' || targetFormat === 'wav') {
+            return await convertAudio(file, targetFormat, options);
+        }
+        throw new Error(`Video to ${String(targetFormat).toUpperCase()} is not supported yet`);
     } else if (category === 'archive') {
         return await convertArchive(file, targetFormat, options);
     } else {
@@ -1848,7 +1921,7 @@ function renderFormatPills() {
     } else if (selectedCategory === 'audio') {
         options = ['MP3', 'WAV'];
     } else if (selectedCategory === 'video') {
-        options = ['GIF', 'MP3', 'WEBM'];
+        options = ['MP3', 'WAV'];
     } else if (selectedCategory === 'archive') {
         options = ['ZIP'];
     }
@@ -1957,7 +2030,7 @@ function handleFileSelect(file) {
 
     // Smart Auto-detection
     const extLower = ext.toLowerCase();
-    if (['png', 'jpg', 'jpeg', 'webp', 'bmp', 'svg', 'ico', 'heic', 'tiff'].includes(extLower)) {
+    if (['png', 'jpg', 'jpeg', 'webp', 'bmp', 'svg', 'ico', 'heic', 'tiff', 'gif'].includes(extLower)) {
         setCategory('image');
         targetFormat = 'pdf';
         if (previewImg && previewIcon) {
@@ -1990,7 +2063,7 @@ function handleFileSelect(file) {
             previewIcon.className = 'fas fa-cube text-3xl text-amber-500';
             previewIcon.classList.remove('hidden');
         }
-    } else if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(extLower)) {
+    } else if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'opus', 'amr'].includes(extLower)) {
         setCategory('audio');
         targetFormat = extLower === 'mp3' ? 'wav' : 'mp3';
         if (previewImg && previewIcon) {
@@ -1998,9 +2071,9 @@ function handleFileSelect(file) {
             previewIcon.className = 'fas fa-music text-3xl text-purple-500';
             previewIcon.classList.remove('hidden');
         }
-    } else if (['mp4', 'webm', 'mov', 'gif'].includes(extLower)) {
+    } else if (['mp4', 'webm', 'mov', '3gp', 'mkv'].includes(extLower)) {
         setCategory('video');
-        targetFormat = 'gif';
+        targetFormat = 'mp3';
         if (previewImg && previewIcon) {
             previewImg.classList.add('hidden');
             previewIcon.className = 'fas fa-video text-3xl text-rose-500';
@@ -2106,7 +2179,9 @@ async function executeConversionWorkflow() {
                 preset: targetPreset
             });
             const sourceBaseName = currentFile.name ? currentFile.name.replace(/\.[^/.]+$/, '') : 'converted';
-            outFileName = `${sourceBaseName}.${targetFormat}`;
+            // Multi-page PDF → images comes back as a ZIP of pages
+            const outExt = (convertedBlob && convertedBlob.type === 'application/zip' && targetFormat !== 'zip') ? `${targetFormat}.zip` : targetFormat;
+            outFileName = `${sourceBaseName}.${outExt}`;
         }
 
         updateProgress(85, 'Finalizing output...');
