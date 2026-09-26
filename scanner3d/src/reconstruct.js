@@ -208,90 +208,112 @@ function projectedBox(view, vol) {
     return { minX, minY, maxX, maxY };
 }
 
-export function refineOffSheet(views, vol) {
+/** Accumulates object/background colour statistics across frames. */
+export function createColorModel(vol) {
     const nb = CB * CB * LB;
     const objH = new Float32Array(nb), bgH = new Float32Array(nb);
-    let objN = 0, bgN = 0;
-    const boxes = views.map(v => projectedBox(v, vol));
-    views.forEach((v, n) => {
-        const { rgba, mask, offSheet, width, height } = v;
-        const box = boxes[n];
-        for (let y = 0; y < height; y += 2) for (let x = 0; x < width; x += 2) {
-            const i = y * width + x;
-            const bin = colorBin(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
-            if (mask[i] === FOREGROUND) { objH[bin]++; objN++; }
-            else if (box && offSheet[i] && (x < box.minX || x > box.maxX || y < box.minY || y > box.maxY)) { bgH[bin]++; bgN++; }
-        }
-    });
-    if (objN < 200 || bgN < 200) return;
-    for (let k = 0; k < nb; k++) { objH[k] = (objH[k] + 0.5) / objN; bgH[k] = (bgH[k] + 0.5) / bgN; }
-    views.forEach((v, n) => {
-        const { rgba, mask, offSheet, width, height } = v;
-        const box = boxes[n];
-        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-            const i = y * width + x;
-            if (!offSheet[i]) continue;
-            if (box && (x < box.minX || x > box.maxX || y < box.minY || y > box.maxY)) { mask[i] = BACKGROUND; continue; }
-            const bin = colorBin(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
-            if (bgH[bin] > 6 * objH[bin]) mask[i] = BACKGROUND;
-        }
-    });
+    let objN = 0, bgN = 0, ready = false;
+    return {
+        add(view) {
+            const { rgba, mask, offSheet, width, height } = view;
+            const box = projectedBox(view, vol);
+            for (let y = 0; y < height; y += 2) for (let x = 0; x < width; x += 2) {
+                const i = y * width + x;
+                const bin = colorBin(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
+                if (mask[i] === FOREGROUND) { objH[bin]++; objN++; }
+                else if (box && offSheet[i] && (x < box.minX || x > box.maxX || y < box.minY || y > box.maxY)) { bgH[bin]++; bgN++; }
+            }
+        },
+        finish() {
+            if (objN < 200 || bgN < 200) return false;
+            for (let k = 0; k < nb; k++) { objH[k] = (objH[k] + 0.5) / objN; bgH[k] = (bgH[k] + 0.5) / bgN; }
+            ready = true;
+            return true;
+        },
+        /** Mark off-sheet pixels that clearly look like background. */
+        apply(view) {
+            if (!ready) return;
+            const { rgba, mask, offSheet, width, height } = view;
+            const box = projectedBox(view, vol);
+            for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+                const i = y * width + x;
+                if (!offSheet[i]) continue;
+                if (box && (x < box.minX || x > box.maxX || y < box.minY || y > box.maxY)) { mask[i] = BACKGROUND; continue; }
+                const bin = colorBin(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
+                if (bgH[bin] > 6 * objH[bin]) mask[i] = BACKGROUND;
+            }
+        },
+    };
 }
+
+export { scanVolume };
 
 // ---------- voxel carving ----------
 
 /**
- * views: [{ mask: Uint8Array, width, height, R, t, f }]
- * Returns { occ: Uint8Array (1 = solid), nx, ny, nz, origin, voxel }.
+ * Incremental voxel carving. addView() takes one segmented view
+ * ({ mask, width, height, R, t, f }) at a time so frames never need to be in
+ * memory together; finish() returns { occ, nx, ny, nz, origin, voxel }.
  */
-export function carve(views, opts = {}) {
+export function createCarver(opts = {}) {
     const voxel = opts.voxel || 2.0; // mm
     const { x0, x1, y0, y1, z0, z1 } = scanVolume(opts);
     const nx = Math.ceil((x1 - x0) / voxel), ny = Math.ceil((y1 - y0) / voxel), nz = Math.ceil((z1 - z0) / voxel);
     const origin = [x0, y0, z0];
     const N = nx * ny * nz;
     const fg = new Uint8Array(N), bg = new Uint8Array(N);
-
-    const P = views.map(v => projectionMatrix(v.R, v.t, v.f, v.width / 2, v.height / 2));
-    const onProgress = opts.onProgress || (() => {});
-    for (let vi = 0; vi < views.length; vi++) {
-        const v = views[vi], p = P[vi], mask = v.mask, W = v.width, H = v.height;
-        for (let k = 0; k < nz; k++) {
-            const Z = z0 + (k + 0.5) * voxel;
-            for (let j = 0; j < ny; j++) {
-                const Y = y0 + (j + 0.5) * voxel;
-                // Terms constant along the row
-                const a0 = p[1] * Y + p[2] * Z + p[3], a1 = p[5] * Y + p[6] * Z + p[7], a2 = p[9] * Y + p[10] * Z + p[11];
-                let idx = (k * ny + j) * nx;
-                for (let i = 0; i < nx; i++, idx++) {
-                    if (bg[idx] > 3) continue; // already clearly empty
-                    const X = x0 + (i + 0.5) * voxel;
-                    const w = p[8] * X + a2;
-                    if (w <= 1) continue;
-                    const u = (p[0] * X + a0) / w, vv = (p[4] * X + a1) / w;
-                    if (u < 0 || vv < 0 || u >= W || vv >= H) continue;
-                    const c = mask[(vv | 0) * W + (u | 0)];
-                    if (c === FOREGROUND) { if (fg[idx] < 255) fg[idx]++; }
-                    else if (c === BACKGROUND) { if (bg[idx] < 255) bg[idx]++; }
+    let viewCount = 0;
+    return {
+        addView(v) {
+            viewCount++;
+            const p = projectionMatrix(v.R, v.t, v.f, v.width / 2, v.height / 2);
+            const mask = v.mask, W = v.width, H = v.height;
+            for (let k = 0; k < nz; k++) {
+                const Z = z0 + (k + 0.5) * voxel;
+                for (let j = 0; j < ny; j++) {
+                    const Y = y0 + (j + 0.5) * voxel;
+                    // Terms constant along the row
+                    const a0 = p[1] * Y + p[2] * Z + p[3], a1 = p[5] * Y + p[6] * Z + p[7], a2 = p[9] * Y + p[10] * Z + p[11];
+                    let idx = (k * ny + j) * nx;
+                    for (let i = 0; i < nx; i++, idx++) {
+                        if (bg[idx] > 3) continue; // already clearly empty
+                        const X = x0 + (i + 0.5) * voxel;
+                        const w = p[8] * X + a2;
+                        if (w <= 1) continue;
+                        const u = (p[0] * X + a0) / w, vv = (p[4] * X + a1) / w;
+                        if (u < 0 || vv < 0 || u >= W || vv >= H) continue;
+                        const c = mask[(vv | 0) * W + (u | 0)];
+                        if (c === FOREGROUND) { if (fg[idx] < 255) fg[idx]++; }
+                        else if (c === BACKGROUND) { if (bg[idx] < 255) bg[idx]++; }
+                    }
                 }
             }
-        }
-        onProgress((vi + 1) / views.length);
-    }
-    // Keep a voxel when paper was (almost) never seen through it and it was
-    // seen as "covered" from enough directions.
-    const minFg = opts.minFg ?? Math.max(2, Math.round(views.length * 0.15));
-    const occ = new Uint8Array(N);
-    for (let n = 0; n < N; n++) {
-        const f = fg[n], b = bg[n];
-        if (f >= minFg && b <= Math.max(0, Math.floor((f + b) * 0.06))) occ[n] = 1;
-    }
-    // Opening (erode, then dilate) removes one-voxel spikes and threads left
-    // by segmentation noise without eating real thin parts like handles.
-    const opened = dilate(erode(occ, nx, ny, nz), nx, ny, nz);
-    for (let n = 0; n < N; n++) occ[n] = occ[n] & opened[n];
-    keepMainComponents(occ, nx, ny, nz);
-    return { occ, nx, ny, nz, origin, voxel };
+        },
+        finish() {
+            // Keep a voxel when paper/background was (almost) never seen
+            // through it and it was seen as "covered" from enough directions.
+            const minFg = opts.minFg ?? Math.max(2, Math.round(viewCount * 0.15));
+            const occ = new Uint8Array(N);
+            for (let n = 0; n < N; n++) {
+                const f = fg[n], b = bg[n];
+                if (f >= minFg && b <= Math.max(0, Math.floor((f + b) * 0.06))) occ[n] = 1;
+            }
+            // Opening (erode, then dilate) removes one-voxel spikes and
+            // threads left by segmentation noise without eating real thin
+            // parts like handles.
+            const opened = dilate(erode(occ, nx, ny, nz), nx, ny, nz);
+            for (let n = 0; n < N; n++) occ[n] = occ[n] & opened[n];
+            keepMainComponents(occ, nx, ny, nz);
+            return { occ, nx, ny, nz, origin, voxel };
+        },
+    };
+}
+
+/** Convenience: carve a list of in-memory views. */
+export function carve(views, opts = {}) {
+    const c = createCarver(opts);
+    views.forEach((v, i) => { c.addView(v); if (opts.onProgress) opts.onProgress((i + 1) / views.length); });
+    return c.finish();
 }
 
 function erode(occ, nx, ny, nz) {
@@ -492,62 +514,77 @@ export function computeNormals(positions, indices) {
 /**
  * Colour each vertex from the frames that see it best: facing the camera,
  * not hidden behind another part of the object (ray-marched through the
- * voxel grid), blending the three best views.
- * frames: [{ rgba, width, height, R, t, f }] — may be a different resolution
- * than the masks.
+ * voxel grid), blending the three best views. Frames are fed one at a time
+ * (any resolution) and only the three best samples per vertex are kept.
  */
-export function colorVertices(mesh, normals, grid, frames) {
+export function createColorer(mesh, normals, grid) {
     const { positions } = mesh;
     const nv = positions.length / 3;
-    const colors = new Float32Array(nv * 3);
-    const cams = frames.map(fr => ({
-        ...fr, P: projectionMatrix(fr.R, fr.t, fr.f, fr.width / 2, fr.height / 2), C: cameraCentre(fr.R, fr.t),
-    }));
+    const TOP = 3;
+    const bestW = new Float32Array(nv * TOP);           // weights, descending
+    const bestC = new Float32Array(nv * TOP * 3);       // colours
     const { occ, nx, ny, nz, origin, voxel } = grid;
     const solid = (x, y, z) => {
         const i = Math.floor((x - origin[0]) / voxel), j = Math.floor((y - origin[1]) / voxel), k = Math.floor((z - origin[2]) / voxel);
         if (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) return false;
         return occ[(k * ny + j) * nx + i] === 1;
     };
-    const best = [];
-    for (let v = 0; v < nv; v++) {
-        const px = positions[v * 3], py = positions[v * 3 + 1], pz = positions[v * 3 + 2];
-        const nX = normals[v * 3], nY = normals[v * 3 + 1], nZ = normals[v * 3 + 2];
-        best.length = 0;
-        for (const c of cams) {
-            let dx = c.C[0] - px, dy = c.C[1] - py, dz = c.C[2] - pz;
-            const d = Math.hypot(dx, dy, dz); dx /= d; dy /= d; dz /= d;
-            const facing = dx * nX + dy * nY + dz * nZ;
-            if (facing < 0.15) continue;
-            const w = c.P[8] * px + c.P[9] * py + c.P[10] * pz + c.P[11];
-            const u = (c.P[0] * px + c.P[1] * py + c.P[2] * pz + c.P[3]) / w;
-            const q = (c.P[4] * px + c.P[5] * py + c.P[6] * pz + c.P[7]) / w;
-            if (u < 1 || q < 1 || u >= c.width - 1 || q >= c.height - 1) continue;
-            // occlusion: march towards the camera, starting just outside the surface
-            let hidden = false;
-            for (let s = 2.2; s < 90; s += 1.0) {
-                const sx = px + (dx * s + nX * 1.2) * voxel, sy = py + (dy * s + nY * 1.2) * voxel, sz = pz + (dz * s + nZ * 1.2) * voxel;
-                if (sz < 0) break;
-                if (solid(sx, sy, sz)) { hidden = true; break; }
+    return {
+        addFrame(fr) {
+            const P = projectionMatrix(fr.R, fr.t, fr.f, fr.width / 2, fr.height / 2), C = cameraCentre(fr.R, fr.t);
+            for (let v = 0; v < nv; v++) {
+                const px = positions[v * 3], py = positions[v * 3 + 1], pz = positions[v * 3 + 2];
+                // The rim touching the sheet mixes in paper and shadow; it
+                // takes the colour of the surface just above instead.
+                if (pz < 3.5) continue;
+                const nX = normals[v * 3], nY = normals[v * 3 + 1], nZ = normals[v * 3 + 2];
+                let dx = C[0] - px, dy = C[1] - py, dz = C[2] - pz;
+                const d = Math.hypot(dx, dy, dz); dx /= d; dy /= d; dz /= d;
+                const facing = dx * nX + dy * nY + dz * nZ;
+                if (facing < 0.15) continue;
+                const w = facing * facing;
+                if (w <= bestW[v * TOP + TOP - 1]) continue;
+                const pw = P[8] * px + P[9] * py + P[10] * pz + P[11];
+                const u = (P[0] * px + P[1] * py + P[2] * pz + P[3]) / pw;
+                const q = (P[4] * px + P[5] * py + P[6] * pz + P[7]) / pw;
+                if (u < 1 || q < 1 || u >= fr.width - 1 || q >= fr.height - 1) continue;
+                // occlusion: march towards the camera, starting just outside the surface
+                let hidden = false;
+                for (let s = 2.2; s < 90; s += 1.0) {
+                    const sx = px + (dx * s + nX * 1.2) * voxel, sy = py + (dy * s + nY * 1.2) * voxel, sz = pz + (dz * s + nZ * 1.2) * voxel;
+                    if (sz < 0) break;
+                    if (solid(sx, sy, sz)) { hidden = true; break; }
+                }
+                if (hidden) continue;
+                const col = sampleBilinear(fr.rgba, fr.width, u, q);
+                // insert into the sorted top-3
+                let slot = TOP - 1;
+                while (slot > 0 && bestW[v * TOP + slot - 1] < w) {
+                    bestW[v * TOP + slot] = bestW[v * TOP + slot - 1];
+                    for (let c = 0; c < 3; c++) bestC[(v * TOP + slot) * 3 + c] = bestC[(v * TOP + slot - 1) * 3 + c];
+                    slot--;
+                }
+                bestW[v * TOP + slot] = w;
+                for (let c = 0; c < 3; c++) bestC[(v * TOP + slot) * 3 + c] = col[c];
             }
-            if (hidden) continue;
-            best.push({ c, u, q, w: facing * facing });
-        }
-        best.sort((a, b) => b.w - a.w);
-        let r = 0, g = 0, b = 0, ws = 0;
-        for (const e of best.slice(0, 3)) {
-            const col = sampleBilinear(e.c.rgba, e.c.width, e.u, e.q);
-            r += col[0] * e.w; g += col[1] * e.w; b += col[2] * e.w; ws += e.w;
-        }
-        // The rim touching the sheet mixes in paper and shadow; let it take the
-        // colour of the surface just above instead.
-        if (pz < 3.5) ws = 0;
-        if (ws > 0) { colors[v * 3] = r / ws / 255; colors[v * 3 + 1] = g / ws / 255; colors[v * 3 + 2] = b / ws / 255; }
-        else { colors[v * 3] = colors[v * 3 + 1] = colors[v * 3 + 2] = -1; } // fill below
-    }
-    // Vertices no frame saw (e.g. underside): average of coloured neighbours.
-    fillUncolored(colors, mesh.indices, nv);
-    return colors;
+        },
+        finish() {
+            const colors = new Float32Array(nv * 3);
+            for (let v = 0; v < nv; v++) {
+                let r = 0, g = 0, b = 0, ws = 0;
+                for (let s = 0; s < TOP; s++) {
+                    const w = bestW[v * TOP + s];
+                    if (!w) break;
+                    r += bestC[(v * TOP + s) * 3] * w; g += bestC[(v * TOP + s) * 3 + 1] * w; b += bestC[(v * TOP + s) * 3 + 2] * w; ws += w;
+                }
+                if (ws > 0) { colors[v * 3] = r / ws / 255; colors[v * 3 + 1] = g / ws / 255; colors[v * 3 + 2] = b / ws / 255; }
+                else colors[v * 3] = colors[v * 3 + 1] = colors[v * 3 + 2] = -1;
+            }
+            // Vertices no frame saw (e.g. underside): average of coloured neighbours.
+            fillUncolored(colors, mesh.indices, nv);
+            return colors;
+        },
+    };
 }
 
 function fillUncolored(colors, indices, nv) {
@@ -580,25 +617,58 @@ function sampleBilinear(rgba, width, u, v) {
     return out;
 }
 
-/** Whole pipeline, used by the worker and by tests. */
-export function reconstruct(keyframes, opts = {}) {
+/**
+ * Whole pipeline, streaming: frames are fetched on demand so only one is in
+ * memory at a time (important on 2 GB phones).
+ *   getFrame(i, longSide) → Promise<{ rgba, width, height }>
+ *   poses[i] = { R, t }, f in pixels at fullWidth × fullHeight.
+ */
+export async function reconstructStreaming({ count, getFrame, poses, f, fullWidth, fullHeight }, opts = {}) {
     const report = opts.onProgress || (() => {});
-    const views = keyframes.map((k, n) => {
-        report('segment', n / keyframes.length);
-        const f = k.f * k.mask.width / k.width;
-        const seg = segmentFrame(k.mask.rgba, k.mask.width, k.mask.height, k, f);
-        return { mask: seg.mask, offSheet: seg.offSheet, rgba: k.mask.rgba, width: k.mask.width, height: k.mask.height, R: k.R, t: k.t, f };
-    });
-    if (opts.colorModel !== false) refineOffSheet(views, scanVolume(opts));
-    const grid = carve(views, { voxel: opts.voxel, onProgress: p => report('carve', p) });
+    const maskSide = opts.maskSide || 640, colorSide = opts.colorSide || 960;
+    const vol = scanVolume(opts);
+    const scaleF = (w, h) => f * Math.max(w, h) / Math.max(fullWidth, fullHeight);
+
+    // Pass 1: segment each frame; learn object/background colours.
+    const masks = [];
+    const model = createColorModel(vol);
+    for (let i = 0; i < count; i++) {
+        report('segment', i / count);
+        const fr = await getFrame(i, maskSide);
+        const fi = scaleF(fr.width, fr.height);
+        const seg = segmentFrame(fr.rgba, fr.width, fr.height, poses[i], fi);
+        const view = { mask: seg.mask, offSheet: seg.offSheet, rgba: fr.rgba, width: fr.width, height: fr.height, R: poses[i].R, t: poses[i].t, f: fi };
+        if (opts.colorModel !== false) model.add(view);
+        masks.push({ mask: seg.mask, offSheet: seg.offSheet, width: fr.width, height: fr.height, f: fi });
+    }
+    const useModel = opts.colorModel !== false && model.finish();
+
+    // Pass 2: refine off-sheet pixels, carve.
+    const carver = createCarver(opts);
+    for (let i = 0; i < count; i++) {
+        report('carve', i / count);
+        const m = masks[i];
+        const view = { ...m, R: poses[i].R, t: poses[i].t };
+        if (useModel) view.rgba = (await getFrame(i, maskSide)).rgba, model.apply(view);
+        carver.addView(view);
+        if (!opts.keepMasks) masks[i].offSheet = null;
+    }
+    const grid = carver.finish();
     let solidCount = 0;
     for (let i = 0; i < grid.occ.length; i++) solidCount += grid.occ[i];
     if (solidCount < 20) throw new Error('No object found on the sheet. Make sure it stands in the middle and is not white.');
+
     report('mesh', 0);
     const mesh = smoothMesh(surfaceNets(grid), opts.smooth ?? 4);
     const normals = computeNormals(mesh.positions, mesh.indices);
-    report('color', 0);
-    const frames = keyframes.map(k => ({ rgba: k.color.rgba, width: k.color.width, height: k.color.height, R: k.R, t: k.t, f: k.f * k.color.width / k.width }));
-    const colors = colorVertices(mesh, normals, grid, frames);
-    return { positions: mesh.positions, indices: mesh.indices, normals, colors, grid, masks: opts.keepMasks ? views.map(v => v.mask) : undefined };
+
+    const colorer = createColorer(mesh, normals, grid);
+    for (let i = 0; i < count; i++) {
+        report('color', i / count);
+        const fr = await getFrame(i, colorSide);
+        colorer.addFrame({ rgba: fr.rgba, width: fr.width, height: fr.height, R: poses[i].R, t: poses[i].t, f: scaleF(fr.width, fr.height) });
+    }
+    const colors = colorer.finish();
+    report('done', 1);
+    return { positions: mesh.positions, indices: mesh.indices, normals, colors, grid, masks: opts.keepMasks ? masks.map(m => m.mask) : undefined };
 }

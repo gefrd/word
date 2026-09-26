@@ -9,13 +9,16 @@ window.show = async (url, az, el) => {
   const m = await (await fetch(url)).json();
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(m.positions, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(m.colors, 3));
+  if (m.colors) g.setAttribute('color', new THREE.Float32BufferAttribute(m.colors, 3));
+  let map = null;
+  if (m.uvs) { g.setAttribute('uv', new THREE.Float32BufferAttribute(m.uvs, 2)); const im = new Image(); im.src = m.tex; await im.decode(); map = new THREE.Texture(im); map.colorSpace = THREE.SRGBColorSpace; map.needsUpdate = true; }
   g.setIndex(m.indices); g.computeVertexNormals();
-  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }));
+  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: !!m.colors, map, roughness: 0.8 }));
   scene.add(mesh); g.computeBoundingSphere();
   const c = g.boundingSphere.center, d = g.boundingSphere.radius * 3;
   const shots = [];
-  for (const [a, e] of [[30, 30], [150, 25], [260, 45], [0, 80]]) {
+  const views = new URLSearchParams(location.search).get('front') ? [[-90, 10], [-45, 15], [-135, 15], [0, 15]] : [[30, 30], [150, 25], [260, 45], [0, 80]];
+  for (const [a, e] of views) {
     const ar = a * Math.PI / 180, er = e * Math.PI / 180;
     cam.position.set(c.x + d * Math.cos(er) * Math.cos(ar), c.y + d * Math.cos(er) * Math.sin(ar), c.z + d * Math.sin(er)); cam.lookAt(c);
     r.render(scene, cam); shots.push(r.domElement.toDataURL('image/jpeg', 0.85));

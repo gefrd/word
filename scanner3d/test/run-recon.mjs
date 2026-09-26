@@ -13,20 +13,20 @@ const res = await page.evaluate(async ({ useGT, nViews }) => {
   const { estimateFocal } = await import('/src/geometry.js');
   const R = await import('/src/reconstruct.js');
   const grab = async (url, w, h) => { const img = new Image(); img.src = url; await img.decode(); const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d'); x.drawImage(img, 0, 0, w, h); return x.getImageData(0, 0, w, h); };
-  const kf = [];
   const dets = [];
-  for (const v of views) dets.push(detectMarkers(await grab(v.url, 1280, 720), 1)); console.log('markers per view', dets.map(d => d.ids.length).join(','));
+  for (const v of views) dets.push(detectMarkers(await grab(v.url, 1280, 720), 1));
+  console.log('markers per view', dets.map(d => d.ids.length).join(','));
   const f = useGT ? 1000 : estimateFocal(dets.filter(d => d.ids.length >= 2), 1280, 720);
+  const poses = [], urls = [];
   for (let i = 0; i < views.length; i++) {
-    const v = views[i];
-    const pose = useGT ? { R: v.R, t: v.t } : poseFromDetections(dets[i], f, 1280, 720);
-    if (!pose) continue;
-    const m = await grab(v.url, 640, 360), c = await grab(v.url, 960, 540);
-    kf.push({ R: pose.R, t: pose.t, f, width: 1280, height: 720, mask: { rgba: m.data, width: 640, height: 360 }, color: { rgba: c.data, width: 960, height: 540 } });
+    const pose = useGT ? { R: views[i].R, t: views[i].t } : poseFromDetections(dets[i], f, 1280, 720);
+    if (pose) { poses.push(pose); urls.push(views[i].url); }
   }
+  const getFrame = async (i, side) => { const w = side, h = Math.round(side * 720 / 1280); const d = await grab(urls[i], w, h); return { rgba: d.data, width: w, height: h }; };
   const t0 = performance.now();
-  const out = R.reconstruct(kf, { voxel: 2, keepMasks: true });
+  const out = await R.reconstructStreaming({ count: poses.length, getFrame, poses, f, fullWidth: 1280, fullHeight: 720 }, { voxel: 2, keepMasks: true });
   const ms = performance.now() - t0;
+  const kf = poses;
   // IoU vs ground truth on the voxel grid
   const g = out.grid; const pts = [];
   for (let k = 0; k < g.nz; k += 1) for (let j = 0; j < g.ny; j += 2) for (let i = 0; i < g.nx; i += 2) pts.push([g.origin[0] + (i + .5) * g.voxel, g.origin[1] + (j + .5) * g.voxel, g.origin[2] + (k + .5) * g.voxel, g.occ[(k * g.ny + j) * g.nx + i]]);

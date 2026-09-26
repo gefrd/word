@@ -1,0 +1,11 @@
+import { chromium } from 'playwright-core'; import fs from 'fs';
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage();
+page.on('pageerror', e => console.log('pageerror', e.message));
+page.on('console', m => (m.type() === 'error' || m.type() === 'warning') && console.log('console', m.text().slice(0, 300)));
+await page.goto('http://localhost:5190/test/photo-test.html'); await page.waitForFunction(() => window.ready);
+const r = await page.evaluate((u) => window.runPhoto(u), process.argv[2] || '/test/out/view0.jpg');
+console.log('AI', r.tAI, 'ms on', r.device, '| verts', r.verts, 'tris', r.tris, 'size', JSON.stringify(r.size), r.log);
+fs.writeFileSync('test/out/photo-mask.png', Buffer.from(r.mask.split(',')[1], 'base64'));
+fs.writeFileSync('test/out/photo-mesh.json', JSON.stringify(r.mesh));
+await browser.close();

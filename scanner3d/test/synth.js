@@ -95,3 +95,30 @@ window.renderViews = (n = 24, opts = {}) => {
   return out;
 };
 window.ready = true;
+
+// A single "product photo": a toy robot on a plain studio background.
+window.renderProduct = () => {
+  const s2 = new THREE.Scene(); s2.background = new THREE.Color(0xd9d4cc);
+  s2.add(new THREE.HemisphereLight(0xffffff, 0x887766, 1.4));
+  const l = new THREE.DirectionalLight(0xffffff, 2); l.position.set(-200, 300, 400); l.castShadow = true; s2.add(l);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.MeshStandardMaterial({ color: 0xd9d4cc })); floor.receiveShadow = true; s2.add(floor);
+  const robot = new THREE.Group();
+  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.45 });
+  const add = (g, m, x, y, z) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); o.castShadow = true; robot.add(o); return o; };
+  add(new THREE.BoxGeometry(70, 45, 80), mat(0xf39c12), 0, 0, 70);            // body
+  add(new THREE.SphereGeometry(28, 32, 16), mat(0x3498db), 0, 0, 140);       // head
+  add(new THREE.SphereGeometry(6, 16, 8), mat(0x111111), -10, -25, 145);     // eyes
+  add(new THREE.SphereGeometry(6, 16, 8), mat(0x111111), 10, -25, 145);
+  const arm = new THREE.CylinderGeometry(8, 8, 70, 16);
+  add(arm, mat(0xe74c3c), -48, 0, 70); add(arm, mat(0xe74c3c), 48, 0, 70);
+  robot.children.slice(-2).forEach(o => { o.rotation.x = Math.PI / 2; });
+  const leg = new THREE.CylinderGeometry(10, 10, 30, 16);
+  add(leg, mat(0x2c3e50), -18, 0, 15).rotation.x = Math.PI / 2; add(leg, mat(0x2c3e50), 18, 0, 15).rotation.x = Math.PI / 2;
+  s2.add(robot);
+  const cam = new THREE.PerspectiveCamera(40, 3 / 4, 10, 5000); cam.up.set(0, 0, 1);
+  cam.position.set(60, -330, 170); cam.lookAt(0, 0, 85);
+  renderer.setSize(768, 1024); renderer.render(s2, cam);
+  const url = renderer.domElement.toDataURL('image/jpeg', 0.92);
+  renderer.setSize(W, H);
+  return url;
+};
