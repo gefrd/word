@@ -236,6 +236,11 @@ export async function keyframesFromVideo(file, opts = {}) {
     video.src = url;
     try {
         await waitEvent(video, 'loadedmetadata', 15000);
+        if (video.duration === Infinity) {
+            // Browser-recorded WebM often has no duration until you seek to the end.
+            video.currentTime = 1e7;
+            await waitEvent(video, 'seeked', 15000).catch(() => {});
+        }
         if (!video.duration || !isFinite(video.duration)) throw new Error('Could not read this video.');
         // Some mobile browsers only decode frames after a play() attempt.
         try { await video.play(); video.pause(); } catch (_) {}
@@ -247,7 +252,9 @@ export async function keyframesFromVideo(file, opts = {}) {
         const [fc, fctx] = canvas2d(w, h);
         const samples = Math.min(160, Math.max(40, Math.round(video.duration * 4)));
         const f0 = 0.8 * Math.max(w, h);
-        const best = new Map(); // cell → candidate
+        // Keep up to two frames per coverage cell (the sharpest, at least
+        // 0.4 s apart): more views carve a tighter shape.
+        const best = new Map(); // cell → [candidates]
         const coverage = new Coverage();
         for (let i = 0; i < samples; i++) {
             video.currentTime = Math.min(video.duration - 0.05, (i + 0.5) * video.duration / samples);
@@ -261,7 +268,15 @@ export async function keyframesFromVideo(file, opts = {}) {
                     const ang = viewAngles(pose);
                     const key = coverage.key(ang.az, ang.el);
                     const sharp = sharpness(small);
-                    if (key && (!best.has(key) || best.get(key).sharp < sharp)) best.set(key, { time: video.currentTime, sharp, ang });
+                    if (key) {
+                        const list = best.get(key) || [];
+                        const cand = { time: video.currentTime, sharp, ang };
+                        const near = list.findIndex(c => Math.abs(c.time - cand.time) < 0.4);
+                        if (near >= 0) { if (list[near].sharp < sharp) list[near] = cand; }
+                        else list.push(cand);
+                        list.sort((a, b) => b.sharp - a.sharp);
+                        best.set(key, list.slice(0, 2));
+                    }
                     if (key) coverage.add(ang.az, ang.el, 0);
                 }
             }
@@ -270,14 +285,15 @@ export async function keyframesFromVideo(file, opts = {}) {
         // Grab the chosen frames at full keyframe resolution.
         const keyframes = [];
         let n = 0;
-        for (const c of best.values()) {
+        const chosen = [...best.values()].flat().sort((a, b) => a.time - b.time);
+        for (const c of chosen) {
             video.currentTime = c.time;
             await waitEvent(video, 'seeked');
             fctx.drawImage(video, 0, 0, w, h);
             const img = fctx.getImageData(0, 0, w, h);
             const det = detectMarkers(img, 1);
             if (det.ids.length >= 2) keyframes.push({ blob: await toBlob(fc, 0.9), width: w, height: h, det, sharpness: c.sharp });
-            opts.onProgress && opts.onProgress(0.7 + 0.3 * (++n) / best.size, { cells: best.size });
+            opts.onProgress && opts.onProgress(0.7 + 0.3 * (++n) / chosen.length, { cells: best.size });
         }
         return keyframes;
     } finally {

@@ -91,10 +91,4 @@ export function exportOBJ(model) {
     return new Blob([lines.join('\n')], { type: 'text/plain' });
 }
 
-export function downloadBlob(blob, name) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = name; a.style.display = 'none';
-    document.body.appendChild(a); a.click();
-    setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 20000);
-}
+export { downloadBlob } from './download.js';

@@ -122,3 +122,34 @@ window.renderProduct = () => {
   renderer.setSize(W, H);
   return url;
 };
+
+// Record a continuous walk-around video (like a person with a phone):
+// three loops at different heights, portrait 720×1280.
+window.recordWalkaround = async ({ seconds = 30, fps = 12, w = 720, h = 1280, f = 950 } = {}) => {
+  renderer.setSize(w, h);
+  camera.aspect = w / h; camera.fov = 2 * Math.atan(h / 2 / f) * 180 / Math.PI; camera.updateProjectionMatrix();
+  const stream = renderer.domElement.captureStream(0);
+  const track = stream.getVideoTracks()[0];
+  const rec = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 4e6 });
+  const chunks = []; rec.ondataavailable = (e) => chunks.push(e.data);
+  rec.start();
+  const n = seconds * fps;
+  for (let i = 0; i < n; i++) {
+    const u = i / n;                       // 0..1 over the whole video
+    const loop = Math.min(2, Math.floor(u * 3));
+    const el = [22, 42, 64][loop] * Math.PI / 180;
+    const az = (u * 3) * Math.PI * 2 + 0.4;
+    const d = 430 + 30 * Math.sin(u * 17);
+    camera.position.set(d * Math.cos(el) * Math.cos(az), d * Math.cos(el) * Math.sin(az), d * Math.sin(el));
+    camera.lookAt(Math.sin(u * 23) * 12, Math.cos(u * 19) * 12, 35);
+    camera.rotateZ(Math.sin(u * 11) * 0.06);
+    renderer.render(scene, camera);
+    track.requestFrame();
+    await new Promise(r => setTimeout(r, 1000 / fps));
+  }
+  rec.stop(); await new Promise(r => rec.onstop = r);
+  const blob = new Blob(chunks, { type: 'video/webm' });
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let s = ''; for (let i = 0; i < buf.length; i += 8192) s += String.fromCharCode(...buf.subarray(i, i + 8192));
+  return btoa(s);
+};

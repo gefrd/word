@@ -86,6 +86,20 @@ export class Viewer {
         return { size };
     }
 
+    /** Small JPEG of the current view, for the saved-models list. */
+    snapshot(size = 256) {
+        this.controls.update();
+        this.renderer.render(this.scene, this.camera);
+        const src = this.renderer.domElement;
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const s = Math.min(src.width, src.height);
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#1b1e24'; ctx.fillRect(0, 0, size, size);
+        ctx.drawImage(src, (src.width - s) / 2, (src.height - s) / 2, s, s, 0, 0, size, size);
+        return c.toDataURL('image/jpeg', 0.8);
+    }
+
     dispose() {
         this.running = false;
         this.renderer.setAnimationLoop(null);
