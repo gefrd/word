@@ -1402,7 +1402,108 @@ export function getCellValue(cellRef) {
   if (rawText !== '' && rawText !== null && rawText !== undefined && !isNaN(Number(rawText))) {
     return Number(rawText);
   }
+  if (typeof rawText === 'string' && THOUSANDS_NUMBER_RE.test(rawText.trim())) {
+    return Number(rawText.trim().replace(/,/g, ''));
+  }
   return rawText;
+}
+
+const FORMULA_ERRORS = new Set(['#REF!', '#DIV/0!', '#ERROR!', '#VALUE!', '#NAME?', '#N/A']);
+function isFormulaError(v) {
+  return typeof v === 'string' && FORMULA_ERRORS.has(v);
+}
+
+// "1,500" / "-2,000.50" are common ways to type amounts; treat them as numbers.
+const THOUSANDS_NUMBER_RE = /^-?\d{1,3}(,\d{3})+(\.\d+)?$/;
+
+// Excel-style criteria for SUMIF/COUNTIF/AVERAGEIF: ">0", "<>paid", "Mangoes", 5
+function matchesCriteria(value, criteria) {
+  const crit = String(criteria ?? '');
+  const m = crit.match(/^(<=|>=|<>|=|<|>)?(.*)$/);
+  const op = m[1] || '=';
+  const target = m[2];
+  const targetNum = target.trim() !== '' && !isNaN(Number(target)) ? Number(target) : null;
+  const valueNum = typeof value === 'number' ? value : (value !== '' && value !== null && value !== undefined && !isNaN(Number(value)) ? Number(value) : null);
+  if (targetNum !== null && valueNum !== null) {
+    switch (op) {
+      case '=': return valueNum === targetNum;
+      case '<>': return valueNum !== targetNum;
+      case '<': return valueNum < targetNum;
+      case '>': return valueNum > targetNum;
+      case '<=': return valueNum <= targetNum;
+      case '>=': return valueNum >= targetNum;
+    }
+  }
+  if (op === '<' || op === '>' || op === '<=' || op === '>=') return false;
+  const a = String(value ?? '').toLowerCase();
+  const b = target.toLowerCase();
+  // Support * and ? wildcards like Excel
+  const re = new RegExp('^' + b.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
+  const eq = re.test(a);
+  return op === '<>' ? !eq : eq;
+}
+
+function rangeRefs(rangeStr) {
+  const parts = rangeStr.split(':');
+  if (parts.length !== 2 || !/^[A-Za-z]+\d+$/.test(parts[0]) || !/^[A-Za-z]+\d+$/.test(parts[1])) {
+    throw new Error('#ERROR!');
+  }
+  const start = cellRefToCoords(parts[0]);
+  const end = cellRefToCoords(parts[1]);
+  const refs = [];
+  for (let r = Math.min(start.ri, end.ri); r <= Math.max(start.ri, end.ri); r++) {
+    for (let c = Math.min(start.ci, end.ci); c <= Math.max(start.ci, end.ci); c++) {
+      refs.push(coordsToCellRef(r, c));
+    }
+  }
+  return refs;
+}
+
+// Split on a top-level operator character (outside quotes and parentheses).
+function splitTopLevel(expr, sepChar) {
+  const parts = [];
+  let cur = '';
+  let depth = 0;
+  let quote = '';
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (quote) {
+      if (ch === quote) quote = '';
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '(') {
+      depth++;
+    } else if (ch === ')') {
+      depth--;
+    } else if (depth === 0 && ch === sepChar) {
+      parts.push(cur);
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  parts.push(cur);
+  return parts;
+}
+
+function findTopLevelComparison(expr) {
+  let depth = 0;
+  let quote = '';
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (quote) { if (ch === quote) quote = ''; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === '(') { depth++; continue; }
+    if (ch === ')') { depth--; continue; }
+    if (depth !== 0 || (ch !== '<' && ch !== '>' && ch !== '=')) continue;
+    const two = expr.slice(i, i + 2);
+    const op = (two === '<>' || two === '<=' || two === '>=') ? two : ch;
+    const left = expr.slice(0, i).trim();
+    const right = expr.slice(i + op.length).trim();
+    if (!left || !right) throw new Error('#ERROR!');
+    return { left, op, right };
+  }
+  return null;
 }
 
 function splitFormulaArgs(str) {
@@ -1453,7 +1554,7 @@ function expandRangeValues(rangeStr) {
     for (let c = minC; c <= maxC; c++) {
       const ref = coordsToCellRef(r, c);
       const val = getCellValue(ref);
-      if (typeof val === 'string' && (val === '#REF!' || val === '#DIV/0!' || val === '#ERROR!' || val.startsWith('#'))) {
+      if (isFormulaError(val)) {
         throw new Error(val);
       }
       values.push(val);
@@ -1509,7 +1610,7 @@ function evaluateFunctionCall(funcName, rawArgsStr) {
         }
         if (/^[A-Za-z]+\d+$/i.test(t)) {
           const val = getCellValue(t);
-          if (typeof val === 'string' && val.startsWith('#')) throw new Error(val);
+          if (isFormulaError(val)) throw new Error(val);
           return val;
         }
         return evaluateSubExpression(t);
@@ -1537,7 +1638,7 @@ function evaluateFunctionCall(funcName, rawArgsStr) {
         }
       } else {
         const condVal = evalOperand(condRaw);
-        if (typeof condVal === 'string' && condVal.startsWith('#')) throw new Error(condVal);
+        if (isFormulaError(condVal)) throw new Error(condVal);
         isTrue = Boolean(condVal && condVal !== 'FALSE' && condVal !== '0' && condVal !== 0);
       }
     } catch (e) {
@@ -1552,7 +1653,7 @@ function evaluateFunctionCall(funcName, rawArgsStr) {
       }
       if (/^[A-Za-z]+\d+$/i.test(t)) {
         const val = getCellValue(t);
-        if (typeof val === 'string' && val.startsWith('#')) throw new Error(val);
+        if (isFormulaError(val)) throw new Error(val);
         return val;
       }
       return evaluateSubExpression(t);
@@ -1563,6 +1664,42 @@ function evaluateFunctionCall(funcName, rawArgsStr) {
     } else {
       return rawArgStrings.length > 2 ? evalBranch(rawArgStrings[2]) : '';
     }
+  }
+
+  // SUMIF(range, criteria, [sum_range]) / COUNTIF(range, criteria) / AVERAGEIF(range, criteria, [avg_range])
+  if (name === 'SUMIF' || name === 'COUNTIF' || name === 'AVERAGEIF') {
+    const minArgs = 2;
+    if (rawArgStrings.length < minArgs) throw new Error('#ERROR!');
+    const critRefs = rangeRefs(rawArgStrings[0].trim());
+    const critRaw = rawArgStrings[1].trim();
+    let criteria;
+    if (/^".*"$/.test(critRaw) || /^'.*'$/.test(critRaw)) criteria = critRaw.slice(1, -1);
+    else if (/^[A-Za-z]+\d+$/.test(critRaw)) criteria = getCellValue(critRaw);
+    else criteria = evaluateSubExpression(critRaw);
+    const valueRefs = (name !== 'COUNTIF' && rawArgStrings[2]) ? rangeRefs(rawArgStrings[2].trim()) : critRefs;
+    let count = 0;
+    let sum = 0;
+    critRefs.forEach((ref, i) => {
+      const v = getCellValue(ref);
+      if (isFormulaError(v)) throw new Error(v);
+      if (!matchesCriteria(v, criteria)) return;
+      count++;
+      if (name !== 'COUNTIF' && valueRefs[i]) {
+        const n = Number(getCellValue(valueRefs[i]));
+        if (!isNaN(n)) sum += n;
+      }
+    });
+    if (name === 'COUNTIF') return count;
+    if (name === 'SUMIF') return sum;
+    if (count === 0) throw new Error('#DIV/0!');
+    return sum / count;
+  }
+
+  if (name === 'TODAY' || name === 'NOW') {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    return name === 'TODAY' ? date : `${date} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
   // Expand arguments for standard aggregate/utility functions
@@ -1576,13 +1713,13 @@ function evaluateFunctionCall(funcName, rawArgsStr) {
       resolvedValues.push(...expandRangeValues(arg));
     } else if (/^[A-Za-z]+\d+$/i.test(arg)) {
       const val = getCellValue(arg);
-      if (typeof val === 'string' && val.startsWith('#')) throw new Error(val);
+      if (isFormulaError(val)) throw new Error(val);
       resolvedValues.push(val);
     } else if (/^".*"$/.test(arg) || /^'.*'$/.test(arg)) {
       resolvedValues.push(arg.slice(1, -1));
     } else {
       const evaluated = evaluateSubExpression(arg);
-      if (typeof evaluated === 'string' && evaluated.startsWith('#')) throw new Error(evaluated);
+      if (isFormulaError(evaluated)) throw new Error(evaluated);
       resolvedValues.push(evaluated);
     }
   }
@@ -1600,6 +1737,27 @@ function evaluateFunctionCall(funcName, rawArgsStr) {
   // CONCAT / CONCATENATE
   if (name === 'CONCAT' || name === 'CONCATENATE') {
     return resolvedValues.join('');
+  }
+
+  if (name === 'LEN') return String(resolvedValues[0] ?? '').length;
+  if (name === 'UPPER') return String(resolvedValues[0] ?? '').toUpperCase();
+  if (name === 'LOWER') return String(resolvedValues[0] ?? '').toLowerCase();
+  if (name === 'TRIM') return String(resolvedValues[0] ?? '').trim().replace(/\s+/g, ' ');
+
+  // INT(num): round down to integer
+  if (name === 'INT') {
+    const n = Number(resolvedValues[0]);
+    if (isNaN(n)) throw new Error('#ERROR!');
+    return Math.floor(n);
+  }
+
+  // MOD(num, divisor): result has the sign of the divisor, like Excel
+  if (name === 'MOD') {
+    const n = Number(resolvedValues[0]);
+    const d = Number(resolvedValues[1]);
+    if (isNaN(n) || isNaN(d)) throw new Error('#ERROR!');
+    if (d === 0) throw new Error('#DIV/0!');
+    return n - d * Math.floor(n / d);
   }
 
   // ROUND(num, [decimals])
@@ -1694,6 +1852,31 @@ function evaluateSubExpression(subExpr) {
     throw new Error('#ERROR!');
   }
 
+  // Text concatenation: A1&" "&B1
+  const concatParts = splitTopLevel(expr, '&');
+  if (concatParts.length > 1) {
+    if (concatParts.some(p => !p.trim())) throw new Error('#ERROR!');
+    return concatParts.map(p => {
+      const v = evaluateSubExpression(p);
+      if (isFormulaError(v)) throw new Error(v);
+      return v === null || v === undefined ? '' : String(v);
+    }).join('');
+  }
+
+  // Top-level comparison: =A1=100, =B2<>"paid", =A1>=10 → TRUE/FALSE
+  const cmp = findTopLevelComparison(expr);
+  if (cmp) {
+    const l = evaluateSubExpression(cmp.left);
+    const r = evaluateSubExpression(cmp.right);
+    if (isFormulaError(l)) throw new Error(l);
+    if (isFormulaError(r)) throw new Error(r);
+    const bothNum = l !== '' && r !== '' && !isNaN(Number(l)) && !isNaN(Number(r));
+    const a = bothNum ? Number(l) : String(l).toLowerCase();
+    const b = bothNum ? Number(r) : String(r).toLowerCase();
+    const res = { '=': a === b, '<>': a !== b, '<': a < b, '>': a > b, '<=': a <= b, '>=': a >= b }[cmp.op];
+    return res ? 'TRUE' : 'FALSE';
+  }
+
   // Quoted string literal: "hello" or 'hello'
   if ((expr.startsWith('"') && expr.endsWith('"')) || (expr.startsWith("'") && expr.endsWith("'"))) {
     return expr.slice(1, -1);
@@ -1702,7 +1885,7 @@ function evaluateSubExpression(subExpr) {
   // Single cell reference
   if (/^[A-Za-z]+\d+$/i.test(expr)) {
     const val = getCellValue(expr);
-    if (typeof val === 'string' && (val.startsWith('#') || val.includes('REF') || val.includes('ERROR') || val.includes('DIV'))) {
+    if (isFormulaError(val)) {
       throw new Error(val);
     }
     return val !== null && val !== undefined ? val : 0;
@@ -1721,13 +1904,15 @@ function evaluateSubExpression(subExpr) {
     const funcName = match[1];
     const argsStr = match[2];
     const res = evaluateFunctionCall(funcName, argsStr);
-    if (typeof res === 'string' && res.startsWith('#')) throw new Error(res);
+    if (isFormulaError(res)) throw new Error(res);
 
     if (match.index === 0 && fullCall.length === expr.length) {
       return res;
     }
 
-    const resReplacement = typeof res === 'string' ? JSON.stringify(res) : String(res);
+    // Leading space keeps "5-" + "-3" from becoming the JS "--" operator
+    // (parentheses would stop the enclosing call matching funcRegex).
+    const resReplacement = typeof res === 'string' ? JSON.stringify(res) : ` ${res}`;
     expr = expr.slice(0, match.index) + resReplacement + expr.slice(match.index + fullCall.length);
     match = funcRegex.exec(expr);
   }
@@ -1745,16 +1930,17 @@ function evaluateSubExpression(subExpr) {
   // Replace remaining cell references with their numeric values
   expr = expr.replace(/\b([A-Za-z]+\d+)\b/g, (m) => {
     const val = getCellValue(m);
-    if (typeof val === 'string' && (val.startsWith('#') || val.includes('REF') || val.includes('ERROR') || val.includes('DIV'))) {
+    if (isFormulaError(val)) {
       throw new Error(val);
     }
     if (val === '' || val === null || val === undefined) return 0;
     const num = Number(val);
-    return isNaN(num) ? 0 : num;
+    return isNaN(num) ? 0 : `(${num})`;
   });
 
-  // Support ^ for power
+  // Support ^ for power and trailing % (10% → 0.1)
   expr = expr.replace(/\^/g, '**');
+  expr = expr.replace(/(\d+(?:\.\d+)?)\s*%/g, '($1/100)');
 
   // Check division by zero: e.g. / 0 or / (0)
   if (/\/ *0(?!\d|\.)/.test(expr)) {
@@ -1807,7 +1993,7 @@ export function evaluateFormula(formulaStr, callingCellRef = null) {
     // Single cell reference fast-path, preserving text/types
     if (/^[A-Za-z]+\d+$/i.test(rawExpr)) {
       const val = getCellValue(rawExpr);
-      if (typeof val === 'string' && (val.startsWith('#') || val.includes('REF') || val.includes('ERROR') || val.includes('DIV'))) {
+      if (isFormulaError(val)) {
         throw new Error(val);
       }
       return val !== null && val !== undefined ? val : '';
