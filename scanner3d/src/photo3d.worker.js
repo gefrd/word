@@ -88,17 +88,23 @@ self.onmessage = async (e) => {
 
             // 2. Depth
             let depth = null, dW = 0, dH = 0;
+            let warning = null;
             if (!skipDepth) {
                 self.postMessage({ type: 'progress', stage: 'depth', p: 0 });
-                await loadDepth();
-                self.postMessage({ type: 'progress', stage: 'depth', p: 0.5 });
-                const out = await depthPipe(image);
-                const pd = out.predicted_depth; // Tensor [h, w] (relative inverse depth: larger = nearer)
-                dH = pd.dims[pd.dims.length - 2]; dW = pd.dims[pd.dims.length - 1];
-                depth = Float32Array.from(pd.data);
+                try {
+                    await loadDepth();
+                    self.postMessage({ type: 'progress', stage: 'depth', p: 0.5 });
+                    const out = await depthPipe(image);
+                    const pd = out.predicted_depth; // Tensor [h, w] (relative inverse depth: larger = nearer)
+                    dH = pd.dims[pd.dims.length - 2]; dW = pd.dims[pd.dims.length - 1];
+                    depth = Float32Array.from(pd.data);
+                } catch (err) {
+                    // Still build a model from the silhouette alone.
+                    warning = 'depth: ' + (err && err.message ? err.message : String(err));
+                }
                 self.postMessage({ type: 'progress', stage: 'depth', p: 1 });
             }
-            self.postMessage({ type: 'done', mask, width, height, depth, dW, dH, device },
+            self.postMessage({ type: 'done', mask, width, height, depth, dW, dH, device, warning },
                 depth ? [mask.buffer, depth.buffer] : [mask.buffer]);
         }
     } catch (err) {

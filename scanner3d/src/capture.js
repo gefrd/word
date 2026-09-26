@@ -169,11 +169,16 @@ export class LiveCapture {
             if (pose) {
                 const ang = viewAngles(pose);
                 state.pose = pose; state.angles = ang;
-                const moved = this.last ? Math.hypot(ang.C[0] - this.last.C[0], ang.C[1] - this.last.C[1], ang.C[2] - this.last.C[2]) : 999;
-                this.last = ang;
+                // Camera speed in mm/s: independent of how often slow phones
+                // manage to run the tracker. Blur is checked separately.
+                const now = performance.now();
+                const dt = this.lastTime ? (now - this.lastTime) / 1000 : 1;
+                const moved = this.last ? Math.hypot(ang.C[0] - this.last.C[0], ang.C[1] - this.last.C[1], ang.C[2] - this.last.C[2]) : 0;
+                const speed = this.last ? moved / Math.max(0.03, dt) : 0;
+                this.last = ang; this.lastTime = now;
                 const cellKey = this.coverage.key(ang.az, ang.el);
                 if (cellKey == null) state.hint = ang.el < BANDS[0].min ? 'raise' : 'lower';
-                else if (moved > 25) state.hint = 'slow';
+                else if (speed > 260) state.hint = 'slow';
                 else if (det.ids.length < 3) state.hint = 'moreMarkers';
                 else if (!this.coverage.has(ang.az, ang.el)) {
                     const sharp = sharpness(img);
@@ -183,7 +188,7 @@ export class LiveCapture {
             }
         } else {
             state.hint = 'noMarkers';
-            this.last = null;
+            this.last = null; this.lastTime = 0;
         }
         state.count = this.keyframes.length;
         state.coverage = this.coverage;

@@ -389,28 +389,59 @@ async function runReconstruction(keyframes, ui) {
     if (solved.posed.length < 8) throw new Error(t('tooFew'));
     ui.set('pose', 1, `f = ${solved.f.toFixed(0)} px · ${solved.posed.length} views`);
 
-    const worker = new Worker(new URL('./recon.worker.js', import.meta.url), { type: 'module' });
     const t0 = performance.now();
-    const result = await new Promise((resolve, reject) => {
-        worker.onmessage = (e) => {
-            const m = e.data;
-            if (m.type === 'progress') ui.set(m.stage === 'done' ? 'color' : m.stage, m.p, `${((performance.now() - t0) / 1000).toFixed(1)} s`);
-            else if (m.type === 'done') resolve(m);
-            else reject(new Error(m.message));
-        };
-        worker.onerror = (e) => reject(new Error(e.message || 'Worker failed'));
-        worker.postMessage({
-            frames: solved.posed.map(k => k.blob),
-            poses: solved.posed.map(k => ({ R: k.R, t: k.t })),
-            f: solved.f, fullWidth: solved.width, fullHeight: solved.height,
-            opts: { voxel: PROFILE.voxel, maskSide: PROFILE.maskSide, colorSide: PROFILE.colorSide },
+    const job = {
+        frames: solved.posed.map(k => k.blob),
+        poses: solved.posed.map(k => ({ R: k.R, t: k.t })),
+        f: solved.f, fullWidth: solved.width, fullHeight: solved.height,
+        opts: { voxel: PROFILE.voxel, maskSide: PROFILE.maskSide, colorSide: PROFILE.colorSide },
+    };
+    const onProgress = (stage, p) => ui.set(stage === 'done' ? 'color' : stage, p, `${((performance.now() - t0) / 1000).toFixed(1)} s`);
+    let result;
+    if (typeof OffscreenCanvas !== 'undefined') {
+        result = await reconstructInWorker(job, onProgress).catch((e) => {
+            // e.g. iOS < 16.4 has no 2D OffscreenCanvas inside workers
+            if (/OffscreenCanvas|getContext|not supported|undefined is not/i.test(e.message)) return null;
+            throw e;
         });
-    }).finally(() => worker.terminate());
+    }
+    if (!result) result = await reconstructOnMainThread(job, onProgress);
 
     const { buildMesh } = await lazyExport();
     const mesh = buildMesh({ positions: result.positions, indices: result.indices, colors: result.colors, name: 'Kivu 3D Scan' });
     const secs = ((performance.now() - t0) / 1000).toFixed(1);
     viewerScreen({ mesh, name: 'Scan ' + new Date().toLocaleString(), kind: 'scan', note: `${solved.posed.length} views · ${secs} s` });
+}
+
+function reconstructInWorker(job, onProgress) {
+    const worker = new Worker(new URL('./recon.worker.js', import.meta.url), { type: 'module' });
+    return new Promise((resolve, reject) => {
+        worker.onmessage = (e) => {
+            const m = e.data;
+            if (m.type === 'progress') onProgress(m.stage, m.p);
+            else if (m.type === 'done') resolve(m);
+            else reject(new Error(m.message));
+        };
+        worker.onerror = (e) => reject(new Error(e.message || 'Worker failed'));
+        worker.postMessage(job);
+    }).finally(() => worker.terminate());
+}
+
+async function reconstructOnMainThread(job, onProgress) {
+    const { reconstructStreaming } = await import('./reconstruct.js');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const getFrame = async (i, side) => {
+        const bmp = await createImageBitmap(job.frames[i]);
+        const s = Math.min(1, side / Math.max(bmp.width, bmp.height));
+        canvas.width = Math.round(bmp.width * s); canvas.height = Math.round(bmp.height * s);
+        ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+        bmp.close && bmp.close();
+        await new Promise(r => setTimeout(r, 0)); // let the progress bar paint
+        return { rgba: ctx.getImageData(0, 0, canvas.width, canvas.height).data, width: canvas.width, height: canvas.height };
+    };
+    return reconstructStreaming({ count: job.frames.length, getFrame, poses: job.poses, f: job.f, fullWidth: job.fullWidth, fullHeight: job.fullHeight },
+        { ...job.opts, onProgress });
 }
 
 // ---------------------------------------------------------------------
@@ -432,7 +463,9 @@ async function photoTo3D(file) {
             const r = reliefMesh(photo, ai, params);
             return buildMesh({ positions: r.positions, indices: r.indices, uvs: r.uvs, texture: r.texture, name: 'Kivu Photo 3D' });
         };
-        viewerScreen({ mesh: build(), name: 'Photo 3D ' + new Date().toLocaleString(), kind: 'photo', note: t('depthNote'), rebuild: { params, build } });
+        const note = ai.depth ? t('depthNote') : t('noDepth');
+        viewerScreen({ mesh: build(), name: 'Photo 3D ' + new Date().toLocaleString(), kind: 'photo', note, rebuild: { params, build } });
+        if (ai.warning) console.warn(ai.warning);
     } catch (e) {
         ui.error(e.message + (/fetch|network|Failed to/i.test(e.message) ? ' — internet is needed for the first download.' : ''));
     }

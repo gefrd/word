@@ -153,3 +153,19 @@ window.recordWalkaround = async ({ seconds = 30, fps = 12, w = 720, h = 1280, f 
   let s = ''; for (let i = 0; i < buf.length; i += 8192) s += String.fromCharCode(...buf.subarray(i, i + 8192));
   return btoa(s);
 };
+
+// Frames for Chromium's fake camera (MJPEG): a slow hand-held walk-around.
+window.renderCameraFrames = (n = 450, w = 1280, h = 720, f = 1000) => {
+  renderer.setSize(w, h);
+  camera.aspect = w / h; camera.fov = 2 * Math.atan(h / 2 / f) * 180 / Math.PI; camera.updateProjectionMatrix();
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const u = i / n, loop = Math.min(2, Math.floor(u * 3));
+    const el = [22, 42, 64][loop] * Math.PI / 180, az = u * 3 * Math.PI * 2 + 0.4, d = 440;
+    camera.position.set(d * Math.cos(el) * Math.cos(az), d * Math.cos(el) * Math.sin(az), d * Math.sin(el));
+    camera.lookAt(0, 0, 35);
+    renderer.render(scene, camera);
+    out.push(renderer.domElement.toDataURL('image/jpeg', 0.85).split(',')[1]);
+  }
+  return out;
+};
