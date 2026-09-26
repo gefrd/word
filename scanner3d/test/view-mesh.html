@@ -1,0 +1,26 @@
+<!doctype html><html><body style="margin:0;background:#222"><script type="module">
+import * as THREE from 'three';
+const W = 900, H = 600;
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(W, H); document.body.appendChild(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x2b2f36);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2.0));
+const cam = new THREE.PerspectiveCamera(35, W / H, 1, 5000); cam.up.set(0, 0, 1);
+window.show = async (url, az, el) => {
+  const m = await (await fetch(url)).json();
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(m.positions, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(m.colors, 3));
+  g.setIndex(m.indices); g.computeVertexNormals();
+  const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }));
+  scene.add(mesh); g.computeBoundingSphere();
+  const c = g.boundingSphere.center, d = g.boundingSphere.radius * 3;
+  const shots = [];
+  for (const [a, e] of [[30, 30], [150, 25], [260, 45], [0, 80]]) {
+    const ar = a * Math.PI / 180, er = e * Math.PI / 180;
+    cam.position.set(c.x + d * Math.cos(er) * Math.cos(ar), c.y + d * Math.cos(er) * Math.sin(ar), c.z + d * Math.sin(er)); cam.lookAt(c);
+    r.render(scene, cam); shots.push(r.domElement.toDataURL('image/jpeg', 0.85));
+  }
+  return shots;
+};
+window.ready = true;
+</script></body></html>

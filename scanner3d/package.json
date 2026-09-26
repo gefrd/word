@@ -1,0 +1,18 @@
+{
+  "name": "kivu-3d-scan",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "On-device 3D scanner demo: marker-sheet 360° scan and single-photo depth-to-3D",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview --host"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.21"
+  }
+}
