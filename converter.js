@@ -4,6 +4,7 @@
 
 import { encodeMp3 } from './mp3-encoder.js';
 import { readDocx, docxBlocksToMarkdown } from './docx-reader.js';
+import { getDeviceProfile } from './device-profile.js';
 
 const STORAGE_INDEX_KEY = 'kivu_docs_index';
 const STORAGE_PREFIX = 'kivu_doc_';
@@ -405,7 +406,7 @@ export async function convertPdf(file, format = 'jpg', options = {}) {
             const ctx = canvas.getContext('2d');
             const renderPage = async (n) => {
                 const page = await pdf.getPage(n);
-                const viewport = page.getViewport({ scale: 1.5 });
+                const viewport = page.getViewport({ scale: getDeviceProfile().pdfRenderScale });
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
                 if (targetMime === 'image/jpeg') {

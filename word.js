@@ -49,6 +49,7 @@ import Link from '@tiptap/extension-link';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import FontFamily from '@tiptap/extension-font-family';
+import { getDeviceProfile } from './device-profile.js';
 
 /* ============================================================
  * Small helpers
@@ -266,9 +267,9 @@ let eventsBound = false;
 const SAVE_DEBOUNCE_MS = 700;
 let saveContentTimer = null;
 let storageFullWarned = false;
-// Inserted photos are downscaled so a single camera shot (3–6 MB) does not
-// exhaust the ~5 MB localStorage quota shared by all Kivu documents.
-const IMAGE_MAX_DIM = 1600;
+// Inserted photos are downscaled (to getDeviceProfile().imageMaxDim) so a
+// single camera shot (3–6 MB) does not exhaust the ~5 MB localStorage quota
+// shared by all Kivu documents.
 const IMAGE_JPEG_QUALITY = 0.8;
 
 // Text color & selection state tracking
@@ -1591,7 +1592,7 @@ async function downscaleImageFile(file) {
             el.src = url;
         });
         const w = img.naturalWidth, h = img.naturalHeight;
-        const scale = Math.min(1, IMAGE_MAX_DIM / Math.max(w, h));
+        const scale = Math.min(1, getDeviceProfile().imageMaxDim / Math.max(w, h));
         if (scale === 1 && file.size < 300 * 1024) return readFileAsDataUrl(file);
         const canvas = document.createElement('canvas');
         canvas.width = Math.max(1, Math.round(w * scale));

@@ -2,12 +2,13 @@
 // Kivu Super App — Background Removal & Photo Editor Tool
 // Features: AI Neural Cutout (@imgly/background-removal) + Manual Tools (Brush, Eraser, Lasso, Wand, Box)
 
+import { getDeviceProfile } from './device-profile.js';
+
 // ═══════════════════════════════════════════════════════════════
 //  CONSTANTS
 // ═══════════════════════════════════════════════════════════════
 const MAX_DIM = 1200;
 const THUMB_DIM = 320;
-const MAX_UNDO = 20;
 
 // ═══════════════════════════════════════════════════════════════
 //  MODULE STATE
@@ -739,26 +740,46 @@ function doRender() {
 // ═══════════════════════════════════════════════════════════════
 //  UNDO / REDO
 // ═══════════════════════════════════════════════════════════════
+// The mask is always white; only its alpha matters. Snapshots keep just the
+// alpha channel (1 byte/pixel instead of 4) and the history depth follows the
+// device tier, so a 1200×1200 edit history stays ~7 MB on a 2 GB phone
+// instead of ~115 MB.
+function captureMaskAlpha() {
+    const px = maskCtx.getImageData(0, 0, W, H).data;
+    const alpha = new Uint8ClampedArray(W * H);
+    for (let i = 0, j = 3; i < alpha.length; i++, j += 4) alpha[i] = px[j];
+    return alpha;
+}
+
+function restoreMaskAlpha(alpha) {
+    const img = maskCtx.createImageData(W, H);
+    const px = img.data;
+    for (let i = 0, j = 0; i < alpha.length; i++, j += 4) {
+        px[j] = 255; px[j + 1] = 255; px[j + 2] = 255; px[j + 3] = alpha[i];
+    }
+    maskCtx.putImageData(img, 0, 0);
+}
+
 function saveUndoSnap() {
     if (!maskCtx) return;
-    undoStack.push(maskCtx.getImageData(0, 0, W, H));
-    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    undoStack.push(captureMaskAlpha());
+    if (undoStack.length > getDeviceProfile().undoLimit) undoStack.shift();
     redoStack = [];
     updateUndoRedoBtns();
 }
 
 function doUndo() {
     if (!undoStack.length || !maskCtx) return;
-    redoStack.push(maskCtx.getImageData(0, 0, W, H));
-    maskCtx.putImageData(undoStack.pop(), 0, 0);
+    redoStack.push(captureMaskAlpha());
+    restoreMaskAlpha(undoStack.pop());
     updateUndoRedoBtns();
     scheduleRender();
 }
 
 function doRedo() {
     if (!redoStack.length || !maskCtx) return;
-    undoStack.push(maskCtx.getImageData(0, 0, W, H));
-    maskCtx.putImageData(redoStack.pop(), 0, 0);
+    undoStack.push(captureMaskAlpha());
+    restoreMaskAlpha(redoStack.pop());
     updateUndoRedoBtns();
     scheduleRender();
 }
@@ -773,11 +794,28 @@ function updateUndoRedoBtns() {
 // ═══════════════════════════════════════════════════════════════
 //  AI NEURAL BACKGROUND REMOVAL
 // ═══════════════════════════════════════════════════════════════
+const AI_READY_KEY = 'kivu_bgrem_ai_ready';
+
+// The AI engine (~24 MB WebAssembly) and model (~40 MB) download once, then
+// come from the browser cache. Ask first so nobody burns a data bundle by
+// accident; after one successful run we don't ask again.
+function confirmFirstAIDownload() {
+    let ready = false;
+    try { ready = localStorage.getItem(AI_READY_KEY) === '1'; } catch (_) {}
+    if (ready) return true;
+    const { dataSaver } = getDeviceProfile();
+    const msg = 'AI Cutout needs a one-time download of about 50–65 MB.' +
+        (dataSaver ? '\n\nData Saver is on — Wi-Fi is recommended.' : '') +
+        '\n\nDownload now? (Manual tools work without it.)';
+    return window.confirm(msg);
+}
+
 async function runAI() {
     if (!imgCanvas || isAIBusy) return;
+    if (!confirmFirstAIDownload()) return;
     isAIBusy = true;
 
-    showLoading('Loading AI model...', 'First download requires internet (~18MB)');
+    showLoading('Loading AI model...', 'First use downloads ~50–65 MB, then works offline');
     saveUndoSnap();
 
     try {
@@ -833,6 +871,7 @@ async function runAI() {
             await applyAIResult(resultBlob);
         }
 
+        try { localStorage.setItem(AI_READY_KEY, '1'); } catch (_) {}
         if (window.showToast) window.showToast('Background removed!', false);
 
     } catch (err) {
