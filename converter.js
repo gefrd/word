@@ -3,6 +3,7 @@
 // 100% Client-side, Low-RAM Optimized, Zero Server Dependency
 
 import { encodeMp3 } from './mp3-encoder.js';
+import { readDocx, docxBlocksToMarkdown } from './docx-reader.js';
 
 const STORAGE_INDEX_KEY = 'kivu_docs_index';
 const STORAGE_PREFIX = 'kivu_doc_';
@@ -491,53 +492,6 @@ export async function convertPdf(file, format = 'jpg', options = {}) {
 // 3. DOCUMENT CONVERSION PIPELINE (TXT/MD/DOCX/HTML)
 // ==========================================
 
-// --- DOCX text extraction (JSZip + DOMParser, no extra dependency) ---
-const W_NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
-
-async function extractDocxParagraphs(file) {
-    const JSZipMod = await getJSZip();
-    if (!JSZipMod) throw new Error('DOCX engine could not be loaded');
-    let zip;
-    try {
-        zip = await JSZipMod.loadAsync(await readFileAsArrayBuffer(file));
-    } catch (e) {
-        throw new Error('This file is not a valid .docx document');
-    }
-    const entry = zip.file('word/document.xml');
-    if (!entry) throw new Error('This file is not a valid .docx document');
-    const xml = new DOMParser().parseFromString(await entry.async('string'), 'application/xml');
-    const paragraphs = [];
-    const pNodes = xml.getElementsByTagNameNS(W_NS, 'p');
-    for (let i = 0; i < pNodes.length; i++) {
-        const p = pNodes[i];
-        const styleEl = p.getElementsByTagNameNS(W_NS, 'pStyle')[0];
-        const style = styleEl ? (styleEl.getAttributeNS(W_NS, 'val') || styleEl.getAttribute('w:val') || '') : '';
-        let text = '';
-        const all = p.getElementsByTagName('*');
-        for (let j = 0; j < all.length; j++) {
-            const el = all[j];
-            if (el.namespaceURI !== W_NS) continue;
-            if (el.localName === 't') text += el.textContent;
-            else if (el.localName === 'tab') text += '\t';
-            else if (el.localName === 'br' || el.localName === 'cr') text += '\n';
-        }
-        const m = style.match(/heading\s*(\d)/i);
-        const level = /^title$/i.test(style) ? 1 : (m ? Math.min(3, Number(m[1])) : 0);
-        const bullet = p.getElementsByTagNameNS(W_NS, 'numPr').length > 0 || /list/i.test(style);
-        paragraphs.push({ text, level, bullet });
-    }
-    return paragraphs;
-}
-
-function docxParagraphsToMarkdown(paragraphs) {
-    return paragraphs.map(({ text, level, bullet }) => {
-        if (!text.trim()) return '';
-        if (level) return '#'.repeat(level) + ' ' + text;
-        if (bullet) return '- ' + text;
-        return text;
-    }).join('\n\n').replace(/\n{3,}/g, '\n\n');
-}
-
 // --- Text to PDF ---
 // Markdown-ish text -> [{ text, style: 'h1'|'h2'|'h3'|'p'|'li'|'gap' }]
 function markdownToBlocks(md) {
@@ -751,7 +705,7 @@ export async function convertDocument(file, format = 'pdf', options = {}) {
 
     if (isDocx || isMd || isHtml || isText || typeof file === 'string') {
         // DOCX is converted to Markdown so it flows through the same text pipeline.
-        const rawContent = isDocx ? docxParagraphsToMarkdown(await extractDocxParagraphs(file)) : await readFileAsText(file);
+        const rawContent = isDocx ? docxBlocksToMarkdown(await readDocx(await readFileAsArrayBuffer(file))) : await readFileAsText(file);
 
         // Markdown <-> HTML
         if (fmt === 'html' || fmt === 'htm') {

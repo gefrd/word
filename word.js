@@ -1721,6 +1721,7 @@ async function handleImportFile(e) {
 
     toast('Importing ' + name + '...');
     try {
+        if (saveContentTimer) flushContentSave();
         currentDocId = 'doc_' + Date.now();
         $('word-doc-title').value = baseTitle || 'Imported Document';
 
@@ -1733,10 +1734,16 @@ async function handleImportFile(e) {
         } else if (ext === 'docx') {
             const arrayBuffer = await file.arrayBuffer();
             const mammoth = await loadMammoth();
-            if (!mammoth) { toast('DOCX import needs the "mammoth" package installed.', true); return; }
-            const result = await mammoth.convertToHtml({ arrayBuffer });
+            let html;
+            if (mammoth) {
+                html = (await mammoth.convertToHtml({ arrayBuffer })).value || '';
+            } else {
+                // Built-in reader: text, headings, bold/italic, lists, tables
+                const { readDocx, docxBlocksToHtml } = await import('./docx-reader.js');
+                html = docxBlocksToHtml(await readDocx(arrayBuffer));
+            }
             initTiptap();
-            wordEditor.commands.setContent(result.value || '');
+            wordEditor.commands.setContent(html);
         } else if (ext === 'html' || ext === 'htm') {
             const html = await file.text();
             const body = extractBodyHtml(html);
