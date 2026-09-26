@@ -1,0 +1,1014 @@
+// src/modules/tools/scanner.js
+// High-Performance Offline-First Document Scanner for Kivu Super App
+// Optimized for low-end Android (Tecno, Infinix, Samsung A-series) and Emerging Markets
+
+let currentDocId = null;
+let mediaStream = null;
+let videoTrack = null;
+let isTorchOn = false;
+
+// In-Memory Image Cache & State
+let cachedImageElement = null;     // Reusable Image instance to prevent GC thrashing
+let rawCapturedImageData = null;   // Compressed Base64 source
+let currentCanvasData = null;      // Displayed / filtered data
+let activeFilter = 'original';     // 'original' | 'magic' | 'bw' | 'grayscale'
+let cropPoints = [];               // Corner handles [{x, y}, {x, y}, {x, y}, {x, y}]
+let activeHandleIndex = -1;
+let isDragging = false;
+let rafId = null;
+
+const SCANNER_STORAGE_KEY_PREFIX = 'kivu_doc_';
+const SCANNER_DOCS_INDEX = 'kivu_docs_index';
+const MAX_DIMENSION = 1600;        // Max dimension (px) to prevent OOM on 2GB RAM devices
+const JPEG_QUALITY = 0.78;         // Optimal size/quality ratio for mobile storage & WhatsApp
+
+// --- Storage Utilities ---
+function getDocsIndex() {
+    try {
+        const idx = localStorage.getItem(SCANNER_DOCS_INDEX);
+        return idx ? JSON.parse(idx) : [];
+    } catch (e) {
+        console.error('[Scanner] Failed to parse docs index:', e);
+        return [];
+    }
+}
+
+function saveDocsIndex(index) {
+    try {
+        localStorage.setItem(SCANNER_DOCS_INDEX, JSON.stringify(index));
+    } catch (e) {
+        if (e.name === 'QuotaExceededError' || e.code === 22 || e.number === -2147024882) {
+            console.warn('[Scanner] Storage quota exceeded while saving index:', e);
+            if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+                window.showToast('Storage quota exceeded!', true);
+            }
+        }
+    }
+}
+
+function saveDocumentPayload(payload = {}) {
+    if (!currentDocId) return;
+    const titleEl = typeof document !== 'undefined' ? document.getElementById('scanner-doc-title') : null;
+    const title = titleEl?.value || 'Scanned Document';
+
+    // We do NOT store heavy pdfData strings in localStorage to avoid 5MB quota crashes
+    const storageData = {
+        id: currentDocId,
+        title: title,
+        type: 'scanner',
+        updatedAt: Date.now(),
+        imageData: payload.imageData !== undefined ? payload.imageData : currentCanvasData,
+        filter: activeFilter,
+        cropPoints: cropPoints,
+        ...payload
+    };
+
+    try {
+        localStorage.setItem(SCANNER_STORAGE_KEY_PREFIX + currentDocId, JSON.stringify(storageData));
+    } catch (e) {
+        if (e.name === 'QuotaExceededError' || e.code === 22 || e.number === -2147024882) {
+            console.warn('[Scanner] Quota exceeded on doc save. Cleaning old scans...', e);
+            if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+                window.showToast('Storage full. Older files might need cleanup.', true);
+            }
+        }
+    }
+
+    let idx = getDocsIndex();
+    const existingIdx = idx.findIndex(d => d.id === currentDocId);
+    if (existingIdx !== -1) {
+        idx[existingIdx].title = title;
+        idx[existingIdx].updatedAt = Date.now();
+    } else {
+        idx.push({
+            id: currentDocId,
+            title: title,
+            type: 'scanner',
+            updatedAt: Date.now()
+        });
+    }
+    saveDocsIndex(idx);
+
+    if (typeof window !== 'undefined' && typeof window.renderMyDocuments === 'function') {
+        window.renderMyDocuments();
+    }
+}
+
+// --- Scanner Modal HTML Template ---
+const scannerModalHtml = `
+<div id="scanner-modal" class="hidden fixed inset-0 bg-black text-white z-[60] flex flex-col overflow-hidden transition-transform duration-300 transform translate-y-full select-none font-sans">
+    <!-- Header -->
+    <div class="h-14 flex-shrink-0 flex items-center justify-between px-3 bg-gray-900/95 backdrop-blur-md border-b border-gray-800 z-20 gap-2">
+        <div class="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
+            <button id="close-scanner-btn" class="w-9 h-9 flex items-center justify-center text-gray-300 active:scale-90 rounded-full hover:bg-gray-800 transition flex-shrink-0" title="Back">
+                <i class="fas fa-arrow-left text-base"></i>
+            </button>
+            <div class="min-w-0 flex-1 overflow-hidden flex flex-col justify-center">
+                <input type="text" id="scanner-doc-title" value="Scanned Document" class="text-sm font-bold text-white bg-transparent border-none focus:outline-none p-0 w-full truncate leading-tight cursor-pointer" />
+                <span id="scanner-save-status" class="text-[10px] text-emerald-400 font-medium whitespace-nowrap leading-tight mt-0.5">● Ready</span>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-shrink-0">
+            <!-- Share Button (Universal Share) -->
+            <button id="scanner-share-btn" title="Share Document" style="height:34px;padding:0 12px;font-size:12px;font-weight:700;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#059669;color:#fff;border:none;cursor:pointer;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+                <i class="fas fa-share-nodes" style="font-size:12px;"></i>
+                <span>Share</span>
+            </button>
+            <button id="scanner-export-pdf-btn" title="Download PDF" style="height:34px;padding:0 12px;font-size:12px;font-weight:700;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:6px;background:#7c3aed;color:#fff;border:none;cursor:pointer;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.2);">
+                <i class="fas fa-file-pdf" style="font-size:12px;"></i>
+                <span>PDF</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Scanner Main Viewport -->
+    <div id="scanner-viewport" class="flex-1 relative flex items-center justify-center bg-gray-950 overflow-hidden min-h-0">
+        <!-- Live Video View -->
+        <div id="scanner-camera-view" class="w-full h-full flex flex-col items-center justify-center relative">
+            <video id="scanner-video" autoplay playsinline muted class="w-full h-full object-cover"></video>
+            
+            <!-- Target Document Frame -->
+            <div class="absolute inset-6 md:inset-12 border-2 border-dashed border-purple-400/70 rounded-2xl pointer-events-none flex flex-col items-center justify-between p-4 shadow-[0_0_50px_rgba(0,0,0,0.5)_inset]">
+                <span class="text-[11px] text-purple-100 bg-black/60 px-3 py-1 rounded-full backdrop-blur-md border border-white/10 shadow">
+                    Align document inside frame
+                </span>
+                <span class="text-[10px] text-gray-300/80 bg-black/40 px-2 py-0.5 rounded">Keep steady & well-lit</span>
+            </div>
+
+            <!-- Torch / Flash Toggle Button -->
+            <button id="scanner-torch-btn" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-black/60 border border-white/20 text-yellow-300 flex items-center justify-center active:scale-90 transition backdrop-blur-md z-10" title="Toggle Torch">
+                <i class="fas fa-bolt text-base"></i>
+            </button>
+
+            <!-- Bottom Shutter Bar -->
+            <div class="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-8 z-10 px-6">
+                <!-- Gallery Picker -->
+                <label class="w-12 h-12 rounded-full bg-gray-800/90 border border-gray-600 flex items-center justify-center text-white cursor-pointer active:scale-90 transition shadow-lg" title="Open Gallery">
+                    <i class="fas fa-images text-base"></i>
+                    <input type="file" id="scanner-file-input" accept="image/*" class="hidden" />
+                </label>
+
+                <!-- Big Shutter Button -->
+                <button id="scanner-shutter-btn" class="w-18 h-18 sm:w-20 sm:h-20 rounded-full bg-white/20 p-1 flex items-center justify-center active:scale-90 transition shadow-2xl border-2 border-white/60" title="Capture">
+                    <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-white flex items-center justify-center shadow-inner">
+                        <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-purple-600"></div>
+                    </div>
+                </button>
+
+                <!-- Spacer to balance layout -->
+                <div class="w-12 h-12"></div>
+            </div>
+        </div>
+
+        <!-- Camera Fallback Error View -->
+        <div id="scanner-camera-error" class="hidden flex-col items-center justify-center p-6 text-center z-10">
+            <div class="w-16 h-16 rounded-full bg-red-900/40 border border-red-500/30 flex items-center justify-center text-red-400 text-2xl mb-3">
+                <i class="fas fa-camera-slash"></i>
+            </div>
+            <h3 class="text-base font-bold mb-1 text-white">Camera Offline or Blocked</h3>
+            <p class="text-xs text-gray-400 max-w-xs mb-5">Please allow camera permissions or upload an existing photo from your phone storage.</p>
+            <label class="bg-purple-600 text-white px-5 py-2.5 rounded-xl font-semibold text-sm flex items-center gap-2 cursor-pointer active:scale-95 transition shadow-lg">
+                <i class="fas fa-folder-open"></i> Choose from Gallery
+                <input type="file" id="scanner-fallback-file-input" accept="image/*" class="hidden" />
+            </label>
+        </div>
+
+        <!-- Crop & Editor Canvas View -->
+        <div id="scanner-editor-view" class="hidden w-full h-full flex flex-col items-center justify-center relative p-2">
+            <canvas id="scanner-crop-canvas" class="max-w-full max-h-full object-contain shadow-2xl rounded-lg touch-none"></canvas>
+        </div>
+    </div>
+
+    <!-- Bottom Toolbar (Tools & Filters) -->
+    <div id="scanner-toolbar" class="hidden flex-shrink-0 bg-gray-900/95 backdrop-blur-md border-t border-gray-800 flex items-center justify-between px-3 py-2.5 z-20 gap-2" style="padding-bottom: max(12px, env(safe-area-inset-bottom));">
+        <!-- Retake / Back to Camera -->
+        <button id="scanner-retake-btn" class="flex flex-col items-center justify-center text-gray-400 active:text-white hover:text-gray-200 transition px-2 py-1 text-[10px] gap-1 flex-shrink-0 rounded-xl" title="Retake Photo">
+            <i class="fas fa-camera-rotate text-base"></i>
+            <span class="font-medium leading-none">Retake</span>
+        </button>
+
+        <!-- Filters Carousel -->
+        <div class="flex-1 flex items-center justify-center gap-1 bg-gray-800/90 p-1 rounded-xl border border-gray-700/80 overflow-x-auto min-w-0 no-scrollbar">
+            <button class="filter-btn active px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-purple-600 text-white transition whitespace-nowrap flex-shrink-0" data-filter="original">Original</button>
+            <button class="filter-btn px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-gray-300 hover:text-white transition whitespace-nowrap flex-shrink-0" data-filter="magic">Magic Doc</button>
+            <button class="filter-btn px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-gray-300 hover:text-white transition whitespace-nowrap flex-shrink-0" data-filter="bw">B&W</button>
+            <button class="filter-btn px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-gray-300 hover:text-white transition whitespace-nowrap flex-shrink-0" data-filter="grayscale">Gray</button>
+        </div>
+
+        <!-- Action Tools: Rotate & Crop -->
+        <div class="flex items-center gap-1.5 flex-shrink-0">
+            <button id="scanner-rotate-btn" title="Rotate 90°" class="flex flex-col items-center justify-center text-gray-300 active:text-purple-400 hover:text-white transition px-2 py-1 text-[10px] gap-1 rounded-xl">
+                <i class="fas fa-rotate-right text-base"></i>
+                <span class="font-medium leading-none">Rotate</span>
+            </button>
+            <button id="scanner-crop-btn" title="Apply Crop" class="flex flex-col items-center justify-center text-purple-400 active:text-purple-300 hover:text-purple-200 transition px-2 py-1 text-[10px] gap-1 font-bold rounded-xl">
+                <i class="fas fa-crop-simple text-base"></i>
+                <span class="font-bold leading-none">Crop</span>
+            </button>
+        </div>
+    </div>
+</div>
+`;
+
+// --- State Reset ---
+function resetScannerState() {
+    rawCapturedImageData = null;
+    currentCanvasData = null;
+    cachedImageElement = null;
+    activeFilter = 'original';
+    cropPoints = [];
+    activeHandleIndex = -1;
+    isDragging = false;
+    isTorchOn = false;
+    if (rafId && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+    }
+}
+
+// --- Initialization ---
+export async function init(docId = null) {
+    if (typeof document !== 'undefined' && !document.getElementById('scanner-modal')) {
+        document.body.insertAdjacentHTML('beforeend', scannerModalHtml);
+        bindScannerEvents();
+    }
+
+    resetScannerState();
+    currentDocId = docId;
+    const modal = typeof document !== 'undefined' ? document.getElementById('scanner-modal') : null;
+
+    if (!currentDocId) {
+        currentDocId = 'scan_' + Date.now();
+        if (typeof document !== 'undefined' && document.getElementById('scanner-doc-title')) {
+            document.getElementById('scanner-doc-title').value = 'Scanned Document';
+        }
+        showCameraView();
+        await startCameraStream();
+        saveDocumentPayload({});
+    } else {
+        const stored = localStorage.getItem(SCANNER_STORAGE_KEY_PREFIX + currentDocId);
+        if (stored) {
+            try {
+                const payload = JSON.parse(stored);
+                if (typeof document !== 'undefined' && document.getElementById('scanner-doc-title')) {
+                    document.getElementById('scanner-doc-title').value = payload.title || 'Scanned Document';
+                }
+                if (payload.imageData) {
+                    rawCapturedImageData = payload.imageData;
+                    currentCanvasData = payload.imageData;
+                    activeFilter = payload.filter || 'original';
+                    if (payload.cropPoints && payload.cropPoints.length === 4) {
+                        cropPoints = payload.cropPoints;
+                    }
+                    showEditorView();
+                    loadCanvasImage(payload.imageData);
+                } else {
+                    showCameraView();
+                    await startCameraStream();
+                }
+            } catch (err) {
+                console.error('[Scanner] Corrupted document payload fallback:', err);
+                showCameraView();
+                await startCameraStream();
+            }
+        } else {
+            showCameraView();
+            await startCameraStream();
+        }
+    }
+
+    if (modal) {
+        modal.classList.remove('hidden');
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => modal.classList.remove('translate-y-full'));
+        } else {
+            setTimeout(() => modal.classList.remove('translate-y-full'), 10);
+        }
+    }
+}
+
+// --- Camera Stream Lifecycle with Torch Support ---
+async function startCameraStream() {
+    stopCameraStream();
+    const errorBanner = typeof document !== 'undefined' ? document.getElementById('scanner-camera-error') : null;
+    const cameraView = typeof document !== 'undefined' ? document.getElementById('scanner-camera-view') : null;
+    const torchBtn = typeof document !== 'undefined' ? document.getElementById('scanner-torch-btn') : null;
+
+    try {
+        if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            throw new Error('MediaDevices API not supported');
+        }
+
+        // Request back camera with HD constraints optimal for document text OCR/readability
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { ideal: 'environment' }
+            },
+            audio: false
+        });
+
+        const video = typeof document !== 'undefined' ? document.getElementById('scanner-video') : null;
+        if (video) {
+            video.srcObject = mediaStream;
+            if (typeof video.play === 'function') {
+                try {
+                    await video.play();
+                } catch (e) {
+                    console.log('[Scanner] Video play call handled:', e);
+                }
+            }
+        }
+
+        // Check torch capability
+        videoTrack = mediaStream.getVideoTracks ? mediaStream.getVideoTracks()[0] : null;
+        if (torchBtn) {
+            const capabilities = (videoTrack && typeof videoTrack.getCapabilities === 'function') ? videoTrack.getCapabilities() : {};
+            if (capabilities.torch) {
+                torchBtn.classList.remove('hidden');
+            } else {
+                torchBtn.classList.add('opacity-40');
+            }
+        }
+
+        if (errorBanner) {
+            errorBanner.classList.add('hidden');
+            errorBanner.classList.remove('flex');
+        }
+        if (cameraView) cameraView.classList.remove('hidden');
+
+    } catch (err) {
+        console.error('[Scanner] Camera access failed:', err);
+        if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+            window.showToast('Camera access denied or unavailable', true);
+        }
+        if (cameraView) cameraView.classList.add('hidden');
+        if (errorBanner) {
+            errorBanner.classList.remove('hidden');
+            errorBanner.classList.add('flex');
+        }
+    }
+}
+
+async function toggleTorch() {
+    if (!videoTrack) return;
+    try {
+        const capabilities = typeof videoTrack.getCapabilities === 'function' ? videoTrack.getCapabilities() : {};
+        if (!capabilities.torch) {
+            if (typeof window !== 'undefined' && window.showToast) window.showToast('Flashlight not supported on this device', false);
+            return;
+        }
+        isTorchOn = !isTorchOn;
+        if (typeof videoTrack.applyConstraints === 'function') {
+            await videoTrack.applyConstraints({
+                advanced: [{ torch: isTorchOn }]
+            });
+        }
+        const torchBtn = document.getElementById('scanner-torch-btn');
+        if (torchBtn) {
+            torchBtn.classList.toggle('text-yellow-400', isTorchOn);
+            torchBtn.classList.toggle('bg-yellow-500/20', isTorchOn);
+        }
+    } catch (e) {
+        console.warn('[Scanner] Torch toggle error:', e);
+    }
+}
+
+function stopCameraStream() {
+    if (mediaStream) {
+        if (typeof mediaStream.getTracks === 'function') {
+            mediaStream.getTracks().forEach(track => {
+                try {
+                    if (typeof track.stop === 'function') track.stop();
+                } catch (_) {}
+            });
+        }
+        mediaStream = null;
+        videoTrack = null;
+    }
+    const video = typeof document !== 'undefined' ? document.getElementById('scanner-video') : null;
+    if (video) video.srcObject = null;
+}
+
+// --- View Switching ---
+function showCameraView() {
+    if (typeof document === 'undefined') return;
+    document.getElementById('scanner-camera-view')?.classList.remove('hidden');
+    document.getElementById('scanner-editor-view')?.classList.add('hidden');
+    document.getElementById('scanner-toolbar')?.classList.add('hidden');
+    document.getElementById('scanner-toolbar')?.classList.remove('flex');
+    const status = document.getElementById('scanner-save-status');
+    if (status) status.textContent = '● Camera Active';
+}
+
+function showEditorView() {
+    stopCameraStream();
+    if (typeof document === 'undefined') return;
+    document.getElementById('scanner-camera-view')?.classList.add('hidden');
+    document.getElementById('scanner-camera-error')?.classList.add('hidden');
+    document.getElementById('scanner-editor-view')?.classList.remove('hidden');
+    document.getElementById('scanner-toolbar')?.classList.remove('hidden');
+    document.getElementById('scanner-toolbar')?.classList.add('flex');
+    const status = document.getElementById('scanner-save-status');
+    if (status) status.textContent = '● Ready';
+}
+
+// --- Downscaling Helper to protect memory ---
+function getScaledDimensions(srcWidth, srcHeight, maxDim = MAX_DIMENSION) {
+    if (srcWidth <= maxDim && srcHeight <= maxDim) {
+        return { width: srcWidth, height: srcHeight };
+    }
+    const ratio = Math.min(maxDim / srcWidth, maxDim / srcHeight);
+    return {
+        width: Math.round(srcWidth * ratio),
+        height: Math.round(srcHeight * ratio)
+    };
+}
+
+// --- Photo Capture ---
+export async function capturePhoto() {
+    const video = typeof document !== 'undefined' ? document.getElementById('scanner-video') : null;
+    const canvas = typeof document !== 'undefined' ? document.getElementById('scanner-crop-canvas') : null;
+    if (!canvas) return null;
+
+    const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+    const rawW = (video && video.videoWidth) ? video.videoWidth : 1280;
+    const rawH = (video && video.videoHeight) ? video.videoHeight : 720;
+    
+    // Scale down to budget-friendly resolution
+    const { width, height } = getScaledDimensions(rawW, rawH, MAX_DIMENSION);
+    canvas.width = width;
+    canvas.height = height;
+
+    if (ctx) {
+        if (video && video.srcObject && typeof ctx.drawImage === 'function') {
+            try {
+                ctx.drawImage(video, 0, 0, width, height);
+            } catch (e) {
+                console.warn('[Scanner] ctx.drawImage fallback:', e);
+            }
+        } else if (typeof ctx.fillRect === 'function') {
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillRect(0, 0, width, height);
+            if (typeof ctx.fillText === 'function') {
+                ctx.fillStyle = '#0f172a';
+                ctx.font = '24px sans-serif';
+                ctx.fillText('Scanned Document Frame', 30, height / 2);
+            }
+        }
+    }
+
+    if (typeof canvas.toDataURL === 'function') {
+        rawCapturedImageData = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+    } else {
+        rawCapturedImageData = 'data:image/jpeg;base64,mockCapturedImage';
+    }
+    currentCanvasData = rawCapturedImageData;
+
+    // Cache Image Element for fast rendering during drag
+    createImageCache(rawCapturedImageData);
+
+    // Initial Crop Handles: 5% inset
+    cropPoints = [
+        { x: width * 0.05, y: height * 0.05 },
+        { x: width * 0.95, y: height * 0.05 },
+        { x: width * 0.95, y: height * 0.95 },
+        { x: width * 0.05, y: height * 0.95 }
+    ];
+
+    showEditorView();
+    redrawCanvas();
+    saveDocumentPayload({ imageData: currentCanvasData });
+
+    return rawCapturedImageData;
+}
+
+// --- Reusable Image Cache ---
+function createImageCache(dataUrl) {
+    if (typeof Image === 'undefined') return;
+    cachedImageElement = new Image();
+    cachedImageElement.onload = () => {
+        redrawCanvas();
+    };
+    cachedImageElement.src = dataUrl;
+}
+
+// --- Canvas Loading & Rendering ---
+function loadCanvasImage(dataUrl) {
+    const setupCanvas = (w, h) => {
+        const canvas = typeof document !== 'undefined' ? document.getElementById('scanner-crop-canvas') : null;
+        if (!canvas) return;
+        const scaled = getScaledDimensions(w, h, MAX_DIMENSION);
+        canvas.width = scaled.width;
+        canvas.height = scaled.height;
+
+        if (!cropPoints || cropPoints.length !== 4) {
+            cropPoints = [
+                { x: canvas.width * 0.05, y: canvas.height * 0.05 },
+                { x: canvas.width * 0.95, y: canvas.height * 0.05 },
+                { x: canvas.width * 0.95, y: canvas.height * 0.95 },
+                { x: canvas.width * 0.05, y: canvas.height * 0.95 }
+            ];
+        }
+
+        redrawCanvas();
+    };
+
+    if (typeof Image !== 'undefined') {
+        createImageCache(dataUrl);
+        cachedImageElement.onload = () => {
+            setupCanvas(cachedImageElement.naturalWidth || 800, cachedImageElement.naturalHeight || 600);
+        };
+    } else {
+        setupCanvas(800, 600);
+    }
+}
+
+function redrawCanvas() {
+    const canvas = typeof document !== 'undefined' ? document.getElementById('scanner-crop-canvas') : null;
+    if (!canvas) return Promise.resolve();
+    const ctx = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+    if (!ctx) return Promise.resolve();
+
+    const width = canvas.width || 800;
+    const height = canvas.height || 600;
+
+    return new Promise((resolve) => {
+        // Draw cached image without creating new Image() allocations
+        if (cachedImageElement && cachedImageElement.complete && typeof ctx.drawImage === 'function') {
+            try {
+                ctx.drawImage(cachedImageElement, 0, 0, width, height);
+            } catch (_) {}
+        }
+
+        // Apply filters if needed
+        if (activeFilter !== 'original' && typeof ctx.getImageData === 'function' && typeof ctx.putImageData === 'function') {
+            try {
+                const imgData = ctx.getImageData(0, 0, width, height);
+                if (imgData && imgData.data) {
+                    applyPixelFilter(imgData, activeFilter);
+                    ctx.putImageData(imgData, 0, 0);
+                }
+            } catch (e) {
+                console.warn('[Scanner] Pixel filter render error:', e);
+            }
+        }
+
+        // Draw Interactive Crop Overlay
+        drawCropOverlay(ctx, width, height);
+        resolve();
+    });
+}
+
+function drawCropOverlay(ctx, width, height) {
+    if (!cropPoints || cropPoints.length < 4) return;
+    if (typeof ctx.save !== 'function') return;
+
+    const canvasEl = ctx.canvas;
+    const rect = canvasEl && typeof canvasEl.getBoundingClientRect === 'function'
+        ? canvasEl.getBoundingClientRect()
+        : { width: width, height: height };
+    
+    const displayScale = width / (rect.width || width || 1);
+    const outerRadius = 14 * Math.max(1, displayScale);
+    const innerRadius = 6 * Math.max(1, displayScale);
+    const lineWidth = 3 * Math.max(1, displayScale);
+
+    ctx.save();
+    if (typeof ctx.beginPath === 'function') {
+        ctx.strokeStyle = '#8B5CF6'; // Purple primary
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        ctx.moveTo(cropPoints[0].x, cropPoints[0].y);
+        ctx.lineTo(cropPoints[1].x, cropPoints[1].y);
+        ctx.lineTo(cropPoints[2].x, cropPoints[2].y);
+        ctx.lineTo(cropPoints[3].x, cropPoints[3].y);
+        if (typeof ctx.closePath === 'function') ctx.closePath();
+        if (typeof ctx.stroke === 'function') ctx.stroke();
+
+        // Corner Handles
+        cropPoints.forEach((p) => {
+            if (typeof ctx.arc === 'function') {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, outerRadius, 0, 2 * Math.PI);
+                ctx.fillStyle = '#FFFFFF';
+                if (typeof ctx.fill === 'function') ctx.fill();
+                ctx.strokeStyle = '#7C3AED';
+                ctx.lineWidth = lineWidth;
+                if (typeof ctx.stroke === 'function') ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, innerRadius, 0, 2 * Math.PI);
+                ctx.fillStyle = '#7C3AED';
+                if (typeof ctx.fill === 'function') ctx.fill();
+            }
+        });
+    }
+    if (typeof ctx.restore === 'function') ctx.restore();
+}
+
+// --- Image Filters (Pixel Manipulation) ---
+export async function applyFilter(filterType = 'bw') {
+    activeFilter = filterType;
+    const canvas = typeof document !== 'undefined' ? document.getElementById('scanner-crop-canvas') : null;
+    if (!canvas) return null;
+
+    await redrawCanvas();
+
+    if (typeof document !== 'undefined') {
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            const isActive = btn.dataset?.filter === filterType;
+            if (btn.classList) {
+                btn.classList.toggle('bg-purple-600', isActive);
+                btn.classList.toggle('text-white', isActive);
+                btn.classList.toggle('text-gray-300', !isActive);
+            }
+        });
+    }
+
+    if (typeof canvas.toDataURL === 'function') {
+        currentCanvasData = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+    } else {
+        currentCanvasData = 'data:image/jpeg;base64,mockFilteredData';
+    }
+
+    saveDocumentPayload({ imageData: currentCanvasData, filter: activeFilter });
+    return currentCanvasData;
+}
+
+function applyPixelFilter(imgData, type) {
+    if (!imgData || !imgData.data) return;
+    const data = imgData.data;
+    const len = data.length;
+
+    if (type === 'magic') {
+        // "Magic Doc": Contrast boost + Background Whitening for receipts/paper
+        for (let i = 0; i < len; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            
+            // Normalize & stretch dynamic range
+            lum = (lum - 60) * 1.5;
+            lum = Math.max(0, Math.min(255, lum));
+
+            // Whiten grey paper backgrounds while sharpening dark text
+            const factor = lum > 140 ? 1.3 : 0.7;
+            data[i] = Math.min(255, r * factor);
+            data[i + 1] = Math.min(255, g * factor);
+            data[i + 2] = Math.min(255, b * factor);
+        }
+    } else if (type === 'bw') {
+        const threshold = 135;
+        for (let i = 0; i < len; i += 4) {
+            const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            const v = lum >= threshold ? 255 : 0;
+            data[i] = v;
+            data[i + 1] = v;
+            data[i + 2] = v;
+        }
+    } else if (type === 'grayscale') {
+        for (let i = 0; i < len; i += 4) {
+            const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            data[i] = lum;
+            data[i + 1] = lum;
+            data[i + 2] = lum;
+        }
+    }
+}
+
+// --- Rotate 90° ---
+export async function rotateImage() {
+    const canvas = typeof document !== 'undefined' ? document.getElementById('scanner-crop-canvas') : null;
+    if (!canvas || !cachedImageElement) return;
+
+    if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.height;
+        tempCanvas.height = canvas.width;
+        const tempCtx = tempCanvas.getContext('2d');
+
+        if (tempCtx) {
+            tempCtx.translate(tempCanvas.width / 2, tempCanvas.height / 2);
+            tempCtx.rotate((90 * Math.PI) / 180);
+            tempCtx.drawImage(cachedImageElement, -canvas.width / 2, -canvas.height / 2);
+        }
+
+        rawCapturedImageData = tempCanvas.toDataURL('image/jpeg', JPEG_QUALITY);
+        currentCanvasData = rawCapturedImageData;
+
+        canvas.width = tempCanvas.width;
+        canvas.height = tempCanvas.height;
+
+        // Reset crop points for rotated canvas
+        cropPoints = [
+            { x: canvas.width * 0.05, y: canvas.height * 0.05 },
+            { x: canvas.width * 0.95, y: canvas.height * 0.05 },
+            { x: canvas.width * 0.95, y: canvas.height * 0.95 },
+            { x: canvas.width * 0.05, y: canvas.height * 0.95 }
+        ];
+
+        createImageCache(rawCapturedImageData);
+        await applyFilter(activeFilter);
+    }
+}
+
+// --- Crop ---
+async function applyCrop() {
+    const canvas = typeof document !== 'undefined' ? document.getElementById('scanner-crop-canvas') : null;
+    if (!canvas || cropPoints.length !== 4) return;
+
+    const minX = Math.max(0, Math.min(...cropPoints.map(p => p.x)));
+    const maxX = Math.min(canvas.width, Math.max(...cropPoints.map(p => p.x)));
+    const minY = Math.max(0, Math.min(...cropPoints.map(p => p.y)));
+    const maxY = Math.min(canvas.height, Math.max(...cropPoints.map(p => p.y)));
+
+    const cropWidth = maxX - minX;
+    const cropHeight = maxY - minY;
+
+    if (cropWidth <= 20 || cropHeight <= 20) return;
+
+    if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = cropWidth;
+        tempCanvas.height = cropHeight;
+        const tempCtx = tempCanvas.getContext('2d');
+
+        if (tempCtx && typeof tempCtx.drawImage === 'function') {
+            tempCtx.drawImage(canvas, minX, minY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+        }
+
+        if (typeof tempCanvas.toDataURL === 'function') {
+            rawCapturedImageData = tempCanvas.toDataURL('image/jpeg', JPEG_QUALITY);
+        }
+    }
+
+    canvas.width = cropWidth;
+    canvas.height = cropHeight;
+
+    cropPoints = [
+        { x: cropWidth * 0.05, y: cropHeight * 0.05 },
+        { x: cropWidth * 0.95, y: cropHeight * 0.05 },
+        { x: cropWidth * 0.95, y: cropHeight * 0.95 },
+        { x: cropWidth * 0.05, y: cropHeight * 0.95 }
+    ];
+
+    createImageCache(rawCapturedImageData);
+    await applyFilter(activeFilter);
+}
+
+// --- 1-Tap Share (WhatsApp & System Share) ---
+export async function shareDocument() {
+    const titleEl = typeof document !== 'undefined' ? document.getElementById('scanner-doc-title') : null;
+    const title = titleEl?.value || 'Scanned Document';
+
+    if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+        window.showToast('Preparing document for sharing...', false);
+    }
+
+    const canvas = typeof document !== 'undefined' ? document.getElementById('scanner-crop-canvas') : null;
+    if (!canvas) return;
+
+    try {
+        if (canvas.toBlob && typeof navigator !== 'undefined' && typeof navigator.canShare === 'function') {
+            canvas.toBlob(async (blob) => {
+                if (!blob) {
+                    exportPDF();
+                    return;
+                }
+                const file = new File([blob], `${title.replace(/\s+/g, '_')}.jpg`, { type: 'image/jpeg' });
+                if (navigator.canShare({ files: [file] })) {
+                    await navigator.share({
+                        title: title,
+                        text: `${title} - Scanned with Kivu`,
+                        files: [file]
+                    });
+                } else {
+                    exportPDF();
+                }
+            }, 'image/jpeg', JPEG_QUALITY);
+        } else {
+            // Fallback to direct PDF download
+            exportPDF();
+        }
+    } catch (e) {
+        if (e.name !== 'AbortError') {
+            console.warn('[Scanner] Share fallback to PDF export:', e);
+            exportPDF();
+        }
+    }
+}
+
+// --- PDF Export ---
+export async function exportPDF() {
+    if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+        window.showToast('Generating compact PDF...', false);
+    }
+
+    const canvas = typeof document !== 'undefined' ? document.getElementById('scanner-crop-canvas') : null;
+    let dataUrl = null;
+    if (canvas && typeof canvas.toDataURL === 'function') {
+        dataUrl = canvas.toDataURL('image/jpeg', JPEG_QUALITY);
+    }
+    if (!dataUrl) {
+        dataUrl = rawCapturedImageData || 'data:image/jpeg;base64,mockPdfImage';
+    }
+
+    const titleEl = typeof document !== 'undefined' ? document.getElementById('scanner-doc-title') : null;
+    const title = titleEl?.value || 'Scanned Document';
+
+    try {
+        let html2pdfModule;
+        if (typeof window !== 'undefined' && typeof window.html2pdf === 'function') {
+            html2pdfModule = window.html2pdf;
+        } else if (typeof globalThis !== 'undefined' && typeof globalThis.html2pdf === 'function') {
+            html2pdfModule = globalThis.html2pdf;
+        } else {
+            const imported = await import('html2pdf.js');
+            html2pdfModule = imported.default || imported;
+        }
+
+        let pdfContainer = null;
+        if (typeof document !== 'undefined' && typeof document.createElement === 'function') {
+            pdfContainer = document.createElement('div');
+            pdfContainer.style.padding = '0';
+            pdfContainer.style.margin = '0';
+            pdfContainer.style.backgroundColor = '#ffffff';
+            pdfContainer.innerHTML = `<img src="${dataUrl}" style="width: 100%; height: auto; display: block;" />`;
+        }
+
+        const opt = {
+            margin: 0,
+            filename: `${title}.pdf`,
+            image: { type: 'jpeg', quality: 0.90 },
+            html2canvas: { scale: 1.5, useCORS: true, logging: false },
+            jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
+
+        const pdfWorker = html2pdfModule().set(opt).from(pdfContainer);
+        let pdfDataUri = 'data:application/pdf;base64,';
+
+        if (typeof pdfWorker.outputPdf === 'function') {
+            pdfDataUri = await pdfWorker.outputPdf('datauristring');
+        } else if (typeof pdfWorker.save === 'function') {
+            const result = await pdfWorker.save();
+            if (result && typeof result === 'string') pdfDataUri = result;
+        }
+
+        if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+            window.showToast('PDF ready!', false);
+        }
+
+        return pdfDataUri;
+
+    } catch (e) {
+        console.error('[Scanner] PDF Export Error:', e);
+        if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+            window.showToast('Error exporting PDF', true);
+        }
+        return null;
+    }
+}
+
+// --- Event Binding ---
+function bindScannerEvents() {
+    if (typeof document === 'undefined') return;
+
+    document.getElementById('close-scanner-btn')?.addEventListener('click', closeScannerEditor);
+    document.getElementById('scanner-torch-btn')?.addEventListener('click', toggleTorch);
+    document.getElementById('scanner-rotate-btn')?.addEventListener('click', rotateImage);
+    document.getElementById('scanner-share-btn')?.addEventListener('click', shareDocument);
+    document.getElementById('scanner-crop-btn')?.addEventListener('click', applyCrop);
+    document.getElementById('scanner-export-pdf-btn')?.addEventListener('click', exportPDF);
+    document.getElementById('scanner-shutter-btn')?.addEventListener('click', capturePhoto);
+
+    document.getElementById('scanner-doc-title')?.addEventListener('change', () => {
+        saveDocumentPayload({});
+    });
+
+    document.getElementById('scanner-retake-btn')?.addEventListener('click', () => {
+        resetScannerState();
+        showCameraView();
+        startCameraStream();
+    });
+
+    // File Input Loaders
+    const handleFileSelect = (e) => {
+        const file = e.target.files?.[0];
+        if (file && typeof FileReader !== 'undefined') {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                rawCapturedImageData = event.target.result;
+                currentCanvasData = rawCapturedImageData;
+                showEditorView();
+                loadCanvasImage(rawCapturedImageData);
+                saveDocumentPayload({ imageData: rawCapturedImageData });
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    document.getElementById('scanner-file-input')?.addEventListener('change', handleFileSelect);
+    document.getElementById('scanner-fallback-file-input')?.addEventListener('change', handleFileSelect);
+
+    // Filter Buttons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const filterType = btn.dataset?.filter;
+            applyFilter(filterType);
+        });
+    });
+
+    // High-Performance Touch / Mouse Drag Handling via requestAnimationFrame
+    const canvas = document.getElementById('scanner-crop-canvas');
+    if (canvas) {
+        const HANDLE_HIT_RADIUS_SCREEN_PX = 32; // Comfortable touch target for mobile fingers
+
+        const getCanvasCoords = (e) => {
+            const rect = typeof canvas.getBoundingClientRect === 'function'
+                ? canvas.getBoundingClientRect()
+                : { left: 0, top: 0, width: canvas.width, height: canvas.height };
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const scaleX = canvas.width / (rect.width || canvas.width || 1);
+            const scaleY = canvas.height / (rect.height || canvas.height || 1);
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY,
+                scale: (scaleX + scaleY) / 2
+            };
+        };
+
+        const onStart = (e) => {
+            const coords = getCanvasCoords(e);
+            const hitRadius = HANDLE_HIT_RADIUS_SCREEN_PX * (coords.scale || 1);
+            let closestDist = Infinity;
+            let targetIdx = -1;
+
+            cropPoints.forEach((p, idx) => {
+                const dist = Math.hypot(coords.x - p.x, coords.y - p.y);
+                if (dist < hitRadius && dist < closestDist) {
+                    closestDist = dist;
+                    targetIdx = idx;
+                }
+            });
+
+            if (targetIdx !== -1) {
+                activeHandleIndex = targetIdx;
+                isDragging = true;
+                if (typeof e.preventDefault === 'function') e.preventDefault();
+            }
+        };
+
+        const onMove = (e) => {
+            if (!isDragging || activeHandleIndex === -1) return;
+            const coords = getCanvasCoords(e);
+            cropPoints[activeHandleIndex].x = Math.max(0, Math.min(canvas.width, coords.x));
+            cropPoints[activeHandleIndex].y = Math.max(0, Math.min(canvas.height, coords.y));
+
+            // Throttle redraws to display refresh rate
+            if (!rafId && typeof requestAnimationFrame === 'function') {
+                rafId = requestAnimationFrame(() => {
+                    redrawCanvas();
+                    rafId = null;
+                });
+            } else if (!rafId) {
+                redrawCanvas();
+            }
+            if (typeof e.preventDefault === 'function') e.preventDefault();
+        };
+
+        const onEnd = () => {
+            if (isDragging) {
+                isDragging = false;
+                activeHandleIndex = -1;
+                saveDocumentPayload({ cropPoints: cropPoints });
+            }
+        };
+
+        if (typeof canvas.addEventListener === 'function') {
+            canvas.addEventListener('mousedown', onStart);
+            canvas.addEventListener('mousemove', onMove);
+            canvas.addEventListener('mouseup', onEnd);
+
+            canvas.addEventListener('touchstart', onStart, { passive: false });
+            canvas.addEventListener('touchmove', onMove, { passive: false });
+            canvas.addEventListener('touchend', onEnd);
+        }
+    }
+}
+
+function closeScannerEditor() {
+    stopCameraStream();
+    const modal = typeof document !== 'undefined' ? document.getElementById('scanner-modal') : null;
+    if (modal) {
+        modal.classList.add('translate-y-full');
+        setTimeout(() => {
+            modal.classList.add('hidden');
+            if (typeof window !== 'undefined' && typeof window.renderMyDocuments === 'function') {
+                window.renderMyDocuments();
+            }
+        }, 300);
+    }
+}
