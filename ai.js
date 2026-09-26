@@ -3,19 +3,39 @@
 // + Code AI (IDE) with CodeMirror 6
 // Modernized UI — v2
 
-import { EditorView, basicSetup } from 'codemirror';
-import { EditorState, Compartment } from '@codemirror/state';
-import { keymap } from '@codemirror/view';
-import { indentWithTab } from '@codemirror/commands';
-import { oneDark } from '@codemirror/theme-one-dark';
-import { javascript } from '@codemirror/lang-javascript';
-import { python } from '@codemirror/lang-python';
-import { html } from '@codemirror/lang-html';
-import { css } from '@codemirror/lang-css';
-import { php } from '@codemirror/lang-php';
-import { cpp } from '@codemirror/lang-cpp';
-import { java } from '@codemirror/lang-java';
-import { sql } from '@codemirror/lang-sql';
+// CodeMirror (~300 KB gzip with all languages) is loaded on demand when the
+// Code tab is first opened, so chat users on slow/expensive mobile data never
+// download it. Each language grammar is fetched separately when selected.
+let cm = null;
+let cmLoading = null;
+function loadCodeMirror() {
+    if (cm) return Promise.resolve(cm);
+    if (!cmLoading) {
+        cmLoading = Promise.all([
+            import('codemirror'),
+            import('@codemirror/state'),
+            import('@codemirror/view'),
+            import('@codemirror/commands'),
+            import('@codemirror/theme-one-dark'),
+        ]).then(([core, state, view, commands, theme]) => {
+            cm = {
+                EditorView: core.EditorView,
+                basicSetup: core.basicSetup,
+                EditorState: state.EditorState,
+                keymap: view.keymap,
+                indentWithTab: commands.indentWithTab,
+                oneDark: theme.oneDark,
+            };
+            languageCompartment = new state.Compartment();
+            languageCompartmentResult = new state.Compartment();
+            return cm;
+        }).catch((err) => {
+            cmLoading = null; // allow retry once the connection is back
+            throw err;
+        });
+    }
+    return cmLoading;
+}
 
 const AI_STORAGE_KEY = 'kivu_doc_';
 const AI_DOCS_INDEX = 'kivu_docs_index';
@@ -33,18 +53,19 @@ let codeResultView = null;
 let activeTab = 'chat';
 let isProMode = false;
 
-const languageCompartment = new Compartment();
-const languageCompartmentResult = new Compartment();
+let languageCompartment = null;
+let languageCompartmentResult = null;
+let codeEditorLoading = null;
 
 const CODE_LANGUAGES = {
-    javascript: { name: 'JavaScript', ext: 'js',   lang: javascript },
-    python:     { name: 'Python',     ext: 'py',   lang: python },
-    html:       { name: 'HTML',       ext: 'html', lang: html },
-    css:        { name: 'CSS',        ext: 'css',  lang: css },
-    php:        { name: 'PHP',        ext: 'php',  lang: php },
-    cpp:        { name: 'C/C++',      ext: 'cpp',  lang: cpp },
-    java:       { name: 'Java',       ext: 'java', lang: java },
-    sql:        { name: 'SQL',        ext: 'sql',  lang: sql },
+    javascript: { name: 'JavaScript', ext: 'js',   lang: () => import('@codemirror/lang-javascript').then(m => m.javascript()) },
+    python:     { name: 'Python',     ext: 'py',   lang: () => import('@codemirror/lang-python').then(m => m.python()) },
+    html:       { name: 'HTML',       ext: 'html', lang: () => import('@codemirror/lang-html').then(m => m.html()) },
+    css:        { name: 'CSS',        ext: 'css',  lang: () => import('@codemirror/lang-css').then(m => m.css()) },
+    php:        { name: 'PHP',        ext: 'php',  lang: () => import('@codemirror/lang-php').then(m => m.php()) },
+    cpp:        { name: 'C/C++',      ext: 'cpp',  lang: () => import('@codemirror/lang-cpp').then(m => m.cpp()) },
+    java:       { name: 'Java',       ext: 'java', lang: () => import('@codemirror/lang-java').then(m => m.java()) },
+    sql:        { name: 'SQL',        ext: 'sql',  lang: () => import('@codemirror/lang-sql').then(m => m.sql()) },
 };
 
 // ============================================================
@@ -440,12 +461,14 @@ async function handleImageGeneration() {
 // CodeMirror helpers
 // ============================================================
 
-function createCodeEditor(parentEl, initialCode = '', langKey = 'javascript', readOnly = false, compartment = languageCompartment) {
+async function createCodeEditor(parentEl, initialCode = '', langKey = 'javascript', readOnly = false, result = false) {
+    const { EditorView, EditorState, basicSetup, oneDark, keymap, indentWithTab } = await loadCodeMirror();
+    const compartment = result ? languageCompartmentResult : languageCompartment;
     const langConfig = CODE_LANGUAGES[langKey] || CODE_LANGUAGES.javascript;
     const extensions = [
         basicSetup,
         oneDark,
-        compartment.of(langConfig.lang()),
+        compartment.of(await langConfig.lang()),
         keymap.of([indentWithTab]),
         EditorView.lineWrapping,
         EditorView.theme({
@@ -477,11 +500,13 @@ function createCodeEditor(parentEl, initialCode = '', langKey = 'javascript', re
     return new EditorView({ state, parent: parentEl });
 }
 
-function switchLanguage(view, langKey, compartment) {
+async function switchLanguage(view, langKey) {
     if (!view) return;
     const langConfig = CODE_LANGUAGES[langKey] || CODE_LANGUAGES.javascript;
+    const support = await langConfig.lang();
+    if (view !== codeEditorView) return; // editor was closed while loading
     view.dispatch({
-        effects: compartment.reconfigure(langConfig.lang())
+        effects: languageCompartment.reconfigure(support)
     });
 }
 
@@ -915,8 +940,8 @@ async function handleCodeAction(action) {
             
             const resultLang = (action === 'convert' && targetLang) ? targetLang : currentLangKey;
             
-            if (codeResultView) codeResultView.destroy();
-            codeResultView = createCodeEditor(resultEditorEl, resultCode, resultLang, true, languageCompartmentResult);
+            if (codeResultView) { codeResultView.destroy(); codeResultView = null; }
+            codeResultView = await createCodeEditor(resultEditorEl, resultCode, resultLang, true, true);
             
             resultActions.style.display = 'flex';
         }
@@ -1003,6 +1028,7 @@ export async function init(docId = null) {
     // Cleanup any previous CodeMirror instances
     if (codeEditorView) { codeEditorView.destroy(); codeEditorView = null; }
     if (codeResultView) { codeResultView.destroy(); codeResultView = null; }
+    codeEditorLoading = null;
 
     let usageCount = 0;
     const modalHtml = `
@@ -1235,7 +1261,7 @@ export async function init(docId = null) {
             </div>
         </div>
         
-        <style>
+        <style id="ai-editor-style">
             /* ============================================ */
             /* Kivu AI — Modern Dark Theme v2              */
             /* ============================================ */
@@ -2059,6 +2085,7 @@ export async function init(docId = null) {
         </style>
     `;
 
+    document.getElementById('ai-editor-style')?.remove();
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     containerEl = document.getElementById('ai-editor-modal');
 
@@ -2088,6 +2115,7 @@ export async function init(docId = null) {
         isProMode = false;
 
         containerEl.remove();
+        document.getElementById('ai-editor-style')?.remove();
         if (window.renderMyDocuments) window.renderMyDocuments();
     });
 
@@ -2152,9 +2180,20 @@ export async function init(docId = null) {
             containerEl.querySelector('#panel-code').style.display = tabName === 'code' ? 'flex' : 'none';
             
             // Initialize CodeMirror on first open
-            if (tabName === 'code' && !codeEditorView) {
+            if (tabName === 'code' && !codeEditorView && !codeEditorLoading) {
                 const mountEl = containerEl.querySelector('#code-editor-mount');
-                codeEditorView = createCodeEditor(mountEl, '// Write your code here...\n', 'javascript', false, languageCompartment);
+                const langKey = containerEl.querySelector('#code-lang-select')?.value || 'javascript';
+                codeEditorLoading = createCodeEditor(mountEl, '// Write your code here...\n', langKey, false)
+                    .then((view) => {
+                        // The tool may have been closed while CodeMirror was downloading.
+                        if (!mountEl.isConnected) { view.destroy(); return; }
+                        codeEditorView = view;
+                    })
+                    .catch((err) => {
+                        console.error('Code editor load failed:', err);
+                        if (window.showToast) window.showToast('Could not load the code editor. Check your connection and try again.', true);
+                    })
+                    .finally(() => { codeEditorLoading = null; });
             }
             
             // Update code credits display
@@ -2171,7 +2210,7 @@ export async function init(docId = null) {
     containerEl.querySelector('#code-lang-select')?.addEventListener('change', (e) => {
         const langKey = e.target.value;
         if (codeEditorView) {
-            switchLanguage(codeEditorView, langKey, languageCompartment);
+            switchLanguage(codeEditorView, langKey).catch(err => console.warn('Language load failed:', err));
         }
         // Update status bar
         const statusLang = containerEl.querySelector('#ide-status-lang');
@@ -2274,15 +2313,9 @@ export async function init(docId = null) {
         const leftPanel = splitView?.querySelector('.kv-ide-panel-left');
         const rightPanel = splitView?.querySelector('.kv-ide-panel-right');
 
-        resizer.addEventListener('mousedown', (e) => {
-            isResizing = true;
-            resizer.classList.add('kv-dragging');
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-            e.preventDefault();
-        });
-
-        document.addEventListener('mousemove', (e) => {
+        // Pointer events cover touch and mouse; move/up listeners live only for
+        // the duration of a drag so reopening the tool never stacks handlers.
+        const onMove = (e) => {
             if (!isResizing || !splitView || !leftPanel || !rightPanel) return;
             const rect = splitView.getBoundingClientRect();
             const percent = ((e.clientX - rect.left) / rect.width) * 100;
@@ -2290,15 +2323,26 @@ export async function init(docId = null) {
             leftPanel.style.flex = 'none';
             leftPanel.style.width = clamped + '%';
             rightPanel.style.flex = '1';
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (isResizing) {
-                isResizing = false;
-                resizer.classList.remove('kv-dragging');
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-            }
+        };
+        const onUp = () => {
+            isResizing = false;
+            resizer.classList.remove('kv-dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onUp);
+        };
+        resizer.style.touchAction = 'none';
+        resizer.addEventListener('pointerdown', (e) => {
+            isResizing = true;
+            resizer.classList.add('kv-dragging');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            e.preventDefault();
+            document.addEventListener('pointermove', onMove);
+            document.addEventListener('pointerup', onUp);
+            document.addEventListener('pointercancel', onUp);
         });
     }
 

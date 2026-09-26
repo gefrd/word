@@ -261,7 +261,15 @@ let currentPaperSize = 'A4';
 let docMargins = { ...DEFAULT_MARGINS };
 let isLandscape = false;
 let eventsBound = false;
-let saveStatusTimer = null;
+// Debounced persistence: serialising the whole document to localStorage on
+// every keystroke freezes low-end phones once a document holds images.
+const SAVE_DEBOUNCE_MS = 700;
+let saveContentTimer = null;
+let storageFullWarned = false;
+// Inserted photos are downscaled so a single camera shot (3–6 MB) does not
+// exhaust the ~5 MB localStorage quota shared by all Kivu documents.
+const IMAGE_MAX_DIM = 1600;
+const IMAGE_JPEG_QUALITY = 0.8;
 
 // Text color & selection state tracking
 let lastEditorSelection = null;
@@ -444,10 +452,31 @@ function saveDocData(id, partial) {
     const existing = getDocData(id) || {};
     try {
         localStorage.setItem(WORD_STORAGE_KEY_PREFIX + id, JSON.stringify({ ...existing, ...partial }));
+        storageFullWarned = false;
     } catch (e) {
         console.warn('[Word] Storage quota exceeded:', e);
-        toast('Storage full — document may not save. Try exporting to DOCX.', true);
+        if (!storageFullWarned) {
+            storageFullWarned = true;
+            toast('Storage full — document may not save. Try exporting to DOCX.', true);
+        }
     }
+}
+function scheduleContentSave() {
+    clearTimeout(saveContentTimer);
+    saveContentTimer = setTimeout(flushContentSave, SAVE_DEBOUNCE_MS);
+}
+function flushContentSave() {
+    clearTimeout(saveContentTimer);
+    saveContentTimer = null;
+    if (!wordEditor || !currentDocId) return;
+    saveDocData(currentDocId, { content: wordEditor.getJSON() });
+    const titleEl = $('word-doc-title');
+    saveDocToIndex(titleEl ? titleEl.value : 'Untitled Document');
+    const el = $('word-save-status');
+    if (el) el.textContent = 'Saved locally';
+}
+function flushOnHide() {
+    if (document.visibilityState === 'hidden' && saveContentTimer) flushContentSave();
 }
 function saveCurrentLayout() {
     if (!currentDocId) return;
@@ -947,6 +976,7 @@ export function openWordEditor(docId = null) {
         bindWordEvents();
     }
 
+    if (saveContentTimer) flushContentSave();
     currentDocId = docId;
     const titleEl = $('word-doc-title');
     if (!currentDocId) {
@@ -965,6 +995,9 @@ export function openWordEditor(docId = null) {
 
     initTiptap();
     applyPageGeometry();
+    window.addEventListener('resize', applyPageGeometry);
+    window.addEventListener('pagehide', flushContentSave);
+    document.addEventListener('visibilitychange', flushOnHide);
 }
 
 function closeWordEditor() {
@@ -972,9 +1005,12 @@ function closeWordEditor() {
     if (!modal) return;
     // Save title immediately before closing (in case user edited without blur)
     const titleEl = $('word-doc-title');
+    if (saveContentTimer) flushContentSave();
     if (titleEl && currentDocId) saveDocToIndex(titleEl.value);
     modal.classList.add('translate-y-full');
     window.removeEventListener('resize', applyPageGeometry);
+    window.removeEventListener('pagehide', flushContentSave);
+    document.removeEventListener('visibilitychange', flushOnHide);
     setTimeout(() => {
         modal.classList.add('hidden');
         if (wordEditor) { wordEditor.destroy(); wordEditor = null; }
@@ -1031,22 +1067,12 @@ function initTiptap() {
             extensions: buildExtensions(),
             content: savedContent || '',
             autofocus: false,
-            onUpdate: ({ editor }) => {
-                saveDocData(currentDocId, { content: editor.getJSON() });
-                const titleEl = $('word-doc-title');
-                saveDocToIndex(titleEl ? titleEl.value : 'Untitled Document');
+            onUpdate: () => {
+                scheduleContentSave();
                 flashSaveStatus();
             },
-            onSelectionUpdate: ({ editor }) => {
-                if (editor?.state?.selection) {
-                    lastEditorSelection = {
-                        from: editor.state.selection.from,
-                        to: editor.state.selection.to,
-                        empty: editor.state.selection.empty
-                    };
-                }
-                refreshToolbarState(editor);
-            },
+            // Selection changes also emit a transaction, so toolbar state is
+            // refreshed once in onTransaction rather than twice per keystroke.
             onTransaction: ({ editor }) => {
                 if (editor?.state?.selection) {
                     lastEditorSelection = {
@@ -1067,8 +1093,6 @@ function flashSaveStatus() {
     const el = $('word-save-status');
     if (!el) return;
     el.textContent = 'Saving...';
-    clearTimeout(saveStatusTimer);
-    saveStatusTimer = setTimeout(() => { el.textContent = 'Saved locally'; }, 400);
 }
 
 function refreshToolbarState(editor) {
@@ -1527,7 +1551,6 @@ function bindWordEvents() {
     });
 
     bindFindReplace();
-    window.addEventListener('resize', applyPageGeometry);
 }
 
 function insertImage() {
@@ -1537,11 +1560,55 @@ function insertImage() {
     input.onchange = () => {
         const file = input.files && input.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => chain()?.setImage({ src: reader.result }).run();
-        reader.readAsDataURL(file);
+        downscaleImageFile(file)
+            .then((src) => chain()?.setImage({ src }).run())
+            .catch((err) => {
+                console.warn('[Word] Image insert failed:', err);
+                toast('Could not insert this image.', true);
+            });
     };
     input.click();
+}
+
+function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+    });
+}
+
+async function downscaleImageFile(file) {
+    // Vector and animated formats would lose content when rasterised.
+    if (/svg|gif/i.test(file.type)) return readFileAsDataUrl(file);
+    const url = URL.createObjectURL(file);
+    try {
+        const img = await new Promise((resolve, reject) => {
+            const el = new window.Image();
+            el.onload = () => resolve(el);
+            el.onerror = () => reject(new Error('decode failed'));
+            el.src = url;
+        });
+        const w = img.naturalWidth, h = img.naturalHeight;
+        const scale = Math.min(1, IMAGE_MAX_DIM / Math.max(w, h));
+        if (scale === 1 && file.size < 300 * 1024) return readFileAsDataUrl(file);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+        const ctx = canvas.getContext('2d');
+        const keepAlpha = /png|webp/i.test(file.type);
+        if (!keepAlpha) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        let out = keepAlpha ? canvas.toDataURL('image/webp', IMAGE_JPEG_QUALITY) : '';
+        if (!out.startsWith('data:image/webp')) out = canvas.toDataURL(keepAlpha ? 'image/png' : 'image/jpeg', IMAGE_JPEG_QUALITY);
+        canvas.width = canvas.height = 0; // release bitmap memory early on low-RAM devices
+        return out;
+    } catch (e) {
+        return readFileAsDataUrl(file);
+    } finally {
+        URL.revokeObjectURL(url);
+    }
 }
 
 /* ============================================================

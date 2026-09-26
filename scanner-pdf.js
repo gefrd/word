@@ -219,7 +219,7 @@ async function layoutIdCard(pdfDoc, pages, options) {
 
 export function safeFileName(title, extension) {
     const base = String(title || 'scan')
-        .replace(/[\\/:*?"<>| -]/g, '')
+        .replace(/[\\/:*?"<>|\x00-\x1f]/g, '')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 60) || 'scan';
