@@ -1,13 +1,15 @@
 // Kivu online games server (Cloudflare Worker + Durable Objects).
 //
-//   POST /rooms              { rules }  → { room }   create a private room (4-digit code)
-//   POST /quick                         → { room }   quick match (bot after 15 s)
+//   POST /rooms  { game, rules, players } → { room }   private room (4-digit code)
+//   POST /quick  { game }                 → { room }   quick match (bots after 15 s)
+//                game: "igisoro" (default) or "ludo"
 //   GET  /rooms/:room/ws?token=…        WebSocket into a room
 //   GET  /health
 //
 // Everything that matters happens inside GameRoom (src/room.js).
 
 import { randomCode } from './util.js';
+import { GAMES } from './games.js';
 
 export { GameRoom } from './room.js';
 export { Matchmaker } from './matchmaker.js';
@@ -37,15 +39,19 @@ function roomStub(env, room) {
 
 async function createPrivateRoom(request, env) {
     let rules = {};
+    let game = 'igisoro';
+    let options = {};
     try {
         const body = await request.json();
-        if (body && typeof body.rules === 'object') rules = body.rules;
-    } catch (e) { /* no body: default rules */ }
+        if (body && typeof body.rules === 'object' && body.rules) rules = body.rules;
+        if (body && GAMES[body.game]) game = body.game;
+        if (body && Number.isInteger(body.players)) options = { players: body.players };
+    } catch (e) { /* no body: defaults */ }
     for (let attempt = 0; attempt < 12; attempt++) {
         const code = randomCode();
         const res = await roomStub(env, code).fetch('https://room/init', {
             method: 'POST',
-            body: JSON.stringify({ code, kind: 'private', rules }),
+            body: JSON.stringify({ code, kind: 'private', game, rules, options }),
         });
         if (res.ok) return Response.json({ room: code });
     }
@@ -74,7 +80,7 @@ export default {
             res = await createPrivateRoom(request, env);
         } else if (url.pathname === '/quick' && request.method === 'POST') {
             const mm = env.MATCHMAKER.get(env.MATCHMAKER.idFromName('global'));
-            res = await mm.fetch('https://matchmaker/quick', { method: 'POST' });
+            res = await mm.fetch('https://matchmaker/quick', { method: 'POST', body: await request.text() });
         } else if (url.pathname === '/health') {
             res = Response.json({ ok: true });
         } else {

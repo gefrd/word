@@ -1,25 +1,20 @@
 // One Durable Object per game room. It holds the players' WebSockets and is
-// the only place where moves are applied: phones send "I tapped pit N", the
-// room checks it with the same engine the offline game uses and tells both
-// players the result. A modified client can't fake a move or a win.
+// the only place where moves are applied: phones send "I tapped pit 5" or
+// "roll the die", the room checks it with the same engine the offline game
+// uses (see games.js) and tells every player the result. A modified client
+// can't fake a move, a dice roll or a win.
 //
 // Uses the WebSocket Hibernation API, so an idle room costs nothing: the
 // object is evicted from memory between messages and restored from storage.
 
 import { DurableObject } from 'cloudflare:workers';
-import {
-    createGame, applyMove, isLegalMove, chooseBotMove, normalizeRules, DRAW,
-} from '../../games/igisoro/engine.js';
+import { GAMES, DRAW, secureRandom } from './games.js';
 import { nameForToken, BOT_NAME } from './names.js';
 
-// Defaults; tests shorten them through env vars.
 const DEFAULTS = {
-    TURN_MS: 45_000,        // time to make a move before an automatic move
-    QUICK_WAIT_MS: 15_000,  // quick match: wait this long, then play a bot
-    BOT_DELAY_MS: 1_200,    // bot "thinking" time, so its move is visible
+    QUICK_WAIT_MS: 15_000,  // quick match: wait this long, then fill with bots
 };
-const MAX_TIMEOUTS = 2;                  // missed turns in a row → you lose
-const IDLE_WAITING_MS = 20 * 60_000;     // empty private room is deleted
+const IDLE_WAITING_MS = 20 * 60_000;     // empty room is deleted
 const IDLE_PLAYING_MS = 2 * 60 * 60_000; // abandoned game is deleted
 const MAX_MESSAGE = 512;
 const MAX_MSGS_PER_SEC = 10;
@@ -34,15 +29,21 @@ export class GameRoom extends DurableObject {
         super(ctx, env);
         this.room = null;
         this.rate = new Map();      // ws → { second, count } (fine to lose on eviction)
-        this.lastEmote = [0, 0];
-        this.cfg = {};
-        for (const k of Object.keys(DEFAULTS)) {
-            const v = Number(env && env[k]);
-            this.cfg[k] = Number.isFinite(v) && v > 0 ? v : DEFAULTS[k];
-        }
+        this.lastEmote = new Map(); // seat → time
+        const num = (k) => { const v = Number(env && env[k]); return Number.isFinite(v) && v > 0 ? v : null; };
+        this.cfg = {
+            QUICK_WAIT_MS: num('QUICK_WAIT_MS') || DEFAULTS.QUICK_WAIT_MS,
+            // Tests shorten these; normally each game sets its own.
+            TURN_MS: num('TURN_MS'),
+            BOT_DELAY_MS: num('BOT_DELAY_MS'),
+        };
         ctx.blockConcurrencyWhile(async () => {
             this.room = (await ctx.storage.get('room')) || null;
         });
+    }
+
+    get adapter() {
+        return GAMES[this.room.game];
     }
 
     // ------------------------------------------------------------------ HTTP
@@ -56,20 +57,25 @@ export class GameRoom extends DurableObject {
         return new Response('Not found', { status: 404 });
     }
 
-    async init({ code, kind, rules }) {
+    async init({ code, kind, game, rules, options }) {
         if (this.room) return new Response('Room code in use', { status: 409 });
+        const adapter = GAMES[game] || GAMES.igisoro;
+        const opts = adapter.normalizeOptions(options);
         const now = Date.now();
         this.room = {
             code,
+            game: GAMES[game] ? game : 'igisoro',
             kind: kind === 'quick' ? 'quick' : 'private',
-            rules: normalizeRules(rules),
+            rules: adapter.normalizeRules(rules),
+            options: opts,
+            seatOrder: adapter.seatOrder(opts),
             status: 'waiting',          // waiting | playing | over
-            seats: [null, null],        // { token, name, bot, timeouts }
-            game: null,
-            move: null,                 // last move, so clients can animate it
+            seats: new Array(adapter.maxSeats).fill(null), // { token, name, bot, away, timeouts }
+            state: null,
+            move: null,                 // last action, so clients can animate it
             result: null,               // { winner, reason }
-            rematch: [false, false],
-            firstPlayer: 0,
+            rematch: [],
+            firstPlayer: null,
             deadline: null,             // next timed event (turn / bot / quick wait)
             expiresAt: now + IDLE_WAITING_MS,
         };
@@ -96,15 +102,23 @@ export class GameRoom extends DurableObject {
         const r = this.room;
         if (!r) return fail('not_found');
 
-        let seat = r.seats.findIndex((s) => s && !s.bot && s.token === token);
+        let seat = r.seats.findIndex((s) => s && s.token === token);
+        let reclaimed = false;
         if (seat === -1) {
             if (r.status === 'waiting') {
                 // Someone who left before the game started gives up their seat.
-                for (let i = 0; i < 2; i++) if (r.seats[i] && !this.isOnline(i)) r.seats[i] = null;
-                seat = r.seats.findIndex((s) => !s);
+                for (const i of r.seatOrder) if (r.seats[i] && !r.seats[i].bot && !this.isOnline(i)) r.seats[i] = null;
+                seat = r.seatOrder.find((i) => !r.seats[i]);
+                if (seat === undefined) seat = -1;
             }
             if (seat === -1) return fail('full');
-            r.seats[seat] = { token, name: nameForToken(token), bot: false, timeouts: 0 };
+            r.seats[seat] = { token, name: nameForToken(token), bot: false, away: false, timeouts: 0 };
+        } else if (r.seats[seat].away) {
+            // Came back after a bot took over: take the seat back.
+            r.seats[seat].bot = false;
+            r.seats[seat].away = false;
+            r.seats[seat].timeouts = 0;
+            reclaimed = true;
         }
 
         // Same player on a second tab / after reconnect: keep only the new socket.
@@ -119,8 +133,10 @@ export class GameRoom extends DurableObject {
         server.serializeAttachment({ seat });
 
         if (r.status === 'waiting') {
-            if (r.seats[0] && r.seats[1]) this.startGame();
-            else if (r.kind === 'quick') r.deadline = Date.now() + this.cfg.QUICK_WAIT_MS;
+            if (r.seatOrder.every((i) => r.seats[i])) this.startGame();
+            else if (r.kind === 'quick' && !r.deadline) r.deadline = Date.now() + this.cfg.QUICK_WAIT_MS;
+        } else if (reclaimed && r.status === 'playing' && this.adapter.turn(r.state) === seat) {
+            this.armTurn(); // the bot's short timer no longer applies
         }
         this.touch();
         await this.save();
@@ -139,6 +155,7 @@ export class GameRoom extends DurableObject {
         const r = this.room;
         if (!a || a.seat < 0 || !r || !msg || typeof msg !== 'object') return;
         const seat = a.seat;
+        const A = this.adapter;
 
         switch (msg.t) {
             case 'ping':
@@ -146,20 +163,29 @@ export class GameRoom extends DurableObject {
                 return;
 
             case 'move': {
-                if (r.status !== 'playing' || r.game.turn !== seat) return this.error(ws, 'not_your_turn');
-                // A move made against an older position (double tap, lag) is dropped.
-                if (msg.n !== r.game.moveCount) return this.sendState(ws, seat);
-                if (!isLegalMove(r.game, msg.pit)) return this.error(ws, 'illegal');
+                if (r.status !== 'playing' || A.turn(r.state) !== seat) return this.error(ws, 'not_your_turn');
+                // An action made against an older position (double tap, lag) is dropped.
+                if (msg.n !== A.counter(r.state)) return this.sendState(ws, seat);
+                const move = A.parseMove(msg);
+                if (move === null || !A.isLegal(r.state, move)) return this.error(ws, 'illegal');
                 r.seats[seat].timeouts = 0;
-                this.play(seat, msg.pit, false);
+                this.play(seat, move, false);
+                break;
+            }
+
+            case 'start': {
+                // The room owner (first seat) starts early; bots fill empty seats.
+                if (r.status !== 'waiting' || seat !== r.seatOrder[0]) return;
+                this.fillWithBots();
+                this.startGame();
                 break;
             }
 
             case 'emote': {
                 if (!EMOTES.includes(msg.id)) return;
                 const now = Date.now();
-                if (now - this.lastEmote[seat] < EMOTE_GAP_MS) return;
-                this.lastEmote[seat] = now;
+                if (now - (this.lastEmote.get(seat) || 0) < EMOTE_GAP_MS) return;
+                this.lastEmote.set(seat, now);
                 this.sendAll({ t: 'emote', seat, id: msg.id });
                 return;
             }
@@ -167,10 +193,12 @@ export class GameRoom extends DurableObject {
             case 'rematch': {
                 if (r.status !== 'over') return;
                 r.rematch[seat] = true;
-                const other = r.seats[1 - seat];
-                if (!other || other.bot) r.rematch[1 - seat] = true;
-                if (r.rematch[0] && r.rematch[1] && r.seats[0] && r.seats[1]) {
-                    r.firstPlayer = 1 - r.firstPlayer;
+                const ready = r.seatOrder.every((i) => {
+                    const s = r.seats[i];
+                    return s && (s.bot || r.rematch[i]);
+                });
+                if (ready) {
+                    r.firstPlayer = A.nextFirst(r.firstPlayer, r.seatOrder);
                     this.startGame();
                 }
                 break;
@@ -178,12 +206,13 @@ export class GameRoom extends DurableObject {
 
             case 'resign':
                 if (r.status !== 'playing') return;
-                this.finish(1 - seat, 'resign');
+                this.dropPlayer(seat, 'resign', true);
                 break;
 
             case 'leave':
-                if (r.status === 'playing') this.finish(1 - seat, 'resign');
+                if (r.status === 'playing') this.dropPlayer(seat, 'resign', true);
                 else if (r.status === 'waiting') r.seats[seat] = null;
+                else if (r.seats[seat]) r.seats[seat].token = null; // gone for good
                 ws.serializeAttachment({ seat: -1 });
                 try { ws.close(1000, 'left'); } catch (e) { /* ignore */ }
                 break;
@@ -217,22 +246,22 @@ export class GameRoom extends DurableObject {
         if (r.deadline && now >= r.deadline - 20) {
             r.deadline = null;
             if (r.status === 'waiting' && r.kind === 'quick') {
-                // Nobody came: play against a bot (clearly labelled as one).
-                const human = r.seats.findIndex((s) => s);
-                if (human !== -1 && this.isOnline(human)) {
-                    r.seats[1 - human] = { bot: true, name: BOT_NAME, timeouts: 0 };
+                // Not enough people came: bots (clearly labelled) fill the seats.
+                if (r.seatOrder.some((i) => r.seats[i] && !r.seats[i].bot && this.isOnline(i))) {
+                    this.fillWithBots();
                     this.startGame();
                 }
             } else if (r.status === 'playing') {
-                const seat = r.game.turn;
+                const A = this.adapter;
+                const seat = A.turn(r.state);
                 const s = r.seats[seat];
                 if (s.bot) {
-                    this.play(seat, chooseBotMove(r.game, 'medium'), false);
-                } else if (++s.timeouts >= MAX_TIMEOUTS) {
-                    this.finish(1 - seat, 'timeout');
+                    this.play(seat, A.botMove(r.state, 'medium', secureRandom), false);
+                } else if (++s.timeouts >= A.maxTimeouts) {
+                    this.dropPlayer(seat, 'timeout', false);
                 } else {
                     // Missed turn: an automatic (weak) move keeps the game going.
-                    this.play(seat, chooseBotMove(r.game, 'easy'), true);
+                    this.play(seat, A.botMove(r.state, 'easy', secureRandom), true);
                 }
             }
         }
@@ -251,26 +280,54 @@ export class GameRoom extends DurableObject {
 
     // ------------------------------------------------------------ Game logic
 
+    fillWithBots() {
+        const r = this.room;
+        for (const i of r.seatOrder) {
+            if (!r.seats[i]) r.seats[i] = { token: null, name: BOT_NAME, bot: true, away: false, timeouts: 0 };
+        }
+    }
+
     startGame() {
         const r = this.room;
-        r.game = createGame({ rules: r.rules, firstPlayer: r.firstPlayer });
+        const A = this.adapter;
+        if (r.firstPlayer === null || !r.seatOrder.includes(r.firstPlayer)) r.firstPlayer = r.seatOrder[0];
+        r.state = A.create({ rules: r.rules, firstPlayer: r.firstPlayer, seats: r.seatOrder });
         r.status = 'playing';
         r.result = null;
         r.move = null;
-        r.rematch = [false, false];
+        r.rematch = [];
+        r.deadline = null;
         for (const s of r.seats) if (s) s.timeouts = 0;
         this.armTurn();
     }
 
-    play(seat, pit, auto) {
+    play(seat, move, auto) {
         const r = this.room;
-        const { state, events } = applyMove(r.game, pit);
-        r.game = state;
-        r.move = { player: seat, pit, events, auto, n: state.moveCount };
-        if (state.winner !== null) {
-            this.finish(state.winner, state.winner === DRAW ? 'draw' : 'no_moves');
+        const A = this.adapter;
+        const { state, events } = A.apply(r.state, move, secureRandom);
+        r.state = state;
+        r.move = { player: seat, move, events, auto, n: A.counter(state) };
+        const w = A.winner(state);
+        if (w !== null) this.finish(w, A.reason(state));
+        else this.armTurn();
+    }
+
+    // A player resigned, left, or kept missing turns. In a 2-player game the
+    // other player wins; with more players a bot takes over the seat.
+    dropPlayer(seat, reason, gone) {
+        const r = this.room;
+        const s = r.seats[seat];
+        if (r.seatOrder.length === 2) {
+            const other = r.seatOrder.find((i) => i !== seat);
+            this.finish(other, reason);
         } else {
-            this.armTurn();
+            s.bot = true;
+            s.away = !gone;          // away: can come back and take the seat again
+            if (gone) s.token = null;
+            s.timeouts = 0;
+            const humans = r.seatOrder.filter((i) => r.seats[i] && !r.seats[i].bot);
+            if (humans.length === 0) this.finish(DRAW, 'abandoned');
+            else this.armTurn();
         }
     }
 
@@ -278,15 +335,19 @@ export class GameRoom extends DurableObject {
         const r = this.room;
         r.status = 'over';
         r.result = { winner, reason };
-        r.game.winner = winner;
+        r.state.winner = winner;
         r.deadline = null;
-        r.rematch = [false, false];
+        r.rematch = [];
     }
 
     armTurn() {
         const r = this.room;
-        const s = r.seats[r.game.turn];
-        r.deadline = Date.now() + (s && s.bot ? this.cfg.BOT_DELAY_MS : this.cfg.TURN_MS);
+        if (r.status !== 'playing') return;
+        const A = this.adapter;
+        const s = r.seats[A.turn(r.state)];
+        const botDelay = this.cfg.BOT_DELAY_MS || A.botDelayMs;
+        const turnMs = this.cfg.TURN_MS || A.turnMs;
+        r.deadline = Date.now() + (s && s.bot ? botDelay : turnMs);
     }
 
     // ---------------------------------------------------------------- Helpers
@@ -323,20 +384,32 @@ export class GameRoom extends DurableObject {
 
     view(seat, except) {
         const r = this.room;
+        const A = this.adapter;
+        const turnSeat = r.status === 'playing' ? A.turn(r.state) : null;
         return {
             t: 'state',
+            type: r.game,
             code: r.kind === 'private' ? r.code : null,
             kind: r.kind,
             status: r.status,
             rules: r.rules,
+            options: r.options,
+            seatOrder: r.seatOrder,
             you: seat,
-            seats: r.seats.map((s, i) => (s ? { name: s.name, bot: !!s.bot, online: !!s.bot || this.isOnline(i, except) } : null)),
-            game: r.game,
+            seats: r.seats.map((s, i) => (s ? {
+                name: s.name,
+                bot: !!s.bot,
+                away: !!s.away,
+                online: !!s.bot || this.isOnline(i, except),
+            } : null)),
+            state: r.state,
+            // The Igisoro client (first online game) reads the board as `game`.
+            game: r.game === 'igisoro' ? r.state : r.game,
             move: r.move,
             result: r.result,
-            rematch: r.rematch,
+            rematch: r.seats.map((_, i) => !!r.rematch[i]),
             // Sent as "ms left" so the phone's clock doesn't matter.
-            turnMsLeft: r.status === 'playing' && r.deadline && !r.seats[r.game.turn].bot
+            turnMsLeft: turnSeat !== null && r.deadline && !r.seats[turnSeat].bot
                 ? Math.max(0, r.deadline - Date.now()) : null,
             waitMsLeft: r.status === 'waiting' && r.kind === 'quick' && r.deadline
                 ? Math.max(0, r.deadline - Date.now()) : null,

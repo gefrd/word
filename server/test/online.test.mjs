@@ -280,3 +280,125 @@ test('resign ends the game for the other player', async () => {
     assert.deepEqual(s.result, { winner: 0, reason: 'resign' });
     a.close(); b.close();
 });
+
+// ---------------------------------------------------------------------------
+// Ludo (up to 4 seats, server rolls the die)
+// ---------------------------------------------------------------------------
+
+import { legalTokens } from '../../games/ludo/engine.js';
+
+function ludoAction(st) {
+    return st.phase === 'roll' ? { type: 'roll' } : { type: 'move', token: legalTokens(st)[0] };
+}
+
+// Humans roll or move their first legal token until the game ends.
+async function playLudo(clients, maxActions = 3000) {
+    for (let guard = 0; guard < maxActions; guard++) {
+        const s = clients[0].state;
+        if (s.status !== 'playing') return s;
+        const st = s.state;
+        const mover = clients.find((c) => c.state.you === st.turn);
+        const n = st.actions;
+        if (mover) mover.send({ t: 'move', move: ludoAction(st), n });
+        await clients[0].waitState((m) => m.status === 'over' || (m.state && m.state.actions > n), 10000);
+    }
+    throw new Error('ludo game did not finish');
+}
+
+test('ludo: 4-seat room, owner starts early, bots fill the rest, game finishes', async () => {
+    const { room } = await post('/rooms', { game: 'ludo', players: 4, rules: { tokensToWin: 2, enter: '1or6' } });
+    const a = new Client(room);
+    const s0 = await a.waitState((m) => m.status === 'waiting');
+    assert.equal(s0.type, 'ludo');
+    assert.deepEqual(s0.seatOrder, [0, 1, 2, 3]);
+    const b = new Client(room);
+    await b.waitState(() => true);
+    await a.waitState((m) => m.seats[1] && m.seats[1].online);
+    b.send({ t: 'start' }); // only the owner may start
+    await sleep(300);
+    assert.equal(a.state.status, 'waiting');
+    a.send({ t: 'start' });
+    const st = await b.waitState((m) => m.status === 'playing');
+    assert.equal(st.you, 1);
+    assert.deepEqual(st.seats.map((x) => x.bot), [false, false, true, true]);
+    assert.deepEqual(st.state.players, [0, 1, 2, 3]);
+    assert.equal(st.state.rules.tokensToWin, 2);
+
+    await a.waitState((m) => m.status === 'playing');
+    const end = await playLudo([a, b]);
+    assert.equal(end.status, 'over');
+    assert.equal(end.result.reason, 'finished');
+    assert.ok([0, 1, 2, 3].includes(end.result.winner));
+    const rolls = a.msgs.filter((m) => m.t === 'state' && m.move && m.move.move.type === 'roll').map((m) => m.move.events[0].value);
+    assert.ok(rolls.length > 5 && rolls.every((v) => v >= 1 && v <= 6), 'rolls: ' + rolls.join(','));
+    a.close(); b.close();
+});
+
+test('ludo: 2-player room seats players opposite and starts when full', async () => {
+    const { room } = await post('/rooms', { game: 'ludo', players: 2 });
+    const a = new Client(room);
+    const s0 = await a.waitState(() => true);
+    assert.deepEqual(s0.seatOrder, [0, 2]);
+    const b = new Client(room);
+    const s = await b.waitState((m) => m.status === 'playing');
+    assert.equal(s.you, 2);
+    assert.deepEqual(s.state.players, [0, 2]);
+    assert.equal(s.seats[1], null);
+    a.close(); b.close();
+});
+
+test('ludo: server rejects moving before rolling, rolling out of turn, choosing the value', async () => {
+    const { room } = await post('/rooms', { game: 'ludo', players: 2 });
+    const a = new Client(room);
+    await a.waitState(() => true);
+    const b = new Client(room);
+    await a.waitState((m) => m.status === 'playing');
+    await b.waitState((m) => m.status === 'playing');
+    b.send({ t: 'move', move: { type: 'roll' }, n: 0 });
+    await b.waitFor((m) => m.t === 'error' && m.code === 'not_your_turn');
+    a.send({ t: 'move', move: { type: 'move', token: 0 }, n: 0 });
+    await a.waitFor((m) => m.t === 'error' && m.code === 'illegal');
+    a.send({ t: 'move', move: { type: 'roll', value: 6 }, n: 0 }); // the value is ignored
+    const r = await a.waitState((m) => m.state && m.state.actions === 1);
+    assert.equal(r.move.move.value, undefined);
+    a.close(); b.close();
+});
+
+test('ludo: missed turns hand the seat to a bot; coming back takes it over again', async () => {
+    const { room } = await post('/rooms', { game: 'ludo', players: 3 });
+    const a = new Client(room);
+    await a.waitState(() => true);
+    const b = new Client(room);
+    await b.waitState(() => true);
+    const c = new Client(room);
+    await c.waitState((m) => m.status === 'playing');
+    await b.waitState((m) => m.status === 'playing');
+    // Seat 0 goes silent while the others play at once; after 4 missed
+    // actions a bot plays for it.
+    a.close();
+    let away = null;
+    for (let guard = 0; guard < 200 && !away; guard++) {
+        const st = b.state.state;
+        const mover = [b, c].find((x) => x.state.you === st.turn);
+        const n = st.actions;
+        if (mover) mover.send({ t: 'move', move: ludoAction(st), n });
+        const next = await b.waitState((m) => m.status !== 'playing' || m.state.actions > n || (m.seats[0] && m.seats[0].away), TURN_MS + 3000, b.msgs.length);
+        if (next.seats[0] && next.seats[0].away) away = next;
+    }
+    assert.ok(away, 'seat 0 was never handed to a bot');
+    assert.equal(away.seats[0].bot, true);
+    assert.equal(away.status, 'playing');
+    const a2 = new Client(room, a.token);
+    const back = await a2.waitState((m) => m.seats[0] && !m.seats[0].bot);
+    assert.equal(back.you, 0);
+    a2.close(); b.close(); c.close();
+});
+
+test('ludo: quick match alone fills three bots', async () => {
+    const { room } = await post('/quick', { game: 'ludo' });
+    const a = new Client(room);
+    const s = await a.waitState((m) => m.status === 'playing', QUICK_WAIT_MS + 5000);
+    assert.equal(s.type, 'ludo');
+    assert.equal(s.seats.filter((x) => x.bot).length, 3);
+    a.close();
+});

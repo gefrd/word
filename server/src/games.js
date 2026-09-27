@@ -1,0 +1,63 @@
+// Games the server can host. Each adapter wraps a pure engine from games/
+// (the same file the offline game uses) behind one small interface, so the
+// room code in room.js is the same for every game.
+
+import * as igisoro from '../../games/igisoro/engine.js';
+import * as ludo from '../../games/ludo/engine.js';
+
+const DRAW = -1;
+
+export const GAMES = {
+    igisoro: {
+        turnMs: 45_000,
+        botDelayMs: 1_200,
+        maxTimeouts: 2,
+        maxSeats: 2,
+        seatOrder: () => [0, 1],
+        normalizeRules: igisoro.normalizeRules,
+        normalizeOptions: () => ({ players: 2 }),
+        create: ({ rules, firstPlayer }) => igisoro.createGame({ rules, firstPlayer }),
+        // Igisoro clients send { pit }; accept { move: pit } too.
+        parseMove: (msg) => (Number.isInteger(msg.pit) ? msg.pit : Number.isInteger(msg.move) ? msg.move : null),
+        isLegal: (state, move) => igisoro.isLegalMove(state, move),
+        apply: (state, move) => igisoro.applyMove(state, move),
+        turn: (state) => state.turn,
+        counter: (state) => state.moveCount,
+        winner: (state) => state.winner,
+        reason: (state) => (state.winner === igisoro.DRAW ? 'draw' : 'no_moves'),
+        botMove: (state, level, rng) => igisoro.chooseBotMove(state, level, rng),
+        nextFirst: (prev) => 1 - prev,
+    },
+
+    ludo: {
+        turnMs: 20_000,
+        botDelayMs: 700,
+        maxTimeouts: 4, // two whole turns (roll + move each)
+        maxSeats: 4,
+        seatOrder: (options) => ludo.seatsFor(options.players),
+        normalizeRules: ludo.normalizeRules,
+        normalizeOptions: (o = {}) => ({ players: [2, 3, 4].includes(o.players) ? o.players : 4 }),
+        create: ({ rules, firstPlayer, seats }) => ludo.createGame({ rules, players: seats, firstPlayer }),
+        parseMove: (msg) => {
+            const m = msg.move;
+            if (!m || typeof m !== 'object') return null;
+            if (m.type === 'roll') return { type: 'roll' };
+            if (m.type === 'move' && Number.isInteger(m.token)) return { type: 'move', token: m.token };
+            return null;
+        },
+        isLegal: (state, move) => ludo.isLegalAction(state, move),
+        apply: (state, move, rng) => ludo.applyAction(state, move, rng),
+        turn: (state) => state.turn,
+        counter: (state) => state.actions,
+        winner: (state) => state.winner,
+        reason: () => 'finished',
+        botMove: (state, level, rng) => ludo.chooseBotAction(state, level, rng),
+        nextFirst: (prev, seats) => seats[(seats.indexOf(prev) + 1) % seats.length],
+    },
+};
+
+export { DRAW };
+
+export function secureRandom() {
+    return crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
+}
