@@ -1,0 +1,1365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a">
+<title>Igisoro</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: #0f172a;
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    touch-action: manipulation;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  .app {
+    height: 100%;
+    height: 100dvh;
+    width: 100%;
+    max-width: 480px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+  .app.wide { max-width: 900px; }
+
+  /* Header */
+  .game-header {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+  .header-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 17px;
+    font-weight: 700;
+  }
+  .header-btn:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.2); }
+  .header-right { display: flex; gap: 6px; }
+  .title-wrap { display: flex; align-items: center; gap: 8px; }
+  .game-title {
+    font-size: 19px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    color: #f59e0b;
+  }
+
+  /* Mode bar */
+  .mode-bar { display: flex; gap: 6px; flex-shrink: 0; }
+  .mode-btn, .level-select {
+    flex: 1;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    min-height: 40px;
+    padding: 6px 4px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    text-align: center;
+    font-family: inherit;
+  }
+  .mode-btn.active {
+    background: #b45309;
+    border-color: #f59e0b;
+    color: #fff;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
+  }
+  .level-select { color: #f8fafc; appearance: none; -webkit-appearance: none; text-align-last: center; }
+  .level-select[hidden] { display: none; }
+
+  /* Players */
+  .score-panel { display: flex; gap: 8px; flex-shrink: 0; }
+  .player-card {
+    flex: 1;
+    min-width: 0;
+    background: #1e293b;
+    border: 2px solid #334155;
+    border-radius: 12px;
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: border-color 0.25s, box-shadow 0.25s;
+  }
+  .player-card.active.me { border-color: #f59e0b; box-shadow: 0 0 14px rgba(245, 158, 11, 0.3); }
+  .player-card.active.opp { border-color: #38bdf8; box-shadow: 0 0 14px rgba(56, 189, 248, 0.3); }
+  .p-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+  .me .p-dot { background: #f59e0b; }
+  .opp .p-dot { background: #38bdf8; }
+  .p-info { display: flex; flex-direction: column; min-width: 0; }
+  .p-name { font-size: 12px; font-weight: 700; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .p-score { font-size: 18px; font-weight: 900; line-height: 1.1; }
+  .p-score small { font-size: 11px; font-weight: 600; color: #94a3b8; }
+
+  .status-bar {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    border: 1px solid #475569;
+    border-radius: 10px;
+    padding: 6px 12px;
+    min-height: 36px;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+    color: #f59e0b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .status-bar.opp-turn { color: #38bdf8; }
+
+  /* Board */
+  .board-wrap {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .board {
+    position: relative;
+    display: grid;
+    padding: var(--pad);
+    gap: var(--gap);
+    border-radius: calc(var(--cell) * 0.35);
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(255, 255, 255, 0.08), transparent 60%),
+      linear-gradient(135deg, #7c4a1e 0%, #5b3413 55%, #4a2a0f 100%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), inset 0 2px 0 rgba(255, 255, 255, 0.12), inset 0 -3px 0 rgba(0, 0, 0, 0.3);
+  }
+  /* Line between the two players' halves */
+  .board::after {
+    content: '';
+    position: absolute;
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 2px;
+    pointer-events: none;
+  }
+  .board.vertical::after { top: var(--pad); bottom: var(--pad); left: calc(50% - 1.5px); width: 3px; }
+  .board.horizontal::after { left: var(--pad); right: var(--pad); top: calc(50% - 1.5px); height: 3px; }
+
+  .pit {
+    position: relative;
+    width: var(--cell);
+    height: var(--cell);
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 60%, #2a1606 0%, #3b2008 55%, #4d2b0e 100%);
+    box-shadow: inset 0 calc(var(--cell) * 0.06) calc(var(--cell) * 0.12) rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    transition: box-shadow 0.2s, transform 0.12s;
+  }
+  .pit.me { border: 2px solid rgba(245, 158, 11, 0.35); }
+  .pit.opp { border: 2px solid rgba(56, 189, 248, 0.3); }
+  .pit.legal.me { border-color: #fbbf24; animation: pulseMe 1.6s ease-in-out infinite; }
+  .pit.legal.opp { border-color: #38bdf8; animation: pulseOpp 1.6s ease-in-out infinite; }
+  .pit.legal:active { transform: scale(0.94); }
+  @keyframes pulseMe {
+    0%, 100% { box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.7), 0 0 0 0 rgba(251, 191, 36, 0.0); }
+    50% { box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.7), 0 0 10px 2px rgba(251, 191, 36, 0.55); }
+  }
+  @keyframes pulseOpp {
+    0%, 100% { box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.7), 0 0 0 0 rgba(56, 189, 248, 0.0); }
+    50% { box-shadow: inset 0 3px 8px rgba(0, 0, 0, 0.7), 0 0 10px 2px rgba(56, 189, 248, 0.55); }
+  }
+  .pit.active { border-color: #fff !important; box-shadow: 0 0 14px 3px rgba(255, 255, 255, 0.55); animation: none; }
+  .pit.last::before {
+    content: '';
+    position: absolute;
+    top: 4%;
+    left: 50%;
+    width: 16%;
+    height: 16%;
+    margin-left: -8%;
+    border-radius: 50%;
+    background: #fff;
+    opacity: 0.5;
+  }
+  .pit.captured { animation: capFlash 0.6s ease-out; }
+  @keyframes capFlash {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.9); background: #7f1d1d; }
+    100% { box-shadow: 0 0 20px 10px rgba(239, 68, 68, 0); }
+  }
+  .pit.shake { animation: shake 0.3s; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+  }
+  .seed {
+    position: absolute;
+    width: 22%;
+    height: 17%;
+    margin: -8.5% 0 0 -11%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fde68a 0%, #d6a756 35%, #8a5a1c 100%);
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+  }
+  .count {
+    position: absolute;
+    right: -4%;
+    bottom: -4%;
+    min-width: 36%;
+    height: 36%;
+    padding: 0 4%;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: #fff;
+    font-size: calc(var(--cell) * 0.22);
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .count.zero { display: none; }
+
+  .hand {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(15, 23, 42, 0.92);
+    border: 2px solid #f59e0b;
+    color: #fbbf24;
+    font-weight: 900;
+    font-size: 15px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 2;
+    white-space: nowrap;
+  }
+  .hand.show { opacity: 1; }
+  .hand.opp { border-color: #38bdf8; color: #7dd3fc; }
+
+  .side-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: #64748b;
+    flex-shrink: 0;
+    padding: 0 6px;
+    margin-bottom: -4px;
+  }
+  .side-labels .l-me { color: #b45309; }
+  .side-labels .l-opp { color: #0369a1; }
+
+  /* Controls */
+  .controls { display: flex; gap: 8px; flex-shrink: 0; }
+  .ctrl-btn {
+    flex: 1;
+    min-height: 46px;
+    background: linear-gradient(135deg, #334155, #1e293b);
+    border: 1px solid #475569;
+    color: #f8fafc;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .ctrl-btn:active { transform: scale(0.97); }
+  .ctrl-btn:disabled { opacity: 0.4; }
+
+  /* Landscape: controls on the left, board fills the right */
+  .app.wide {
+    display: grid;
+    grid-template-columns: minmax(240px, 300px) 1fr;
+    grid-template-rows: auto auto auto auto 1fr auto;
+    grid-template-areas: "header board" "mode board" "score board" "status board" ". board" "controls board";
+    column-gap: 12px;
+  }
+  .app.wide .game-header { grid-area: header; }
+  .app.wide .mode-bar { grid-area: mode; flex-wrap: wrap; }
+  .app.wide .level-select { flex-basis: 100%; }
+  .app.wide .score-panel { grid-area: score; }
+  .app.wide .status-bar { grid-area: status; }
+  .app.wide .board-wrap { grid-area: board; }
+  .app.wide .controls { grid-area: controls; }
+  .app.wide .side-labels { display: none; }
+
+  /* Short screens: give the board every pixel we can */
+  @media (max-height: 700px) {
+    .app { gap: 6px; }
+    .game-header { padding: 4px 8px; }
+    .header-btn { width: 36px; height: 36px; font-size: 15px; }
+    .game-title { font-size: 17px; }
+    .mode-btn, .level-select { min-height: 36px; font-size: 11px; }
+    .player-card { padding: 3px 8px; }
+    .p-name { font-size: 11px; }
+    .p-score { font-size: 15px; }
+    .status-bar { min-height: 30px; font-size: 12px; padding: 4px 10px; }
+    .ctrl-btn { min-height: 40px; font-size: 14px; }
+    .side-labels { font-size: 10px; }
+  }
+
+  /* Sheets (rules, game over) */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.75);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 20;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .overlay.open { opacity: 1; pointer-events: auto; }
+  .overlay.center { align-items: center; }
+  .sheet {
+    width: 100%;
+    max-width: 480px;
+    max-height: 88dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 18px 18px 0 0;
+    padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+    transform: translateY(20px);
+    transition: transform 0.2s;
+  }
+  .overlay.open .sheet { transform: none; }
+  .overlay.center .sheet { border-radius: 18px; margin: 16px; text-align: center; }
+  .sheet h2 { font-size: 18px; color: #f59e0b; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .sheet h3 { font-size: 13px; color: #cbd5e1; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.6px; }
+  .sheet p, .sheet li { font-size: 14px; color: #cbd5e1; line-height: 1.45; }
+  .sheet ul { padding-left: 18px; }
+  .sheet .hint { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+  .close-x { background: none; border: none; color: #94a3b8; font-size: 22px; width: 40px; height: 40px; cursor: pointer; }
+
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .preset, .seg button {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    border-radius: 10px;
+    padding: 8px 6px;
+    min-height: 44px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: center;
+  }
+  .preset small { display: block; font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
+  .preset.active, .seg button.active { background: #b45309; border-color: #f59e0b; color: #fff; }
+  .preset.active small { color: #fde68a; }
+  .seg { display: flex; gap: 6px; }
+  .seg button { flex: 1; }
+  .primary {
+    width: 100%;
+    margin-top: 16px;
+    min-height: 50px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #111827;
+    font-size: 16px;
+    font-weight: 900;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .secondary {
+    width: 100%;
+    margin-top: 8px;
+    min-height: 46px;
+    border: 1px solid #475569;
+    border-radius: 12px;
+    background: transparent;
+    color: #cbd5e1;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .result-emoji { font-size: 56px; margin: 6px 0; }
+  .result-title { font-size: 24px; font-weight: 900; margin-bottom: 4px; }
+  .result-sub { font-size: 14px; color: #94a3b8; }
+  .stats { font-size: 13px; color: #94a3b8; margin-top: 10px; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <div class="game-header">
+    <button class="header-btn" onclick="window.history.length > 1 ? window.history.back() : window.location.href='/arcade.html'" aria-label="Back">←</button>
+    <div class="title-wrap">
+      <span style="font-size: 20px;">🌰</span>
+      <span class="game-title">IGISORO</span>
+    </div>
+    <div class="header-right">
+      <button class="header-btn" id="soundBtn" aria-label="Sound">🔊</button>
+      <button class="header-btn" id="rulesBtn" aria-label="Rules">⚙️</button>
+    </div>
+  </div>
+
+  <div class="mode-bar">
+    <button class="mode-btn" data-mode="bot">VS BOT</button>
+    <button class="mode-btn" data-mode="2p">2 PLAYERS</button>
+    <select class="level-select" id="levelSelect" aria-label="Bot level">
+      <option value="easy">Bot: Easy</option>
+      <option value="medium">Bot: Medium</option>
+      <option value="hard">Bot: Hard</option>
+    </select>
+  </div>
+
+  <div class="score-panel">
+    <div class="player-card me" id="card0">
+      <div class="p-dot"></div>
+      <div class="p-info">
+        <span class="p-name" id="name0">You</span>
+        <span class="p-score"><span id="score0">32</span> <small>seeds</small></span>
+      </div>
+    </div>
+    <div class="player-card opp" id="card1">
+      <div class="p-dot"></div>
+      <div class="p-info">
+        <span class="p-name" id="name1">Bot</span>
+        <span class="p-score"><span id="score1">32</span> <small>seeds</small></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-bar" id="status">Your turn</div>
+
+  <div class="side-labels" id="sideLabels">
+    <span class="l-opp" id="labelOpp">◀ BOT</span>
+    <span class="l-me" id="labelMe">YOU ▶</span>
+  </div>
+
+  <div class="board-wrap" id="boardWrap">
+    <div class="board" id="board"></div>
+    <div class="hand" id="hand"></div>
+  </div>
+
+  <div class="controls">
+    <button class="ctrl-btn" id="undoBtn">↩ Undo</button>
+    <button class="ctrl-btn" id="newBtn">🔄 New Game</button>
+  </div>
+</div>
+
+<!-- Rules & settings -->
+<div class="overlay" id="rulesOverlay">
+  <div class="sheet" role="dialog" aria-label="Rules">
+    <h2>Rules &amp; Settings <button class="close-x" data-close aria-label="Close">✕</button></h2>
+
+    <h3>Rule set</h3>
+    <div class="presets" id="presets"></div>
+
+    <h3>Starting seeds</h3>
+    <div class="seg" data-rule="setup">
+      <button data-value="outer4">4 in outer row</button>
+      <button data-value="all2">2 in every pit</button>
+      <button data-value="random">Random</button>
+    </div>
+
+    <h3>Which pits can move</h3>
+    <div class="seg" data-rule="minSeeds">
+      <button data-value="2">2+ seeds</button>
+      <button data-value="1">Any seed</button>
+    </div>
+
+    <h3>Capture when opponent has</h3>
+    <div class="seg" data-rule="captureNeeds">
+      <button data-value="both">Both pits full</button>
+      <button data-value="inner">Inner pit full</button>
+    </div>
+
+    <h3>Captured seeds are sown from</h3>
+    <div class="seg" data-rule="captureSow">
+      <button data-value="start">Starting pit</button>
+      <button data-value="next">Where you landed</button>
+    </div>
+
+    <h3>Who starts</h3>
+    <div class="seg" data-setting="first">
+      <button data-value="me">Player 1</button>
+      <button data-value="opp">Player 2</button>
+      <button data-value="alt">Take turns</button>
+    </div>
+
+    <h3>Animation speed</h3>
+    <div class="seg" data-setting="speed">
+      <button data-value="normal">Normal</button>
+      <button data-value="fast">Fast</button>
+      <button data-value="instant">Instant</button>
+    </div>
+    <p class="hint">Tip: tap the board during a move to skip the animation.</p>
+
+    <button class="primary" id="applyRules">Start new game with these rules</button>
+
+    <h3>How to play</h3>
+    <ul>
+      <li>Each player owns the 2 rows of pits on their side (16 pits).</li>
+      <li>Tap one of your glowing pits. Its seeds are sown one by one along your pits, anticlockwise.</li>
+      <li>If the last seed falls into a <b>non-empty</b> pit, you pick those seeds up and keep sowing.</li>
+      <li>If the last seed falls into a non-empty pit in your <b>inner row</b> (next to the middle line) and the opponent's pits in front of it have seeds, you <b>capture</b> them and sow them on your side.</li>
+      <li>When the last seed falls into an <b>empty</b> pit, your turn ends.</li>
+      <li>A player who cannot make a move <b>loses</b>.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Game over -->
+<div class="overlay center" id="overOverlay">
+  <div class="sheet" role="dialog" aria-label="Game over">
+    <div class="result-emoji" id="resultEmoji">🎉</div>
+    <div class="result-title" id="resultTitle">You win!</div>
+    <div class="result-sub" id="resultSub"></div>
+    <div class="stats" id="resultStats"></div>
+    <button class="primary" id="againBtn">Play again</button>
+    <button class="secondary" data-close>View board</button>
+  </div>
+</div>
+
+<script>
+// ===== Game engine: generated from games/igisoro/engine.js by games/igisoro/build.mjs — edit that file, not this block =====
+// @engine-begin
+// games/igisoro/engine.js
+// Igisoro — Rwandan mancala (4 × 8). Pure game logic, no DOM.
+//
+// The same file is meant to run in three places:
+//   1. in the browser for offline play (vs bot / two players on one phone),
+//   2. in a Web Worker for the bot,
+//   3. later on the server (Cloudflare Durable Object) for online rooms,
+//      where the server is the only one allowed to call applyMove().
+// So: no globals, no randomness except through an injected rng, and the
+// state is plain JSON that can be sent over the network as-is.
+//
+// Board layout
+// ------------
+// Each player owns 16 pits, stored as a loop `pits[p][0..15]`:
+//   0..7   outer row, left → right as the player sees it
+//   8..15  inner row, right → left as the player sees it
+// Sowing always goes i → i+1 (mod 16), which is anticlockwise for both
+// players. Columns in absolute terms (0..7, left → right from player 0):
+//   player 0: outer i → column i,     inner 8+k → column 7-k
+//   player 1: outer i → column 7-i,   inner 8+k → column k
+//
+// Rules. Igisoro is played differently from village to village, so the
+// points where versions disagree are options stored in `state.rules`
+// (the bot and, later, the server read them from the state):
+//
+//   setup         'outer4'  4 seeds in each outer pit, inner row empty
+//                 'all2'    2 seeds in every pit
+//                 'random'  32 seeds scattered at random, same for both sides
+//   minSeeds      2         a move starts from a pit with at least 2 seeds
+//                 1         single seeds may move too
+//   captureNeeds  'both'    capture only if the opponent's inner AND outer
+//                           pits in that column are non-empty
+//                 'inner'   the opponent's inner pit is enough (the outer
+//                           pit is taken along with it)
+//   captureSow    'start'   captured seeds are sown from the pit where the
+//                           turn began
+//                 'next'    captured seeds are sown on from the pit where
+//                           the capturing seed landed
+//
+// Common to all versions:
+//   - Seeds are sown one per pit along your own 16-pit loop.
+//   - Last seed in an empty pit: the turn ends.
+//   - Last seed in an occupied pit of your inner row that can capture:
+//     capture, then sow the captured seeds.
+//   - Last seed in any other occupied pit: pick all of it up and keep sowing
+//     (relay).
+//   - A player who cannot move loses. After MAX_MOVES moves the player
+//     with more seeds wins (equal = draw), so no game runs forever.
+
+const PITS = 16;
+const ROW = 8;
+const SEEDS_PER_PLAYER = 32;
+const MAX_MOVES = 400;
+// Safety valve: a relay chain longer than this ends the turn.
+// Real games never get close; it only guards against endless loops.
+const MAX_SOW_STEPS = 2000;
+const DRAW = -1;
+
+const DEFAULT_RULES = {
+    setup: 'outer4',
+    minSeeds: 2,
+    captureNeeds: 'both',
+    captureSow: 'start',
+};
+
+const RULE_OPTIONS = {
+    setup: ['outer4', 'all2', 'random'],
+    minSeeds: [2, 1],
+    captureNeeds: ['both', 'inner'],
+    captureSow: ['start', 'next'],
+};
+
+function normalizeRules(rules = {}) {
+    const out = { ...DEFAULT_RULES };
+    for (const key of Object.keys(RULE_OPTIONS)) {
+        if (RULE_OPTIONS[key].includes(rules[key])) out[key] = rules[key];
+    }
+    return out;
+}
+
+function randomSetup(rng) {
+    const row = new Array(PITS).fill(0);
+    for (let i = 0; i < SEEDS_PER_PLAYER; i++) row[Math.floor(rng() * PITS)]++;
+    // 32 seeds in 16 pits always leave some pit with ≥ 2, so the side can move.
+    return row;
+}
+
+const SETUPS = {
+    outer4: () => [4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0],
+    all2: () => new Array(PITS).fill(2),
+    random: randomSetup,
+};
+
+function createGame({ rules, firstPlayer = 0, rng = Math.random } = {}) {
+    const r = normalizeRules(rules);
+    const row = SETUPS[r.setup](rng);
+    return {
+        rules: r,
+        pits: [row.slice(), row.slice()],
+        turn: firstPlayer === 1 ? 1 : 0,
+        moveCount: 0,
+        winner: null, // 0 | 1 | DRAW | null
+        lastMove: null,
+    };
+}
+
+function cloneState(s) {
+    return {
+        rules: s.rules,
+        pits: [s.pits[0].slice(), s.pits[1].slice()],
+        turn: s.turn,
+        moveCount: s.moveCount,
+        winner: s.winner,
+        lastMove: s.lastMove,
+    };
+}
+
+const isInner = (i) => i >= ROW;
+
+function columnOf(player, i) {
+    if (player === 0) return i < ROW ? i : 15 - i;
+    return i < ROW ? 7 - i : i - ROW;
+}
+
+// Pit indices of `player`'s outer and inner pits in absolute column `col`.
+function pitsInColumn(player, col) {
+    if (player === 0) return { outer: col, inner: 15 - col };
+    return { outer: 7 - col, inner: ROW + col };
+}
+
+function seedCount(state, player) {
+    return state.pits[player].reduce((a, b) => a + b, 0);
+}
+
+function legalMoves(state, player = state.turn) {
+    if (state.winner !== null) return [];
+    const min = state.rules.minSeeds;
+    const moves = [];
+    const row = state.pits[player];
+    for (let i = 0; i < PITS; i++) if (row[i] >= min) moves.push(i);
+    return moves;
+}
+
+function isLegalMove(state, pit, player = state.turn) {
+    return (
+        state.winner === null &&
+        player === state.turn &&
+        Number.isInteger(pit) &&
+        pit >= 0 &&
+        pit < PITS &&
+        state.pits[player][pit] >= state.rules.minSeeds
+    );
+}
+
+// Opponent pits captured if `me` ends in inner pit `pos`, or null.
+function capturable(s, me, pos) {
+    if (!isInner(pos)) return null;
+    const opp = 1 - me;
+    const t = pitsInColumn(opp, columnOf(me, pos));
+    const theirs = s.pits[opp];
+    if (theirs[t.inner] === 0) return null;
+    if (s.rules.captureNeeds === 'both' && theirs[t.outer] === 0) return null;
+    return t;
+}
+
+/**
+ * Play `pit` for the player whose turn it is.
+ * Returns { state, events } — a NEW state (input is not mutated) and the
+ * list of events for the UI to animate:
+ *   { type: 'pickup',  player, pit, count }
+ *   { type: 'sow',     player, pit }            one seed dropped
+ *   { type: 'capture', player, from: [{player, pit, count}], count }
+ *   { type: 'end',     player, pit, reason }    'empty' | 'limit'
+ *   { type: 'win',     player }                 player may be DRAW
+ * Throws on an illegal move (the server relies on this).
+ */
+function applyMove(prev, pit, { withEvents = true } = {}) {
+    if (!isLegalMove(prev, pit)) throw new Error(`Illegal move: ${pit}`);
+    const s = cloneState(prev);
+    const me = s.turn;
+    const opp = 1 - me;
+    const mine = s.pits[me];
+    const theirs = s.pits[opp];
+    const events = withEvents ? [] : null;
+
+    let hand = mine[pit];
+    mine[pit] = 0;
+    if (events) events.push({ type: 'pickup', player: me, pit, count: hand });
+
+    let pos = pit;
+    let steps = 0;
+    let endReason = 'empty';
+
+    for (;;) {
+        // Sow what is in hand, starting after `pos`.
+        while (hand > 0) {
+            pos = (pos + 1) % PITS;
+            mine[pos]++;
+            hand--;
+            if (events) events.push({ type: 'sow', player: me, pit: pos });
+        }
+        if (++steps > MAX_SOW_STEPS) { endReason = 'limit'; break; }
+
+        if (mine[pos] === 1) break; // landed in an empty pit
+
+        const t = capturable(s, me, pos);
+        if (t) {
+            const count = theirs[t.inner] + theirs[t.outer];
+            if (events) {
+                const from = [{ player: opp, pit: t.inner, count: theirs[t.inner] }];
+                if (theirs[t.outer]) from.push({ player: opp, pit: t.outer, count: theirs[t.outer] });
+                events.push({ type: 'capture', player: me, from, count });
+            }
+            theirs[t.inner] = 0;
+            theirs[t.outer] = 0;
+            hand = count;
+            // 'start': the first captured seed goes into the pit the turn
+            // began from. 'next': sowing simply carries on after `pos`.
+            if (s.rules.captureSow === 'start') pos = (pit - 1 + PITS) % PITS;
+            continue;
+        }
+
+        // Relay: pick up the whole pit and keep going.
+        hand = mine[pos];
+        mine[pos] = 0;
+        if (events) events.push({ type: 'pickup', player: me, pit: pos, count: hand });
+    }
+
+    if (events) events.push({ type: 'end', player: me, pit: pos, reason: endReason });
+
+    s.moveCount++;
+    s.lastMove = { player: me, pit };
+    s.turn = opp;
+    if (legalMoves(s, opp).length === 0) {
+        s.winner = me;
+    } else if (s.moveCount >= MAX_MOVES) {
+        const a = seedCount(s, 0);
+        const b = seedCount(s, 1);
+        s.winner = a === b ? DRAW : a > b ? 0 : 1;
+    }
+    if (events && s.winner !== null) events.push({ type: 'win', player: s.winner });
+    return { state: s, events };
+}
+
+// ---------------------------------------------------------------------------
+// Bot
+// ---------------------------------------------------------------------------
+
+const BOT_LEVELS = {
+    easy: { depth: 1, noise: 6 },
+    medium: { depth: 3, noise: 1 },
+    hard: { depth: 5, noise: 0 },
+};
+
+const WIN_SCORE = 100000;
+
+// Static evaluation from `player`'s point of view.
+function evaluate(s, player) {
+    if (s.winner === DRAW) return 0;
+    if (s.winner !== null) return s.winner === player ? WIN_SCORE : -WIN_SCORE;
+    const opp = 1 - player;
+    const material = seedCount(s, player) - seedCount(s, opp);
+    const mobility = legalMoves(s, player).length - legalMoves(s, opp).length;
+    return material * 10 + mobility * 2;
+}
+
+function search(s, depth, alpha, beta, player) {
+    if (depth === 0 || s.winner !== null) {
+        // Prefer faster wins / slower losses.
+        const v = evaluate(s, player);
+        return v > WIN_SCORE / 2 ? v + depth : v < -WIN_SCORE / 2 ? v - depth : v;
+    }
+    const moves = legalMoves(s);
+    const maximizing = s.turn === player;
+    let best = maximizing ? -Infinity : Infinity;
+    for (const m of moves) {
+        const { state } = applyMove(s, m, { withEvents: false });
+        const v = search(state, depth - 1, alpha, beta, player);
+        if (maximizing) {
+            if (v > best) best = v;
+            if (best > alpha) alpha = best;
+        } else {
+            if (v < best) best = v;
+            if (best < beta) beta = best;
+        }
+        if (alpha >= beta) break;
+    }
+    return best;
+}
+
+/**
+ * Pick a move for the player whose turn it is.
+ * `rng` is injectable so tests (and a server) can be deterministic.
+ */
+function chooseBotMove(state, level = 'medium', rng = Math.random) {
+    const moves = legalMoves(state);
+    if (moves.length === 0) return null;
+    if (moves.length === 1) return moves[0];
+    const { depth, noise } = BOT_LEVELS[level] || BOT_LEVELS.medium;
+    const me = state.turn;
+
+    let bestMove = moves[0];
+    let bestScore = -Infinity;
+    for (const m of moves) {
+        const { state: next } = applyMove(state, m, { withEvents: false });
+        let v = search(next, depth - 1, -Infinity, Infinity, me);
+        if (noise) v += (rng() - 0.5) * 2 * noise * 10;
+        if (v > bestScore) { bestScore = v; bestMove = m; }
+    }
+    return bestMove;
+}
+// @engine-end
+// ===== End of engine =====
+
+(function () {
+    'use strict';
+
+    // ---------- Storage (may be unavailable in private mode) ----------
+    const KEYS = { settings: 'igisoro_settings_v1', save: 'igisoro_save_v1', stats: 'igisoro_stats_v1' };
+    function load(key, fallback) {
+        try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+    }
+    function store(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore */ }
+    }
+
+    const PRESETS = [
+        { id: 'classic', name: 'Classic', desc: '4 per pit, strict capture', rules: { setup: 'outer4', minSeeds: 2, captureNeeds: 'both', captureSow: 'start' } },
+        { id: 'even', name: 'Even start', desc: '2 in every pit', rules: { setup: 'all2', minSeeds: 2, captureNeeds: 'both', captureSow: 'start' } },
+        { id: 'attack', name: 'Attack', desc: 'Easier captures', rules: { setup: 'outer4', minSeeds: 2, captureNeeds: 'inner', captureSow: 'next' } },
+        { id: 'beginner', name: 'Beginner', desc: 'Any seed moves', rules: { setup: 'outer4', minSeeds: 1, captureNeeds: 'inner', captureSow: 'start' } },
+        { id: 'random', name: 'Surprise', desc: 'Random start', rules: { setup: 'random', minSeeds: 2, captureNeeds: 'both', captureSow: 'start' } },
+    ];
+
+    const settings = Object.assign(
+        { mode: 'bot', level: 'medium', rules: Object.assign({}, DEFAULT_RULES), speed: 'normal', sound: true, first: 'me', lastFirst: 1 },
+        load(KEYS.settings, {})
+    );
+    settings.rules = normalizeRules(settings.rules);
+    let stats = load(KEYS.stats, {});
+
+    // ---------- Game state ----------
+    let game = null;
+    let history = [];      // states before each move, for undo
+    let display = null;    // pits shown on screen (differs from game.pits during animation)
+    let animating = false;
+    let skipAnimation = false;
+    let botTimer = null;
+    let activePit = null;  // {player, pit} highlighted during animation
+    let pendingRules = null;
+
+    const isBot = (player) => settings.mode === 'bot' && player === 1;
+    const humanTurn = () => game && game.winner === null && !isBot(game.turn);
+
+    // ---------- DOM ----------
+    const $ = (id) => document.getElementById(id);
+    const board = $('board');
+    const boardWrap = $('boardWrap');
+    const handEl = $('hand');
+    const cells = [[], []]; // cells[player][pit] = { el, seeds[], count }
+    let vertical = true;
+
+    // Seed positions inside a pit (phyllotaxis spiral), in % of the pit.
+    const MAX_DOTS = 12;
+    const DOT_POS = [];
+    for (let k = 0; k < MAX_DOTS; k++) {
+        const r = k === 0 ? 0 : 11 * Math.sqrt(k);
+        const a = k * 2.39996;
+        DOT_POS.push([50 + r * Math.cos(a), 50 + r * Math.sin(a)]);
+    }
+
+    function buildBoard() {
+        board.innerHTML = '';
+        for (const p of [0, 1]) {
+            for (let i = 0; i < PITS; i++) {
+                const el = document.createElement('div');
+                el.className = 'pit ' + (p === 0 ? 'me' : 'opp');
+                el.setAttribute('role', 'button');
+                const turn = Math.random() * 360;
+                const seeds = [];
+                for (let k = 0; k < MAX_DOTS; k++) {
+                    const s = document.createElement('div');
+                    s.className = 'seed';
+                    // Rotate the spiral a bit per pit so pits don't look identical.
+                    const [x, y] = DOT_POS[k];
+                    const rad = (turn * Math.PI) / 180;
+                    const dx = x - 50, dy = y - 50;
+                    s.style.left = (50 + dx * Math.cos(rad) - dy * Math.sin(rad)) + '%';
+                    s.style.top = (50 + dx * Math.sin(rad) + dy * Math.cos(rad)) + '%';
+                    s.style.transform = 'rotate(' + Math.round(Math.random() * 180) + 'deg)';
+                    el.appendChild(s);
+                    seeds.push(s);
+                }
+                const count = document.createElement('div');
+                count.className = 'count';
+                el.appendChild(count);
+                el.addEventListener('click', () => onPitTap(p, i));
+                board.appendChild(el);
+                cells[p][i] = { el, seeds, count, shown: -1 };
+            }
+        }
+    }
+
+    // Grid position of a pit. Portrait phones get the board standing up
+    // (8 rows × 4 columns, player 1 on the right) so the pits are twice as
+    // big; landscape gets the classic 4 × 8 board.
+    function place(player, pit) {
+        const col = columnOf(player, pit);
+        const band = player === 1 ? (pit < ROW ? 0 : 1) : (pit < ROW ? 3 : 2);
+        return vertical ? { row: 7 - col, col: band } : { row: band, col: col };
+    }
+
+    function layout() {
+        const wide = window.innerWidth > window.innerHeight * 1.05;
+        vertical = !wide;
+        $('app').classList.toggle('wide', wide);
+        board.classList.toggle('vertical', vertical);
+        board.classList.toggle('horizontal', !vertical);
+        const rows = vertical ? 8 : 4;
+        const cols = vertical ? 4 : 8;
+        for (const p of [0, 1]) {
+            for (let i = 0; i < PITS; i++) {
+                const { row, col } = place(p, i);
+                cells[p][i].el.style.gridRow = String(row + 1);
+                cells[p][i].el.style.gridColumn = String(col + 1);
+            }
+        }
+        const w = boardWrap.clientWidth;
+        const h = boardWrap.clientHeight;
+        // cell + gap + padding must fit: pad = 0.28 cell, gap = 0.16 cell
+        const fit = (n, space) => space / (n + (n - 1) * 0.16 + 2 * 0.28);
+        let cell = Math.floor(Math.min(fit(cols, w), fit(rows, h), 110));
+        cell = Math.max(cell, 24);
+        board.style.setProperty('--cell', cell + 'px');
+        board.style.setProperty('--gap', Math.round(cell * 0.16) + 'px');
+        board.style.setProperty('--pad', Math.round(cell * 0.28) + 'px');
+        board.style.gridTemplateColumns = 'repeat(' + cols + ', var(--cell))';
+        board.style.gridTemplateRows = 'repeat(' + rows + ', var(--cell))';
+    }
+
+    // ---------- Rendering ----------
+    function render() {
+        const turn = game.turn;
+        const showLegal = !animating && humanTurn();
+        const min = game.rules.minSeeds;
+        for (const p of [0, 1]) {
+            for (let i = 0; i < PITS; i++) {
+                const c = cells[p][i];
+                const n = display[p][i];
+                if (c.shown !== n) {
+                    c.shown = n;
+                    const dots = Math.min(n, MAX_DOTS);
+                    for (let k = 0; k < MAX_DOTS; k++) c.seeds[k].style.display = k < dots ? '' : 'none';
+                    c.count.textContent = n;
+                    c.count.classList.toggle('zero', n === 0);
+                }
+                c.el.classList.toggle('legal', showLegal && p === turn && n >= min);
+                c.el.classList.toggle('active', !!activePit && activePit.player === p && activePit.pit === i);
+                c.el.classList.toggle('last', !animating && !!game.lastMove && game.lastMove.player === p && game.lastMove.pit === i);
+                c.el.setAttribute('aria-label', (p === 0 ? 'Player 1' : 'Player 2') + ' pit, ' + n + ' seeds');
+            }
+        }
+        const s0 = display[0].reduce((a, b) => a + b, 0);
+        const s1 = display[1].reduce((a, b) => a + b, 0);
+        $('score0').textContent = s0;
+        $('score1').textContent = s1;
+        $('card0').classList.toggle('active', game.winner === null && turn === 0);
+        $('card1').classList.toggle('active', game.winner === null && turn === 1);
+        $('undoBtn').disabled = animating || history.length === 0;
+    }
+
+    function names() {
+        return settings.mode === 'bot'
+            ? ['You', 'Bot (' + settings.level + ')']
+            : ['Player 1', 'Player 2'];
+    }
+
+    function setStatus(text, oppColor) {
+        const el = $('status');
+        el.textContent = text;
+        el.classList.toggle('opp-turn', !!oppColor);
+    }
+
+    function updateStatus() {
+        const n = names();
+        if (game.winner !== null) {
+            setStatus(game.winner === DRAW ? 'Draw' : (n[game.winner] + (game.winner === 0 && settings.mode === 'bot' ? ' win!' : ' wins!')), game.winner === 1);
+        } else if (isBot(game.turn)) {
+            setStatus('Bot is thinking…', true);
+        } else if (settings.mode === 'bot') {
+            setStatus('Your turn — tap a glowing pit', false);
+        } else {
+            setStatus(n[game.turn] + "'s turn", game.turn === 1);
+        }
+    }
+
+    function updateLabels() {
+        const n = names();
+        $('name0').textContent = n[0];
+        $('name1').textContent = n[1];
+        $('labelOpp').textContent = '◀ ' + (settings.mode === 'bot' ? 'BOT' : 'PLAYER 2');
+        $('labelMe').textContent = (settings.mode === 'bot' ? 'YOU' : 'PLAYER 1') + ' ▶';
+        document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === settings.mode));
+        $('levelSelect').value = settings.level;
+        $('levelSelect').hidden = settings.mode !== 'bot';
+        $('soundBtn').textContent = settings.sound ? '🔊' : '🔇';
+    }
+
+    // ---------- Sound ----------
+    let audio = null;
+    function beep(freq, dur, vol) {
+        if (!settings.sound) return;
+        try {
+            audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+            if (audio.state === 'suspended') audio.resume();
+            const o = audio.createOscillator();
+            const g = audio.createGain();
+            o.type = 'triangle';
+            o.frequency.value = freq;
+            g.gain.setValueAtTime(vol || 0.06, audio.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
+            o.connect(g).connect(audio.destination);
+            o.start();
+            o.stop(audio.currentTime + dur);
+        } catch (e) { /* no audio */ }
+    }
+    function vibrate(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) { /* ignore */ } }
+
+    // ---------- Animation ----------
+    const SPEEDS = {
+        normal: { sow: 150, pickup: 260, capture: 650 },
+        fast: { sow: 55, pickup: 110, capture: 300 },
+        instant: { sow: 0, pickup: 0, capture: 0 },
+    };
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    function showHand(n, player) {
+        if (n > 0) handEl.textContent = '✋ ' + n;
+        handEl.classList.toggle('show', n > 0);
+        handEl.classList.toggle('opp', player === 1);
+    }
+
+    async function animate(events) {
+        const sp = SPEEDS[settings.speed] || SPEEDS.normal;
+        let hand = 0;
+        for (const e of events) {
+            if (skipAnimation || sp.sow === 0) break;
+            if (e.type === 'pickup') {
+                hand += e.count;
+                display[e.player][e.pit] = 0;
+                activePit = { player: e.player, pit: e.pit };
+                showHand(hand, e.player);
+                beep(330, 0.08);
+                render();
+                await sleep(sp.pickup);
+            } else if (e.type === 'sow') {
+                hand--;
+                display[e.player][e.pit]++;
+                activePit = { player: e.player, pit: e.pit };
+                showHand(hand, e.player);
+                beep(520 + Math.min(display[e.player][e.pit], 12) * 25, 0.05, 0.04);
+                render();
+                await sleep(sp.sow);
+            } else if (e.type === 'capture') {
+                hand += e.count;
+                for (const f of e.from) {
+                    display[f.player][f.pit] = 0;
+                    const el = cells[f.player][f.pit].el;
+                    el.classList.remove('captured');
+                    void el.offsetWidth;
+                    el.classList.add('captured');
+                }
+                setStatus('Captured ' + e.count + '!', e.player === 1);
+                showHand(hand, e.player);
+                beep(180, 0.25, 0.1);
+                vibrate(40);
+                render();
+                await sleep(sp.capture);
+            }
+        }
+        activePit = null;
+        showHand(0);
+    }
+
+    // ---------- Moves ----------
+    async function playMove(pit) {
+        const before = game;
+        const { state, events } = applyMove(game, pit);
+        history.push(before);
+        animating = true;
+        skipAnimation = false;
+        const mover = before.turn;
+        setStatus(isBot(mover) ? 'Bot is moving…' : settings.mode === 'bot' ? 'Sowing… (tap to skip)' : names()[mover] + ' is sowing…', mover === 1);
+        render();
+        await animate(events);
+        game = state;
+        display = [game.pits[0].slice(), game.pits[1].slice()];
+        animating = false;
+        save();
+        render();
+        updateStatus();
+        if (game.winner !== null) {
+            onGameOver();
+        } else if (isBot(game.turn)) {
+            scheduleBot();
+        }
+    }
+
+    function scheduleBot() {
+        clearTimeout(botTimer);
+        updateStatus();
+        botTimer = setTimeout(() => {
+            botTimer = null;
+            if (!game || game.winner !== null || !isBot(game.turn) || animating) return;
+            const m = chooseBotMove(game, settings.level);
+            if (m !== null) playMove(m);
+        }, 550);
+    }
+
+    function onPitTap(player, pit) {
+        if (animating) { skipAnimation = true; return; }
+        if (!humanTurn()) return;
+        if (player !== game.turn) return;
+        if (!isLegalMove(game, pit)) {
+            const el = cells[player][pit].el;
+            el.classList.remove('shake');
+            void el.offsetWidth;
+            el.classList.add('shake');
+            setStatus(game.rules.minSeeds === 2 ? 'Pick a pit with 2 or more seeds' : 'That pit is empty', player === 1);
+            return;
+        }
+        playMove(pit);
+    }
+
+    boardWrap.addEventListener('click', (e) => {
+        if (animating && !e.target.closest('.pit')) skipAnimation = true;
+    });
+
+    function undo() {
+        if (animating || history.length === 0) return;
+        clearTimeout(botTimer);
+        let prev = history.pop();
+        // Against the bot, go back to the last position where it was your turn.
+        if (settings.mode === 'bot') {
+            while (isBot(prev.turn) && history.length) prev = history.pop();
+            if (isBot(prev.turn)) { history.push(prev); return; }
+        }
+        game = prev;
+        display = [game.pits[0].slice(), game.pits[1].slice()];
+        closeOverlay('overOverlay');
+        save();
+        render();
+        updateStatus();
+    }
+
+    function newGame(rules) {
+        clearTimeout(botTimer);
+        if (rules) settings.rules = normalizeRules(rules);
+        let first = 0;
+        if (settings.first === 'opp') first = 1;
+        else if (settings.first === 'alt') { first = 1 - (settings.lastFirst || 0); settings.lastFirst = first; }
+        store(KEYS.settings, settings);
+        game = createGame({ rules: settings.rules, firstPlayer: first });
+        history = [];
+        display = [game.pits[0].slice(), game.pits[1].slice()];
+        animating = false;
+        activePit = null;
+        closeOverlay('overOverlay');
+        save();
+        render();
+        updateStatus();
+        if (isBot(game.turn)) scheduleBot();
+    }
+
+    function save() {
+        store(KEYS.save, { game: game, history: history.slice(-60), mode: settings.mode });
+    }
+
+    function onGameOver() {
+        const n = names();
+        let emoji, title, sub;
+        const s0 = seedCount(game, 0), s1 = seedCount(game, 1);
+        if (game.winner === DRAW) {
+            emoji = '🤝'; title = 'Draw'; sub = 'Equal seeds after ' + game.moveCount + ' moves';
+        } else if (settings.mode === 'bot') {
+            const won = game.winner === 0;
+            emoji = won ? '🎉' : '🤖';
+            title = won ? 'You win!' : 'Bot wins';
+            sub = won ? 'The bot has no moves left.' : 'You have no moves left.';
+        } else {
+            emoji = '🏆'; title = n[game.winner] + ' wins!'; sub = n[1 - game.winner] + ' has no moves left.';
+        }
+        let statsText = '';
+        if (settings.mode === 'bot') {
+            const k = settings.level;
+            const st = stats[k] || { w: 0, l: 0, d: 0 };
+            if (game.winner === 0) st.w++; else if (game.winner === 1) st.l++; else st.d++;
+            stats[k] = st;
+            store(KEYS.stats, stats);
+            statsText = 'vs ' + k + ' bot: ' + st.w + ' won · ' + st.l + ' lost' + (st.d ? ' · ' + st.d + ' draw' : '');
+        }
+        $('resultEmoji').textContent = emoji;
+        $('resultTitle').textContent = title;
+        $('resultSub').textContent = sub + ' (' + s0 + ' : ' + s1 + ')';
+        $('resultStats').textContent = statsText;
+        if (game.winner === 0 || settings.mode === '2p') { beep(660, 0.15, 0.08); setTimeout(() => beep(880, 0.25, 0.08), 150); }
+        setTimeout(() => openOverlay('overOverlay'), 500);
+    }
+
+    // ---------- Overlays ----------
+    function openOverlay(id) { $(id).classList.add('open'); }
+    function closeOverlay(id) { $(id).classList.remove('open'); }
+    document.querySelectorAll('.overlay').forEach((ov) => {
+        ov.addEventListener('click', (e) => {
+            if (e.target === ov || e.target.closest('[data-close]')) closeOverlay(ov.id);
+        });
+    });
+
+    function renderRulesSheet() {
+        const r = pendingRules;
+        const presets = $('presets');
+        presets.innerHTML = '';
+        for (const p of PRESETS) {
+            const b = document.createElement('button');
+            b.className = 'preset';
+            const same = Object.keys(p.rules).every((k) => String(p.rules[k]) === String(r[k]));
+            b.classList.toggle('active', same);
+            b.innerHTML = p.name + '<small>' + p.desc + '</small>';
+            b.addEventListener('click', () => { pendingRules = Object.assign({}, p.rules); renderRulesSheet(); });
+            presets.appendChild(b);
+        }
+        document.querySelectorAll('.seg[data-rule]').forEach((seg) => {
+            seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.value === String(r[seg.dataset.rule])));
+        });
+        document.querySelectorAll('.seg[data-setting]').forEach((seg) => {
+            seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.value === String(settings[seg.dataset.setting])));
+        });
+    }
+
+    document.querySelectorAll('.seg[data-rule] button').forEach((b) => {
+        b.addEventListener('click', () => {
+            const key = b.parentElement.dataset.rule;
+            pendingRules[key] = key === 'minSeeds' ? Number(b.dataset.value) : b.dataset.value;
+            renderRulesSheet();
+        });
+    });
+    document.querySelectorAll('.seg[data-setting] button').forEach((b) => {
+        b.addEventListener('click', () => {
+            settings[b.parentElement.dataset.setting] = b.dataset.value;
+            store(KEYS.settings, settings);
+            renderRulesSheet();
+        });
+    });
+
+    $('rulesBtn').addEventListener('click', () => {
+        pendingRules = Object.assign({}, settings.rules);
+        renderRulesSheet();
+        openOverlay('rulesOverlay');
+    });
+    $('applyRules').addEventListener('click', () => {
+        closeOverlay('rulesOverlay');
+        newGame(pendingRules);
+    });
+
+    // ---------- Controls ----------
+    document.querySelectorAll('.mode-btn').forEach((b) => {
+        b.addEventListener('click', () => {
+            if (settings.mode === b.dataset.mode || animating) return;
+            settings.mode = b.dataset.mode;
+            updateLabels();
+            newGame();
+        });
+    });
+    $('levelSelect').addEventListener('change', (e) => {
+        settings.level = e.target.value;
+        store(KEYS.settings, settings);
+        updateLabels();
+        updateStatus();
+    });
+    $('soundBtn').addEventListener('click', () => {
+        settings.sound = !settings.sound;
+        store(KEYS.settings, settings);
+        updateLabels();
+    });
+    $('undoBtn').addEventListener('click', undo);
+    $('newBtn').addEventListener('click', () => { if (!animating) newGame(); });
+    $('againBtn').addEventListener('click', () => newGame());
+
+    let resizeTimer = null;
+    window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(layout, 80); });
+
+    // ---------- Start ----------
+    buildBoard();
+    updateLabels();
+    layout();
+
+    const saved = load(KEYS.save, null);
+    if (saved && saved.game && saved.game.pits && saved.mode === settings.mode && saved.game.winner === null) {
+        game = saved.game;
+        game.rules = normalizeRules(game.rules);
+        history = Array.isArray(saved.history) ? saved.history : [];
+        display = [game.pits[0].slice(), game.pits[1].slice()];
+        render();
+        updateStatus();
+        if (isBot(game.turn)) scheduleBot();
+    } else {
+        newGame();
+    }
+})();
+</script>
+</body>
+</html>

@@ -19,51 +19,94 @@
 //   player 0: outer i → column i,     inner 8+k → column 7-k
 //   player 1: outer i → column 7-i,   inner 8+k → column k
 //
-// Rules implemented (configurable in RULES where versions differ):
-//   - A move starts from one of your pits holding at least 2 seeds.
+// Rules. Igisoro is played differently from village to village, so the
+// points where versions disagree are options stored in `state.rules`
+// (the bot and, later, the server read them from the state):
+//
+//   setup         'outer4'  4 seeds in each outer pit, inner row empty
+//                 'all2'    2 seeds in every pit
+//                 'random'  32 seeds scattered at random, same for both sides
+//   minSeeds      2         a move starts from a pit with at least 2 seeds
+//                 1         single seeds may move too
+//   captureNeeds  'both'    capture only if the opponent's inner AND outer
+//                           pits in that column are non-empty
+//                 'inner'   the opponent's inner pit is enough (the outer
+//                           pit is taken along with it)
+//   captureSow    'start'   captured seeds are sown from the pit where the
+//                           turn began
+//                 'next'    captured seeds are sown on from the pit where
+//                           the capturing seed landed
+//
+// Common to all versions:
 //   - Seeds are sown one per pit along your own 16-pit loop.
 //   - Last seed in an empty pit: the turn ends.
-//   - Last seed in an occupied pit of your INNER row, and the opponent's two
-//     pits in the same column are both non-empty: capture both, then sow the
-//     captured seeds starting from the pit where the turn began.
+//   - Last seed in an occupied pit of your inner row that can capture:
+//     capture, then sow the captured seeds.
 //   - Last seed in any other occupied pit: pick all of it up and keep sowing
 //     (relay).
-//   - A player who cannot move (no pit with ≥ 2 seeds) loses.
+//   - A player who cannot move loses. After MAX_MOVES moves the player
+//     with more seeds wins (equal = draw), so no game runs forever.
 
 export const PITS = 16;
 export const ROW = 8;
+export const SEEDS_PER_PLAYER = 32;
+export const MAX_MOVES = 400;
+// Safety valve: a relay chain longer than this ends the turn.
+// Real games never get close; it only guards against endless loops.
+export const MAX_SOW_STEPS = 2000;
+export const DRAW = -1;
 
-export const RULES = {
-    // Seeds placed in each outer-row pit at the start (32 per player).
+export const DEFAULT_RULES = {
     setup: 'outer4',
-    // Minimum seeds a pit needs to be picked for a move.
-    minSeedsToMove: 2,
-    // Safety valve: a relay chain longer than this ends the turn.
-    // Real games never get close; it only guards against endless loops.
-    maxSowSteps: 2000,
+    minSeeds: 2,
+    captureNeeds: 'both',
+    captureSow: 'start',
 };
+
+export const RULE_OPTIONS = {
+    setup: ['outer4', 'all2', 'random'],
+    minSeeds: [2, 1],
+    captureNeeds: ['both', 'inner'],
+    captureSow: ['start', 'next'],
+};
+
+export function normalizeRules(rules = {}) {
+    const out = { ...DEFAULT_RULES };
+    for (const key of Object.keys(RULE_OPTIONS)) {
+        if (RULE_OPTIONS[key].includes(rules[key])) out[key] = rules[key];
+    }
+    return out;
+}
+
+function randomSetup(rng) {
+    const row = new Array(PITS).fill(0);
+    for (let i = 0; i < SEEDS_PER_PLAYER; i++) row[Math.floor(rng() * PITS)]++;
+    // 32 seeds in 16 pits always leave some pit with ≥ 2, so the side can move.
+    return row;
+}
 
 const SETUPS = {
-    // 4 seeds in every outer pit, inner row empty.
     outer4: () => [4, 4, 4, 4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 0, 0],
-    // 2 seeds in every pit.
     all2: () => new Array(PITS).fill(2),
+    random: randomSetup,
 };
 
-export function createGame(options = {}) {
-    const setup = SETUPS[options.setup || RULES.setup];
-    if (!setup) throw new Error(`Unknown setup: ${options.setup}`);
+export function createGame({ rules, firstPlayer = 0, rng = Math.random } = {}) {
+    const r = normalizeRules(rules);
+    const row = SETUPS[r.setup](rng);
     return {
-        pits: [setup(), setup()],
-        turn: options.firstPlayer === 1 ? 1 : 0,
+        rules: r,
+        pits: [row.slice(), row.slice()],
+        turn: firstPlayer === 1 ? 1 : 0,
         moveCount: 0,
-        winner: null, // 0 | 1 | null
+        winner: null, // 0 | 1 | DRAW | null
         lastMove: null,
     };
 }
 
 export function cloneState(s) {
     return {
+        rules: s.rules,
         pits: [s.pits[0].slice(), s.pits[1].slice()],
         turn: s.turn,
         moveCount: s.moveCount,
@@ -91,9 +134,10 @@ export function seedCount(state, player) {
 
 export function legalMoves(state, player = state.turn) {
     if (state.winner !== null) return [];
+    const min = state.rules.minSeeds;
     const moves = [];
     const row = state.pits[player];
-    for (let i = 0; i < PITS; i++) if (row[i] >= RULES.minSeedsToMove) moves.push(i);
+    for (let i = 0; i < PITS; i++) if (row[i] >= min) moves.push(i);
     return moves;
 }
 
@@ -104,8 +148,19 @@ export function isLegalMove(state, pit, player = state.turn) {
         Number.isInteger(pit) &&
         pit >= 0 &&
         pit < PITS &&
-        state.pits[player][pit] >= RULES.minSeedsToMove
+        state.pits[player][pit] >= state.rules.minSeeds
     );
+}
+
+// Opponent pits captured if `me` ends in inner pit `pos`, or null.
+function capturable(s, me, pos) {
+    if (!isInner(pos)) return null;
+    const opp = 1 - me;
+    const t = pitsInColumn(opp, columnOf(me, pos));
+    const theirs = s.pits[opp];
+    if (theirs[t.inner] === 0) return null;
+    if (s.rules.captureNeeds === 'both' && theirs[t.outer] === 0) return null;
+    return t;
 }
 
 /**
@@ -116,7 +171,7 @@ export function isLegalMove(state, pit, player = state.turn) {
  *   { type: 'sow',     player, pit }            one seed dropped
  *   { type: 'capture', player, from: [{player, pit, count}], count }
  *   { type: 'end',     player, pit, reason }    'empty' | 'limit'
- *   { type: 'win',     player }
+ *   { type: 'win',     player }                 player may be DRAW
  * Throws on an illegal move (the server relies on this).
  */
 export function applyMove(prev, pit, { withEvents = true } = {}) {
@@ -144,34 +199,25 @@ export function applyMove(prev, pit, { withEvents = true } = {}) {
             hand--;
             if (events) events.push({ type: 'sow', player: me, pit: pos });
         }
-        if (++steps > RULES.maxSowSteps) { endReason = 'limit'; break; }
+        if (++steps > MAX_SOW_STEPS) { endReason = 'limit'; break; }
 
         if (mine[pos] === 1) break; // landed in an empty pit
 
-        if (isInner(pos)) {
-            const col = columnOf(me, pos);
-            const t = pitsInColumn(opp, col);
-            if (theirs[t.inner] > 0 && theirs[t.outer] > 0) {
-                const count = theirs[t.inner] + theirs[t.outer];
-                if (events) {
-                    events.push({
-                        type: 'capture',
-                        player: me,
-                        from: [
-                            { player: opp, pit: t.inner, count: theirs[t.inner] },
-                            { player: opp, pit: t.outer, count: theirs[t.outer] },
-                        ],
-                        count,
-                    });
-                }
-                theirs[t.inner] = 0;
-                theirs[t.outer] = 0;
-                hand = count;
-                // Captured seeds are sown from the pit where the turn began
-                // (the first seed goes into that pit itself).
-                pos = (pit - 1 + PITS) % PITS;
-                continue;
+        const t = capturable(s, me, pos);
+        if (t) {
+            const count = theirs[t.inner] + theirs[t.outer];
+            if (events) {
+                const from = [{ player: opp, pit: t.inner, count: theirs[t.inner] }];
+                if (theirs[t.outer]) from.push({ player: opp, pit: t.outer, count: theirs[t.outer] });
+                events.push({ type: 'capture', player: me, from, count });
             }
+            theirs[t.inner] = 0;
+            theirs[t.outer] = 0;
+            hand = count;
+            // 'start': the first captured seed goes into the pit the turn
+            // began from. 'next': sowing simply carries on after `pos`.
+            if (s.rules.captureSow === 'start') pos = (pit - 1 + PITS) % PITS;
+            continue;
         }
 
         // Relay: pick up the whole pit and keep going.
@@ -187,8 +233,12 @@ export function applyMove(prev, pit, { withEvents = true } = {}) {
     s.turn = opp;
     if (legalMoves(s, opp).length === 0) {
         s.winner = me;
-        if (events) events.push({ type: 'win', player: me });
+    } else if (s.moveCount >= MAX_MOVES) {
+        const a = seedCount(s, 0);
+        const b = seedCount(s, 1);
+        s.winner = a === b ? DRAW : a > b ? 0 : 1;
     }
+    if (events && s.winner !== null) events.push({ type: 'win', player: s.winner });
     return { state: s, events };
 }
 
@@ -206,6 +256,7 @@ const WIN_SCORE = 100000;
 
 // Static evaluation from `player`'s point of view.
 function evaluate(s, player) {
+    if (s.winner === DRAW) return 0;
     if (s.winner !== null) return s.winner === player ? WIN_SCORE : -WIN_SCORE;
     const opp = 1 - player;
     const material = seedCount(s, player) - seedCount(s, opp);

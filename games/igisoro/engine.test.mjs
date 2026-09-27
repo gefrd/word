@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
     createGame, applyMove, legalMoves, chooseBotMove, seedCount,
-    columnOf, pitsInColumn, PITS,
+    columnOf, pitsInColumn, normalizeRules, RULE_OPTIONS, DEFAULT_RULES, PITS, DRAW,
 } from './engine.js';
 
 // Small deterministic PRNG so failures are reproducible.
@@ -16,8 +16,8 @@ function mulberry32(seed) {
     };
 }
 
-function emptyGame() {
-    const s = createGame();
+function emptyGame(rules) {
+    const s = createGame({ rules });
     s.pits = [new Array(PITS).fill(0), new Array(PITS).fill(0)];
     return s;
 }
@@ -145,4 +145,108 @@ test('medium bot beats a random player most of the time', () => {
         if (s.winner === botSide) botWins++;
     }
     assert.ok(botWins >= games * 0.8, `bot won only ${botWins}/${games}`);
+});
+
+// ---------------------------------------------------------------------------
+// Rule variants
+// ---------------------------------------------------------------------------
+
+function allRuleCombos() {
+    const combos = [{}];
+    for (const [key, values] of Object.entries(RULE_OPTIONS)) {
+        const next = [];
+        for (const c of combos) for (const v of values) next.push({ ...c, [key]: v });
+        combos.splice(0, combos.length, ...next);
+    }
+    return combos;
+}
+
+test('unknown rule values fall back to defaults', () => {
+    assert.deepEqual(normalizeRules({ setup: 'nope', minSeeds: 7, extra: 1 }), DEFAULT_RULES);
+    assert.equal(normalizeRules({ minSeeds: 1 }).minSeeds, 1);
+});
+
+test('every setup gives 32 seeds per side, mirrored', () => {
+    const rng = mulberry32(3);
+    for (const setup of RULE_OPTIONS.setup) {
+        for (let i = 0; i < 20; i++) {
+            const s = createGame({ rules: { setup }, rng });
+            assert.equal(seedCount(s, 0), 32, setup);
+            assert.deepEqual(s.pits[0], s.pits[1], setup);
+            assert.ok(legalMoves(s).length > 0, setup);
+        }
+    }
+    assert.deepEqual(createGame({ rules: { setup: 'all2' } }).pits[0], new Array(16).fill(2));
+});
+
+test('minSeeds 1 lets single seeds move', () => {
+    const s = emptyGame({ minSeeds: 1 });
+    s.pits[0][3] = 1;
+    s.pits[1][0] = 1;
+    assert.deepEqual(legalMoves(s), [3]);
+    assert.deepEqual(legalMoves(emptyGame()), []);
+});
+
+test("captureNeeds 'inner': an empty opponent outer pit still allows capture", () => {
+    const setup = (rules) => {
+        const s = emptyGame(rules);
+        s.pits[0][8] = 2;
+        s.pits[0][10] = 1;
+        const t = pitsInColumn(1, columnOf(0, 10));
+        s.pits[1][t.inner] = 3; // outer stays empty
+        s.pits[1][0] = 2;
+        return s;
+    };
+    const both = applyMove(setup({ captureNeeds: 'both' }), 8);
+    const inner = applyMove(setup({ captureNeeds: 'inner' }), 8);
+    assert.ok(!both.events.some((e) => e.type === 'capture'));
+    const cap = inner.events.find((e) => e.type === 'capture');
+    assert.equal(cap.count, 3);
+    assert.equal(cap.from.length, 1);
+});
+
+test("captureSow 'start' vs 'next' decides where captured seeds go", () => {
+    const setup = (captureSow) => {
+        const s = emptyGame({ captureSow });
+        s.pits[0][8] = 2; // sow 9, 10 → lands on 10 (occupied, inner)
+        s.pits[0][10] = 1;
+        const t = pitsInColumn(1, columnOf(0, 10));
+        s.pits[1][t.inner] = 1;
+        s.pits[1][t.outer] = 1; // 2 captured seeds
+        s.pits[1][0] = 2;
+        return applyMove(s, 8);
+    };
+    const sowsAfterCapture = ({ events }) => {
+        const i = events.findIndex((e) => e.type === 'capture');
+        return events.slice(i + 1, i + 3).map((e) => e.pit);
+    };
+    assert.deepEqual(sowsAfterCapture(setup('start')), [8, 9]);
+    assert.deepEqual(sowsAfterCapture(setup('next')), [11, 12]);
+});
+
+test('every rule combination: seeds conserved, games finish, bot legal', () => {
+    const rng = mulberry32(99);
+    for (const rules of allRuleCombos()) {
+        for (let g = 0; g < 15; g++) {
+            let s = createGame({ rules, rng });
+            while (s.winner === null) {
+                const moves = legalMoves(s);
+                const m = g % 3 === 0 && s.turn === 1
+                    ? chooseBotMove(s, 'easy', rng)
+                    : moves[Math.floor(rng() * moves.length)];
+                assert.ok(moves.includes(m));
+                s = applyMove(s, m, { withEvents: false }).state;
+                assert.equal(seedCount(s, 0) + seedCount(s, 1), 64, JSON.stringify(rules));
+            }
+            assert.ok([0, 1, DRAW].includes(s.winner));
+        }
+    }
+});
+
+test('igisoro.html carries the current engine (run build.mjs if this fails)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { inlineEngine } = await import('./build.mjs');
+    const html = readFileSync(new URL('../../igisoro.html', import.meta.url), 'utf8');
+    const engine = readFileSync(new URL('./engine.js', import.meta.url), 'utf8');
+    assert.equal(inlineEngine(html, engine), html);
 });
