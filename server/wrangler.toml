@@ -1,0 +1,23 @@
+# Cloudflare Worker for Kivu online games (Igisoro first).
+# Deploy: npm install && npx wrangler login && npx wrangler deploy
+name = "kivu-games"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Comma-separated list of sites allowed to use the server, e.g.
+# "https://kivu.rw,https://www.kivu.rw". Empty = allow any site.
+ALLOWED_ORIGINS = ""
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "GameRoom"
+
+[[durable_objects.bindings]]
+name = "MATCHMAKER"
+class_name = "Matchmaker"
+
+# SQLite-backed Durable Objects work on the free Workers plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom", "Matchmaker"]
