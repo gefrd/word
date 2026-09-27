@@ -1,0 +1,1101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Darts Master</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: rgba(15, 23, 42, 0.85);
+            --primary: #3b82f6;
+            --accent: #ef4444;
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+            --wood-dark: #3e2723;
+            --wood-light: #5d4037;
+            --board-black: #1a1a1a;
+            --board-white: #f5f5dc;
+            --board-red: #d32f2f;
+            --board-green: #388e3c;
+            --wire: #b0bec5;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at 50% 50%, var(--wood-light) 0%, var(--wood-dark) 100%);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+            transition: transform 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+
+        .top-panel {
+            background: var(--panel-bg);
+            padding: 10px 15px;
+            border-bottom-left-radius: 15px;
+            border-bottom-right-radius: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(5px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            margin: 0 10px;
+        }
+
+        .player-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+        }
+        .player-name {
+            font-size: 14px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .player-score {
+            font-size: 32px;
+            font-weight: bold;
+            color: var(--text-main);
+        }
+        .active-player {
+            color: var(--primary);
+            text-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        }
+
+        .score-divider {
+            width: 2px;
+            height: 40px;
+            background: var(--text-dim);
+            opacity: 0.3;
+            margin: 0 15px;
+        }
+
+        .darts-left {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        .dart-icon {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: var(--text-dim);
+            opacity: 0.5;
+        }
+        .dart-icon.active {
+            background: var(--accent);
+            opacity: 1;
+            box-shadow: 0 0 8px var(--accent);
+        }
+
+        .bottom-panel {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 15px;
+            gap: 10px;
+        }
+
+        .checkout-suggestion {
+            background: rgba(0,0,0,0.6);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #fbbf24;
+            font-weight: 600;
+            letter-spacing: 1px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .messages {
+            font-size: 24px;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            text-align: center;
+            min-height: 30px;
+            pointer-events: none;
+        }
+
+        /* Screens */
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            pointer-events: auto;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        h1 {
+            font-size: 48px;
+            margin-bottom: 10px;
+            background: linear-gradient(to bottom, #fff, #b0bec5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+
+        .menu-btn {
+            background: linear-gradient(135deg, var(--primary), #2563eb);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 25px;
+            margin: 10px 0;
+            width: 80%;
+            max-width: 300px;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .menu-btn:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 5px rgba(59, 130, 246, 0.4);
+        }
+        
+        .mode-select {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            width: 100%;
+            max-width: 350px;
+        }
+        
+        .mode-btn {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid var(--text-dim);
+            color: var(--text-main);
+            padding: 10px 15px;
+            border-radius: 15px;
+            flex: 1 1 45%;
+            font-size: 16px;
+        }
+        .mode-btn.selected {
+            border-color: var(--primary);
+            background: rgba(59, 130, 246, 0.2);
+            color: white;
+        }
+
+        .difficulty-select {
+            margin-bottom: 30px;
+            width: 100%;
+            max-width: 350px;
+            text-align: center;
+        }
+        .difficulty-select label {
+            display: block;
+            margin-bottom: 10px;
+            color: var(--text-dim);
+        }
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--primary);
+        }
+
+        .instructions {
+            text-align: center;
+            color: var(--text-dim);
+            font-size: 14px;
+            margin-top: 20px;
+            max-width: 300px;
+            line-height: 1.5;
+        }
+
+        /* Crosshair */
+        .crosshair {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+            transform: translate(-50%, -50%);
+        }
+        .crosshair::before, .crosshair::after {
+            content: '';
+            position: absolute;
+            background: rgba(255,255,255,0.8);
+        }
+        .crosshair::before {
+            top: 50%; left: 0; width: 100%; height: 2px; margin-top: -1px;
+        }
+        .crosshair::after {
+            left: 50%; top: 0; height: 100%; width: 2px; margin-left: -1px;
+        }
+        .crosshair .circle {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 20px; height: 20px;
+            border: 2px solid rgba(255,0,0,0.6);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Power Meter */
+        .power-meter-container {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 15px;
+            height: 200px;
+            background: rgba(0,0,0,0.5);
+            border-radius: 10px;
+            border: 2px solid var(--text-dim);
+            display: none;
+            z-index: 5;
+            overflow: hidden;
+        }
+        .power-meter-fill {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 0%;
+            background: linear-gradient(to top, #4ade80, #facc15, #ef4444);
+            transition: height 0.1s;
+        }
+        .power-meter-target {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 10px;
+            background: rgba(255,255,255,0.8);
+            top: 40%; /* Ideal power zone */
+        }
+
+        /* Throw indicator area */
+        .touch-area {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 4;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="crosshair" id="crosshair">
+        <div class="circle"></div>
+    </div>
+    
+    <div class="power-meter-container" id="powerMeter">
+        <div class="power-meter-target"></div>
+        <div class="power-meter-fill" id="powerFill"></div>
+    </div>
+
+    <div class="touch-area" id="touchArea"></div>
+
+    <div class="ui-layer" id="gameUI" style="display: none;">
+        <div class="top-panel">
+            <div class="player-info" id="p1Info">
+                <div class="player-name">Player</div>
+                <div class="player-score" id="p1Score">501</div>
+                <div class="darts-left" id="p1Darts">
+                    <div class="dart-icon"></div>
+                    <div class="dart-icon"></div>
+                    <div class="dart-icon"></div>
+                </div>
+            </div>
+            <div class="score-divider"></div>
+            <div class="player-info" id="p2Info">
+                <div class="player-name">AI</div>
+                <div class="player-score" id="p2Score">501</div>
+                <div class="darts-left" id="p2Darts">
+                    <div class="dart-icon"></div>
+                    <div class="dart-icon"></div>
+                    <div class="dart-icon"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="bottom-panel">
+            <div class="checkout-suggestion" id="checkoutInfo">T20 D20 (100)</div>
+            <div class="messages" id="gameMessage"></div>
+        </div>
+    </div>
+
+    <!-- Start Screen -->
+    <div class="screen" id="startScreen">
+        <h1>Darts Master</h1>
+        
+        <div class="mode-select">
+            <button class="mode-btn selected" data-mode="501">501</button>
+            <button class="mode-btn" data-mode="301">301</button>
+            <button class="mode-btn" data-mode="free">Free Play</button>
+            <!-- Cricket to be implemented if possible, kept simple for now -->
+        </div>
+
+        <div class="difficulty-select">
+            <label for="aiDiff">AI Difficulty: <span id="diffVal">Medium</span></label>
+            <input type="range" id="aiDiff" min="1" max="10" value="5">
+        </div>
+
+        <button class="menu-btn" id="startBtn">PLAY NOW</button>
+        
+        <div class="instructions">
+            Touch and drag to aim.<br>
+            Pull down to set power.<br>
+            Release to throw!
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div class="screen hidden" id="gameOverScreen">
+        <h1>Game Over</h1>
+        <h2 id="winnerText" style="color: var(--primary); margin-bottom: 30px;">You Win!</h2>
+        <div style="font-size: 20px; color: var(--text-dim); margin-bottom: 30px;" id="statsText">
+            Darts Thrown: 15
+        </div>
+        <button class="menu-btn" id="restartBtn">Play Again</button>
+        <button class="menu-btn" id="homeBtn" style="background: transparent; border: 2px solid var(--text-dim);">Main Menu</button>
+    </div>
+
+<script>
+/**
+ * Darts Master - HTML5 Canvas Mobile Game
+ */
+
+// --- Audio System (Web Audio API) ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const sounds = {
+    playThud: () => {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+        if(navigator.vibrate) navigator.vibrate(15);
+    },
+    playWhoosh: () => {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const noise = audioCtx.createBufferSource();
+        const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.2, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < buffer.length; i++) data[i] = Math.random() * 2 - 1;
+        noise.buffer = buffer;
+        const filter = audioCtx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(500, audioCtx.currentTime);
+        filter.frequency.linearRampToValueAtTime(2000, audioCtx.currentTime + 0.1);
+        const gain = audioCtx.createGain();
+        gain.gain.setValueAtTime(0, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.3, audioCtx.currentTime + 0.05);
+        gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(audioCtx.destination);
+        noise.start();
+    },
+    playCheer: () => {
+        // Simple synthetic chord for a good throw
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        [440, 554, 659].forEach(freq => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.value = freq;
+            osc.type = 'sine';
+            gain.gain.setValueAtTime(0, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.2, audioCtx.currentTime + 0.1);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1.0);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 1.0);
+        });
+        if(navigator.vibrate) navigator.vibrate([30, 50, 30]);
+    }
+};
+
+// --- Game Engine & Canvas ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+let cw = window.innerWidth;
+let ch = window.innerHeight;
+canvas.width = cw;
+canvas.height = ch;
+
+window.addEventListener('resize', () => {
+    cw = window.innerWidth;
+    ch = window.innerHeight;
+    canvas.width = cw;
+    canvas.height = ch;
+    board.x = cw / 2;
+    board.y = ch / 2 - 50; // Offset up slightly for UI
+    board.radius = Math.min(cw, ch) * 0.4;
+});
+
+// The standard dartboard numbering sequence (clockwise from top)
+const boardNumbers = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+
+const board = {
+    x: cw / 2,
+    y: ch / 2 - 50,
+    radius: Math.min(cw, ch) * 0.4,
+    draw: function() {
+        // Draw wood surround
+        ctx.fillStyle = '#2d1b15';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 1.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#1a1a1a'; // outer black rim
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 1.15, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw numbers ring
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${this.radius * 0.12}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        const angleStep = (Math.PI * 2) / 20;
+        
+        for (let i = 0; i < 20; i++) {
+            const angle = -Math.PI / 2 + (i * angleStep);
+            
+            // Draw segment
+            this.drawSegment(i, angle, angleStep);
+
+            // Draw number
+            const numRadius = this.radius * 1.05;
+            const nx = this.x + Math.cos(angle) * numRadius;
+            const ny = this.y + Math.sin(angle) * numRadius;
+            
+            ctx.save();
+            ctx.translate(nx, ny);
+            let numAngle = angle + Math.PI/2;
+            if (numAngle > Math.PI/2 && numAngle < Math.PI*1.5) numAngle += Math.PI; // flip bottom numbers
+            ctx.rotate(numAngle);
+            ctx.fillText(boardNumbers[i].toString(), 0, 0);
+            ctx.restore();
+        }
+
+        // Outer Bull (25)
+        ctx.fillStyle = '#388e3c';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.09, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#b0bec5';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Inner Bull (50)
+        ctx.fillStyle = '#d32f2f';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.04, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    },
+
+    drawSegment: function(index, angle, step) {
+        const startAngle = angle - step / 2;
+        const endAngle = angle + step / 2;
+        
+        const isEven = index % 2 === 0;
+        
+        const cBase = isEven ? '#1a1a1a' : '#f5f5dc'; // Black / White
+        const cMulti = isEven ? '#d32f2f' : '#388e3c'; // Red / Green
+
+        // Single (inner to outer)
+        this.arcFill(this.radius * 0.09, this.radius * 0.6, startAngle, endAngle, cBase);
+        // Triple ring
+        this.arcFill(this.radius * 0.6, this.radius * 0.68, startAngle, endAngle, cMulti);
+        // Single outer
+        this.arcFill(this.radius * 0.68, this.radius * 0.92, startAngle, endAngle, cBase);
+        // Double ring
+        this.arcFill(this.radius * 0.92, this.radius * 1.0, startAngle, endAngle, cMulti);
+
+        // Wires
+        ctx.strokeStyle = '#b0bec5';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(this.x + Math.cos(startAngle) * this.radius * 0.09, this.y + Math.sin(startAngle) * this.radius * 0.09);
+        ctx.lineTo(this.x + Math.cos(startAngle) * this.radius, this.y + Math.sin(startAngle) * this.radius);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.6, startAngle, endAngle);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.68, startAngle, endAngle);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 0.92, startAngle, endAngle);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius * 1.0, startAngle, endAngle);
+        ctx.stroke();
+    },
+
+    arcFill: function(r1, r2, a1, a2, color) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, r2, a1, a2);
+        ctx.arc(this.x, this.y, r1, a2, a1, true);
+        ctx.fill();
+    },
+    
+    getScore: function(hitX, hitY) {
+        const dx = hitX - this.x;
+        const dy = hitY - this.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        
+        if (dist > this.radius) return { score: 0, mult: 1, label: 'Miss' };
+        
+        if (dist <= this.radius * 0.04) return { score: 50, mult: 1, label: 'Bullseye!' };
+        if (dist <= this.radius * 0.09) return { score: 25, mult: 1, label: 'Outer Bull' };
+        
+        let angle = Math.atan2(dy, dx) + Math.PI / 2; // offset to top
+        if (angle < 0) angle += Math.PI * 2;
+        
+        const step = (Math.PI * 2) / 20;
+        const index = Math.floor((angle + step/2) / step) % 20;
+        const number = boardNumbers[index];
+        
+        let mult = 1;
+        let prefix = '';
+        if (dist >= this.radius * 0.6 && dist <= this.radius * 0.68) {
+            mult = 3; prefix = 'T';
+        } else if (dist >= this.radius * 0.92 && dist <= this.radius * 1.0) {
+            mult = 2; prefix = 'D';
+        }
+        
+        return { score: number, mult: mult, label: prefix ? prefix+number : number.toString() };
+    }
+};
+
+// Particles
+let particles = [];
+function spawnParticles(x, y, color) {
+    for(let i=0; i<20; i++) {
+        particles.push({
+            x: x, y: y,
+            vx: (Math.random() - 0.5) * 10,
+            vy: (Math.random() - 0.5) * 10,
+            life: 1,
+            color: color || '#fff'
+        });
+    }
+}
+function updateParticles() {
+    for(let i=particles.length-1; i>=0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= 0.05;
+        if(p.life <= 0) particles.splice(i, 1);
+        else {
+            ctx.fillStyle = `rgba(255,215,0,${p.life})`;
+            if(p.color) ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 3 * p.life, 0, Math.PI*2);
+            ctx.fill();
+        }
+    }
+}
+
+// Darts on board
+let thrownDarts = [];
+function drawThrownDarts() {
+    thrownDarts.forEach(d => {
+        // shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.beginPath();
+        ctx.arc(d.x + 5, d.y + 10, 3, 0, Math.PI*2);
+        ctx.fill();
+        
+        // Dart point
+        ctx.strokeStyle = '#ddd';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(d.x, d.y);
+        ctx.lineTo(d.x + 10, d.y + 15);
+        ctx.stroke();
+        
+        // Flight
+        ctx.fillStyle = d.isAI ? '#ef4444' : '#3b82f6';
+        ctx.beginPath();
+        ctx.moveTo(d.x + 10, d.y + 15);
+        ctx.lineTo(d.x + 20, d.y + 20);
+        ctx.lineTo(d.x + 25, d.y + 10);
+        ctx.lineTo(d.x + 15, d.y + 5);
+        ctx.fill();
+    });
+}
+
+// Animation loop
+let animationId;
+let isZoomed = false;
+let zoomTarget = { x: 0, y: 0 };
+let currentScale = 1;
+let currentOffsetX = 0;
+let currentOffsetY = 0;
+
+function render() {
+    // Clear background
+    ctx.fillStyle = 'var(--bg-color)';
+    ctx.fillRect(0, 0, cw, ch);
+    
+    ctx.save();
+    
+    // Handle Zoom
+    let targetScale = isZoomed ? 1.8 : 1;
+    let targetOffsetX = isZoomed ? cw/2 - zoomTarget.x * targetScale : 0;
+    let targetOffsetY = isZoomed ? ch/2 - zoomTarget.y * targetScale : 0;
+    
+    currentScale += (targetScale - currentScale) * 0.1;
+    currentOffsetX += (targetOffsetX - currentOffsetX) * 0.1;
+    currentOffsetY += (targetOffsetY - currentOffsetY) * 0.1;
+    
+    ctx.translate(currentOffsetX, currentOffsetY);
+    ctx.scale(currentScale, currentScale);
+
+    board.draw();
+    drawThrownDarts();
+    updateParticles();
+    
+    // Draw current flying dart
+    if (flyingDart) {
+        let t = (Date.now() - flyingDart.startTime) / flyingDart.duration;
+        if (t >= 1) {
+            // Impact
+            sounds.playThud();
+            thrownDarts.push({ x: flyingDart.targetX, y: flyingDart.targetY, isAI: flyingDart.isAI });
+            let res = board.getScore(flyingDart.targetX, flyingDart.targetY);
+            if (res.score === 50) spawnParticles(flyingDart.targetX, flyingDart.targetY, '#ffd700');
+            handleScore(res);
+            flyingDart = null;
+        } else {
+            // Easing out cubic
+            let e = 1 - Math.pow(1 - t, 3);
+            let dx = flyingDart.startX + (flyingDart.targetX - flyingDart.startX) * e;
+            let dy = flyingDart.startY + (flyingDart.targetY - flyingDart.startY) * e;
+            let scale = 2 - e; // shrinks as it gets away
+            
+            ctx.save();
+            ctx.translate(dx, dy);
+            ctx.scale(scale, scale);
+            
+            // Dart point
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0,0); ctx.lineTo(0, 20); ctx.stroke();
+            
+            // Flight
+            ctx.fillStyle = flyingDart.isAI ? '#ef4444' : '#3b82f6';
+            ctx.fillRect(-5, 10, 10, 15);
+            ctx.restore();
+        }
+    }
+
+    ctx.restore();
+    animationId = requestAnimationFrame(render);
+}
+
+// --- Game Logic ---
+let gameState = 'menu'; // menu, playerTurn, aiTurn, flying, gameOver
+let gameMode = '501';
+let aiDifficulty = 5;
+
+let p1Score = 501;
+let p2Score = 501;
+let currentPlayer = 1;
+let dartsThrownThisTurn = 0;
+let turnScore = 0;
+let matchDartsThrown = 0;
+
+let flyingDart = null;
+
+// UI Elements
+const uiLayer = document.getElementById('gameUI');
+const p1ScoreEl = document.getElementById('p1Score');
+const p2ScoreEl = document.getElementById('p2Score');
+const p1Info = document.getElementById('p1Info');
+const p2Info = document.getElementById('p2Info');
+const p1DartsEl = document.getElementById('p1Darts').children;
+const p2DartsEl = document.getElementById('p2Darts').children;
+const gameMessage = document.getElementById('gameMessage');
+const checkoutInfo = document.getElementById('checkoutInfo');
+const crosshair = document.getElementById('crosshair');
+const powerMeter = document.getElementById('powerMeter');
+const powerFill = document.getElementById('powerFill');
+
+function showMessage(msg, time=1500) {
+    gameMessage.textContent = msg;
+    if(time) setTimeout(() => { if(gameMessage.textContent===msg) gameMessage.textContent=''; }, time);
+}
+
+function updateUI() {
+    p1ScoreEl.textContent = p1Score;
+    p2ScoreEl.textContent = p2Score;
+    
+    if (currentPlayer === 1) {
+        p1Info.classList.add('active-player');
+        p2Info.classList.remove('active-player');
+    } else {
+        p2Info.classList.add('active-player');
+        p1Info.classList.remove('active-player');
+    }
+
+    for(let i=0; i<3; i++) {
+        if(currentPlayer===1) {
+            p1DartsEl[i].className = i < (3 - dartsThrownThisTurn) ? 'dart-icon active' : 'dart-icon';
+            p2DartsEl[i].className = 'dart-icon';
+        } else {
+            p2DartsEl[i].className = i < (3 - dartsThrownThisTurn) ? 'dart-icon active' : 'dart-icon';
+            p1DartsEl[i].className = 'dart-icon';
+        }
+    }
+
+    updateCheckout();
+}
+
+function updateCheckout() {
+    let score = currentPlayer === 1 ? p1Score : p2Score;
+    checkoutInfo.style.opacity = 0;
+    if (gameMode !== 'free' && score <= 170) {
+        // Simple suggestions for common checkouts
+        let sugg = getCheckoutString(score);
+        if (sugg) {
+            checkoutInfo.textContent = sugg;
+            checkoutInfo.style.opacity = 1;
+        }
+    }
+}
+
+function getCheckoutString(s) {
+    if (s <= 40 && s % 2 === 0) return `D${s/2}`;
+    if (s === 50) return `BULL`;
+    // Hardcoded some common
+    const checkouts = {
+        60: 'S20 D20', 100: 'T20 D20', 170: 'T20 T20 BULL'
+    };
+    return checkouts[s] || null;
+}
+
+function startGame() {
+    document.getElementById('startScreen').classList.add('hidden');
+    document.getElementById('gameOverScreen').classList.add('hidden');
+    uiLayer.style.display = 'flex';
+    
+    let startScore = gameMode === '501' ? 501 : (gameMode === '301' ? 301 : 0);
+    p1Score = startScore;
+    p2Score = startScore;
+    
+    currentPlayer = 1;
+    dartsThrownThisTurn = 0;
+    turnScore = 0;
+    matchDartsThrown = 0;
+    thrownDarts = [];
+    isZoomed = false;
+    
+    updateUI();
+    gameState = 'playerTurn';
+    showMessage("Your Turn!", 2000);
+}
+
+function throwDart(tx, ty, isAI = false) {
+    gameState = 'flying';
+    sounds.playWhoosh();
+    
+    flyingDart = {
+        startX: cw/2,
+        startY: ch + 50,
+        targetX: tx,
+        targetY: ty,
+        startTime: Date.now(),
+        duration: 400,
+        isAI: isAI
+    };
+
+    zoomTarget = { x: tx, y: ty };
+    isZoomed = true;
+}
+
+function handleScore(result) {
+    let pts = result.score * result.mult;
+    turnScore += pts;
+    dartsThrownThisTurn++;
+    if(!flyingDart?.isAI) matchDartsThrown++;
+    
+    showMessage(`${result.label}`, 1000);
+    if(pts >= 50) sounds.playCheer();
+
+    let current = currentPlayer === 1 ? p1Score : p2Score;
+    let bust = false;
+    let won = false;
+
+    if (gameMode !== 'free') {
+        let newScore = current - pts;
+        
+        if (newScore < 0 || newScore === 1 || (newScore === 0 && result.mult !== 2 && result.score !== 50)) {
+            // Bust
+            bust = true;
+            showMessage("BUST!", 1500);
+        } else if (newScore === 0 && (result.mult === 2 || (result.score === 50 && result.mult === 1))) {
+            // Win
+            if (currentPlayer === 1) p1Score = 0;
+            else p2Score = 0;
+            won = true;
+        } else {
+            if (currentPlayer === 1) p1Score = newScore;
+            else p2Score = newScore;
+        }
+    } else {
+        if (currentPlayer === 1) p1Score += pts;
+        else p2Score += pts;
+    }
+
+    updateUI();
+
+    setTimeout(() => {
+        isZoomed = false;
+        
+        if (won) {
+            endGame(currentPlayer === 1 ? 'You' : 'AI');
+            return;
+        }
+        
+        if (bust || dartsThrownThisTurn >= 3) {
+            switchTurn();
+        } else {
+            gameState = currentPlayer === 1 ? 'playerTurn' : 'aiTurn';
+            if (gameState === 'aiTurn') setTimeout(doAITurn, 800);
+        }
+    }, 1200);
+}
+
+function switchTurn() {
+    thrownDarts = []; // clear board
+    dartsThrownThisTurn = 0;
+    turnScore = 0;
+    currentPlayer = currentPlayer === 1 ? 2 : 1;
+    updateUI();
+    
+    let turnName = currentPlayer === 1 ? "Your Turn" : "AI Turn";
+    showMessage(turnName, 1500);
+    
+    gameState = currentPlayer === 1 ? 'playerTurn' : 'aiTurn';
+    if (gameState === 'aiTurn') setTimeout(doAITurn, 1500);
+}
+
+function endGame(winner) {
+    gameState = 'gameOver';
+    uiLayer.style.display = 'none';
+    document.getElementById('gameOverScreen').classList.remove('hidden');
+    document.getElementById('winnerText').textContent = `${winner} Win!`;
+    document.getElementById('statsText').textContent = `Darts Thrown: ${matchDartsThrown}`;
+}
+
+// --- AI Logic ---
+function doAITurn() {
+    if (gameState !== 'aiTurn') return;
+    
+    // Aim logic based on difficulty (1-10)
+    let targetNum = 20;
+    let targetMult = 3;
+    let score = p2Score;
+    
+    if (gameMode !== 'free' && score <= 170) {
+        // Try to checkout
+        if (score <= 40 && score % 2 === 0) { targetNum = score/2; targetMult = 2; }
+        else if (score === 50) { targetNum = 25; targetMult = 2; } // bullseye logic simplified
+        // else just aim at 20 T
+    }
+
+    // Find physical coordinate for target
+    let angleIndex = boardNumbers.indexOf(targetNum);
+    let angle = -Math.PI/2 + (angleIndex * (Math.PI*2/20));
+    
+    let radiusTarget = board.radius * 0.64; // T20 radius
+    if(targetMult === 2) radiusTarget = board.radius * 0.96;
+    if(targetMult === 1) radiusTarget = board.radius * 0.3; // S20
+
+    let tx = board.x + Math.cos(angle) * radiusTarget;
+    let ty = board.y + Math.sin(angle) * radiusTarget;
+
+    // Apply error based on difficulty (1 = very high error, 10 = low error)
+    let errorSpread = (11 - aiDifficulty) * board.radius * 0.05;
+    
+    tx += (Math.random() - 0.5) * errorSpread;
+    ty += (Math.random() - 0.5) * errorSpread;
+
+    throwDart(tx, ty, true);
+}
+
+
+// --- Controls ---
+const touchArea = document.getElementById('touchArea');
+let isAiming = false;
+let aimX = 0, aimY = 0;
+let pullStart = 0;
+let currentPower = 0;
+let maxPullDist = 150;
+
+touchArea.addEventListener('pointerdown', (e) => {
+    if (gameState !== 'playerTurn') return;
+    isAiming = true;
+    updateAim(e);
+    crosshair.style.display = 'block';
+    
+    pullStart = e.clientY;
+    powerMeter.style.display = 'block';
+    powerFill.style.height = '0%';
+});
+
+touchArea.addEventListener('pointermove', (e) => {
+    if (!isAiming) return;
+    
+    // Y-axis drag for power
+    let dy = e.clientY - pullStart;
+    if (dy < 0) dy = 0;
+    if (dy > maxPullDist) dy = maxPullDist;
+    
+    currentPower = dy / maxPullDist; // 0 to 1
+    powerFill.style.height = `${currentPower * 100}%`;
+    
+    // Color code based on ideal power (0.4 to 0.6)
+    if(currentPower > 0.35 && currentPower < 0.65) {
+        powerFill.style.background = '#4ade80';
+    } else {
+        powerFill.style.background = '#ef4444';
+    }
+
+    // X-axis and Y-axis offset for aim
+    // The touch controls aim relative to screen center
+    updateAim(e);
+});
+
+touchArea.addEventListener('pointerup', (e) => {
+    if (!isAiming) return;
+    isAiming = false;
+    crosshair.style.display = 'none';
+    powerMeter.style.display = 'none';
+
+    if (gameState === 'playerTurn') {
+        // Calculate error based on power
+        // Ideal power is around 0.5
+        let powerDiff = Math.abs(currentPower - 0.5);
+        
+        let errorAmt = powerDiff * board.radius * 0.5; // Wobble
+        let tx = aimX + (Math.random() - 0.5) * errorAmt;
+        let ty = aimY + (Math.random() - 0.5) * errorAmt;
+        
+        throwDart(tx, ty, false);
+    }
+});
+
+function updateAim(e) {
+    // Map touch to board position (with some sensitivity adjustment)
+    aimX = e.clientX;
+    aimY = e.clientY - 100; // Offset touch so finger doesn't block view
+    
+    crosshair.style.left = aimX + 'px';
+    crosshair.style.top = aimY + 'px';
+}
+
+
+// --- Menu Events ---
+document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('selected'));
+        e.target.classList.add('selected');
+        gameMode = e.target.getAttribute('data-mode');
+    });
+});
+
+document.getElementById('aiDiff').addEventListener('input', (e) => {
+    aiDifficulty = parseInt(e.target.value);
+    let diffStr = aiDifficulty < 4 ? "Easy" : (aiDifficulty < 8 ? "Medium" : "Hard");
+    document.getElementById('diffVal').textContent = diffStr;
+});
+
+document.getElementById('startBtn').addEventListener('click', () => {
+    // initialize audio on first user gesture
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    startGame();
+});
+
+document.getElementById('restartBtn').addEventListener('click', startGame);
+document.getElementById('homeBtn').addEventListener('click', () => {
+    document.getElementById('gameOverScreen').classList.add('hidden');
+    document.getElementById('startScreen').classList.remove('hidden');
+});
+
+// Start loop
+render();
+
+</script>
+</body>
+</html>

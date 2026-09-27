@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Tap Tempo</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syncopate:wght@400;700&family=Nunito:wght@700;800;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;}
+body{min-height:100vh;background:#08050F;overflow:hidden;font-family:'Nunito',sans-serif;color:white;touch-action:none;}
+canvas{position:fixed;inset:0;z-index:0;}
+#hud{position:fixed;top:0;left:0;right:0;z-index:20;padding:12px 16px 0;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;}
+.hst{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:7px 12px;text-align:center;min-width:68px;}
+.hsv{font-family:'Syncopate';font-size:1.05rem;font-weight:700;}
+.hsl{font-size:.46rem;color:rgba(255,255,255,.3);letter-spacing:2px;text-transform:uppercase;margin-top:2px;}
+#beat-bar{position:fixed;top:66px;left:12px;right:12px;height:4px;background:rgba(255,255,255,.06);border-radius:4px;z-index:20;overflow:hidden;pointer-events:none;}
+#beat-fill{height:100%;width:0%;border-radius:4px;transition:background .3s;}
+#grade-pop{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:30;font-family:'Syncopate';font-size:1.6rem;font-weight:700;pointer-events:none;opacity:0;}
+#miss-flash{position:fixed;inset:0;background:rgba(239,68,68,.13);pointer-events:none;opacity:0;z-index:5;}
+#combo-banner{position:fixed;bottom:160px;left:50%;transform:translateX(-50%);z-index:25;text-align:center;pointer-events:none;}
+#combo-val{font-family:'Syncopate';font-size:2.2rem;font-weight:700;opacity:0;}
+#combo-lbl{font-size:.5rem;letter-spacing:3px;color:rgba(255,255,255,.25);text-transform:uppercase;}
+.screen{position:fixed;inset:0;z-index:400;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;background:rgba(8,5,15,.97);}
+.tt-title{font-family:'Syncopate';font-size:2.6rem;font-weight:700;background:linear-gradient(135deg,#F59E0B,#EF4444,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;letter-spacing:4px;line-height:1.2;margin-bottom:6px;}
+.tt-sub{font-size:.58rem;color:rgba(255,255,255,.2);letter-spacing:4px;text-transform:uppercase;margin-bottom:20px;}
+.tt-info{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:14px 20px;max-width:300px;font-size:.87rem;color:rgba(255,255,255,.5);line-height:1.9;text-align:center;margin-bottom:18px;}
+.track-row{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;justify-content:center;}
+.topt{background:rgba(255,255,255,.05);border:2px solid rgba(255,255,255,.1);border-radius:12px;padding:10px 12px;font-family:'Syncopate';font-size:.6rem;color:rgba(255,255,255,.5);cursor:pointer;text-align:center;letter-spacing:1px;min-width:72px;transition:all .15s;}
+.topt.active{border-color:#F59E0B;color:#F59E0B;background:rgba(245,158,11,.1);}
+.tbpm{font-size:.5rem;color:rgba(255,255,255,.25);margin-top:3px;}
+.tt-btn{background:linear-gradient(135deg,#F59E0B,#EF4444);color:white;border:none;border-radius:14px;padding:15px 52px;font-family:'Syncopate';font-size:.9rem;font-weight:700;letter-spacing:3px;cursor:pointer;box-shadow:0 5px 20px rgba(245,158,11,.35);}
+.tt-btn:active{transform:scale(.95);}
+.tt-btn.ghost{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);box-shadow:none;margin-top:10px;}
+.end-grade{font-family:'Syncopate';font-size:3.5rem;font-weight:700;margin:4px 0;}
+.end-score{font-family:'Syncopate';font-size:3.8rem;font-weight:700;background:linear-gradient(135deg,#F59E0B,#EC4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:4px 0;}
+.end-row{display:flex;gap:8px;width:100%;max-width:320px;margin:10px 0 18px;flex-wrap:wrap;justify-content:center;}
+.ecard{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:10px 12px;text-align:center;min-width:72px;}
+.ecv{font-family:'Syncopate';font-size:.95rem;font-weight:700;color:white;}
+.ecl{font-size:.46rem;color:rgba(255,255,255,.3);letter-spacing:1px;text-transform:uppercase;margin-top:2px;}
+@keyframes gradePop{0%{opacity:0;transform:translate(-50%,-50%) scale(.4);}20%{opacity:1;transform:translate(-50%,-50%) scale(1.15);}65%{opacity:1;transform:translate(-50%,-50%) scale(1);}100%{opacity:0;transform:translate(-50%,-50%) scale(.9);}}
+@keyframes missAnim{0%{opacity:1;}100%{opacity:0;}}
+@keyframes comboAnim{0%{opacity:0;transform:translateX(-50%) scale(.7);}20%{opacity:1;transform:translateX(-50%) scale(1.1);}70%{opacity:1;}100%{opacity:0;transform:translateX(-50%) scale(.85);}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+  <div class="hst"><div class="hsv" id="sv" style="color:#F59E0B">0</div><div class="hsl">Score</div></div>
+  <div class="hst"><div class="hsv" id="cv" style="color:#EF4444">x0</div><div class="hsl">Combo</div></div>
+  <div class="hst"><div class="hsv" id="av" style="color:#A3E635">-</div><div class="hsl">Accuracy</div></div>
+  <div class="hst"><div class="hsv" id="tv" style="color:#38BDF8">60</div><div class="hsl">Time</div></div>
+</div>
+<div id="beat-bar"><div id="beat-fill"></div></div>
+<div id="grade-pop"></div>
+<div id="miss-flash"></div>
+<div id="combo-banner"><div id="combo-val"></div><div id="combo-lbl">COMBO</div></div>
+
+<div class="screen" id="ss" style="display:none">
+  <div style="font-size:3.5rem;margin-bottom:10px">drum</div>
+  <div class="tt-title">TAP<br>TEMPO</div>
+  <div class="track-row">
+    <div class="topt active" onclick="selT(this,0)">CHILL<div class="tbpm">80 BPM</div></div>
+    <div class="topt" onclick="selT(this,1)">GROOVE<div class="tbpm">110 BPM</div></div>
+    <div class="topt" onclick="selT(this,2)">HYPE<div class="tbpm">140 BPM</div></div>
+    <div class="topt" onclick="selT(this,3)">FRENZY<div class="tbpm">175 BPM</div></div>
+  </div>
+  <button class="tt-btn" onclick="startGame()">Start Tapping!</button>
+</div>
+
+<div class="screen" id="es" style="display:none">
+  <div class="end-grade" id="eg">S</div>
+  <div class="end-score" id="esc">0</div>
+  <p style="color:rgba(255,255,255,.3);font-size:.62rem;letter-spacing:3px;margin-bottom:10px">FINAL SCORE</p>
+  <div class="end-row">
+    <div class="ecard"><div class="ecv" id="ep">0</div><div class="ecl">Perfect</div></div>
+    <div class="ecard"><div class="ecv" id="egood">0</div><div class="ecl">Good</div></div>
+    <div class="ecard"><div class="ecv" id="em">0</div><div class="ecl">Miss</div></div>
+    <div class="ecard"><div class="ecv" id="eacc">-</div><div class="ecl">Accuracy</div></div>
+    <div class="ecard"><div class="ecv" id="emx">x0</div><div class="ecl">Max Combo</div></div>
+  </div>
+  <button class="tt-btn" onclick="startGame()">Play Again</button>
+  <button class="tt-btn ghost" onclick="goMenu()">Menu</button>
+</div>
+
+<script>
+var canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+var W=canvas.width=window.innerWidth,H=canvas.height=window.innerHeight;
+
+var TRACKS=[
+  {name:'CHILL WAVE',bpm:80, col:'#38BDF8',col2:'#7C3AED'},
+  {name:'GROOVE BOX',bpm:110,col:'#A3E635',col2:'#0D9488'},
+  {name:'HYPE TRAIN', bpm:140,col:'#F59E0B',col2:'#EF4444'},
+  {name:'FRENZY',    bpm:175,col:'#EC4899',col2:'#8B5CF6'},
+];
+var ti=0;
+function selT(el,i){ti=i;document.querySelectorAll('.topt').forEach(function(t){t.classList.remove('active');});el.classList.add('active');}
+
+var AC=null;
+function getAC(){if(!AC)AC=new(window.AudioContext||window.webkitAudioContext)();return AC;}
+function click(strong){
+  try{
+    var ac=getAC();if(ac.state==='suspended')ac.resume();
+    var o=ac.createOscillator(),g=ac.createGain();
+    o.connect(g);g.connect(ac.destination);
+    o.type='sine';o.frequency.value=strong?880:660;
+    var n=ac.currentTime;
+    g.gain.setValueAtTime(strong?0.1:0.06,n);
+    g.gain.exponentialRampToValueAtTime(0.0001,n+0.05);
+    o.start(n);o.stop(n+0.06);
+  }catch(e){}
+}
+
+// Game state
+var active=false,score=0,combo=0,maxCombo=0,perfect=0,goodH=0,miss=0,timeLeft=60;
+var beatMs=0,circles=[],ripples=[],hitfx=[],bgF=0;
+var timerInt=null,raf=null;
+// Beat clock: we track beat index and compute beat times purely from start
+var gameStartTime=0; // performance.now() when game started
+var beatCount=0;     // how many beats have been spawned
+
+function nextBeatTime(n){return gameStartTime + n * beatMs;}
+
+function hexRgb(h){var v=parseInt(h.slice(1),16);return ((v>>16)&255)+','+((v>>8)&255)+','+(v&255);}
+
+function drawBg(){
+  bgF++;
+  ctx.fillStyle='#08050F';ctx.fillRect(0,0,W,H);
+  var tr=TRACKS[ti];
+  var op=0.016+(Math.sin(bgF*0.04)+1)*0.008;
+  ctx.strokeStyle='rgba('+hexRgb(tr.col)+','+op+')';ctx.lineWidth=1;
+  for(var x=0;x<W;x+=55){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(var y=0;y<H;y+=55){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  var vg=ctx.createLinearGradient(0,H*0.65,0,H);
+  vg.addColorStop(0,'transparent');vg.addColorStop(1,'rgba('+hexRgb(tr.col2)+',0.07)');
+  ctx.fillStyle=vg;ctx.fillRect(0,H*0.65,W,H*0.35);
+}
+
+// Circle object
+function makeCircle(beatAt){
+  var tr=TRACKS[ti];
+  var growT=beatMs*0.72;
+  return {
+    beatAt:beatAt,
+    spawnAt:beatAt-growT,
+    dieAt:beatAt+beatMs*0.5,
+    x:70+Math.random()*(W-140),
+    y:110+Math.random()*(H-230),
+    maxR:50+Math.random()*14,
+    col:tr.col,col2:tr.col2,
+    tapped:false,missed:false,alive:true
+  };
+}
+
+function circlePhase(c,now){
+  if(now<c.spawnAt)return -1;
+  var growT=c.beatAt-c.spawnAt;
+  if(now<=c.beatAt)return(now-c.spawnAt)/growT;
+  return 1+(now-c.beatAt)/(c.dieAt-c.beatAt);
+}
+
+function circleR(c,p){
+  if(p<0)return 0;
+  if(p<=1)return c.maxR*Math.sin(p*Math.PI*0.5);
+  return c.maxR*Math.max(0,1-(p-1));
+}
+
+function circleA(c,p){
+  if(p<0)return 0;
+  if(p<=1)return Math.min(1,p*1.6);
+  return Math.max(0,1-(p-1)*1.3);
+}
+
+function drawCircle(c,now){
+  var p=circlePhase(c,now);
+  var r=circleR(c,p);
+  var a=circleA(c,p);
+  if(r<=0||a<=0)return;
+  ctx.save();
+  ctx.globalAlpha=a;
+  // approach ring
+  if(p<1&&p>0){
+    var ar=r+(1-p)*52;
+    ctx.strokeStyle=c.col+'44';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.arc(c.x,c.y,ar,0,Math.PI*2);ctx.stroke();
+  }
+  ctx.shadowColor=c.col;ctx.shadowBlur=14+(p>0.8&&p<1.2?10:0);
+  var g=ctx.createRadialGradient(c.x,c.y,0,c.x,c.y,r);
+  g.addColorStop(0,c.col+'CC');g.addColorStop(0.55,c.col+'88');g.addColorStop(1,c.col2+'33');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(c.x,c.y,r,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle=c.col;ctx.lineWidth=2;ctx.stroke();
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,255,255,.85)';
+  ctx.font='bold '+Math.round(r*0.5)+'px Nunito,sans-serif';
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('+',c.x,c.y);
+  ctx.restore();
+}
+
+function loop(){
+  if(!active){drawBg();raf=requestAnimationFrame(loop);return;}
+  var now=performance.now();
+  drawBg();
+
+  // Schedule circles: keep 2 beats ahead
+  while(nextBeatTime(beatCount) <= now + beatMs*1.6){
+    circles.push(makeCircle(nextBeatTime(beatCount)));
+    beatCount++;
+  }
+
+  // Beat bar
+  var bp=((now-gameStartTime)%beatMs)/beatMs;
+  var tr=TRACKS[ti];
+  document.getElementById('beat-fill').style.width=(bp*100)+'%';
+  document.getElementById('beat-fill').style.background='linear-gradient(90deg,'+tr.col+','+tr.col2+')';
+
+  // Ripples
+  ripples=ripples.filter(function(r){
+    r.r+=3.5;r.life-=0.045;
+    if(r.life<=0)return false;
+    ctx.save();ctx.globalAlpha=r.life*0.5;ctx.strokeStyle=r.col;ctx.lineWidth=2;
+    ctx.shadowColor=r.col;ctx.shadowBlur=8;
+    ctx.beginPath();ctx.arc(r.x,r.y,r.r,0,Math.PI*2);ctx.stroke();
+    ctx.restore();return true;
+  });
+
+  // Hit fx text
+  hitfx=hitfx.filter(function(h){
+    h.life-=0.038;h.y-=1.2;
+    if(h.life<=0)return false;
+    ctx.save();ctx.globalAlpha=h.life;ctx.fillStyle=h.col;
+    ctx.font='700 0.9rem Nunito,sans-serif';ctx.textAlign='center';
+    ctx.shadowColor=h.col;ctx.shadowBlur=6;
+    ctx.fillText(h.txt,h.x,h.y);ctx.restore();return true;
+  });
+
+  // Circles
+  var toRemove=[];
+  circles.forEach(function(c){
+    if(!c.alive)return;
+    if(!c.tapped&&!c.missed&&now>=c.dieAt){
+      c.missed=true;c.alive=false;
+      miss++;combo=0;
+      document.getElementById('cv').textContent='x0';
+      flashEl('miss-flash','missAnim .35s forwards');
+      updateAcc();
+    }
+    drawCircle(c,now);
+  });
+  circles=circles.filter(function(c){return c.alive;});
+
+  raf=requestAnimationFrame(loop);
+}
+
+function handleTap(x,y){
+  if(!active)return;
+  var now=performance.now();
+  var best=null,bestD=Infinity;
+  circles.forEach(function(c){
+    if(!c.alive||c.tapped||c.missed)return;
+    var d=Math.hypot(x-c.x,y-c.y);
+    if(d<c.maxR*1.5&&d<bestD){bestD=d;best=c;}
+  });
+  if(!best)return;
+  best.tapped=true;best.alive=false;
+  var diff=Math.abs(now-best.beatAt);
+  var grade,pts,col;
+  if(diff<beatMs*0.15){grade='PERFECT';pts=150;col='#FFD700';perfect++;}
+  else if(diff<beatMs*0.32){grade='GOOD';pts=80;col='#A3E635';goodH++;}
+  else{grade='OK';pts=30;col='#38BDF8';goodH++;}
+  combo++;maxCombo=Math.max(maxCombo,combo);
+  var total=pts*Math.min(combo,10);score+=total;
+  ripples.push({x:x,y:y,r:8,col:col,life:1});
+  hitfx.push({x:x,y:y-35,txt:grade+(grade==='PERFECT'?' +'+total:''),col:col,life:1});
+  showGrade(grade,col);
+  if(combo>=3)showCombo(combo,col);
+  document.getElementById('sv').textContent=score;
+  document.getElementById('cv').textContent='x'+combo;
+  updateAcc();
+  click(grade==='PERFECT');
+}
+
+function updateAcc(){
+  var t=perfect+goodH+miss;
+  if(t===0)return;
+  document.getElementById('av').textContent=Math.round((perfect+goodH)/t*100)+'%';
+}
+
+function flashEl(id,anim){
+  var el=document.getElementById(id);
+  el.style.animation='none';el.offsetHeight;el.style.animation=anim;
+}
+
+function showGrade(txt,col){
+  var el=document.getElementById('grade-pop');
+  el.textContent=txt;el.style.color=col;el.style.textShadow='0 0 18px '+col;
+  el.style.animation='none';el.offsetHeight;el.style.animation='gradePop .55s forwards';
+}
+
+function showCombo(n,col){
+  var cv=document.getElementById('combo-val');
+  cv.textContent='x'+n;cv.style.color=col;cv.style.textShadow='0 0 16px '+col;
+  cv.style.animation='none';cv.offsetHeight;cv.style.animation='comboAnim .65s forwards';
+}
+
+function startGame(){
+  try{getAC().resume();}catch(e){}
+  document.getElementById('ss').style.display='none';
+  document.getElementById('es').style.display='none';
+  score=0;combo=0;maxCombo=0;perfect=0;goodH=0;miss=0;timeLeft=60;
+  circles=[];ripples=[];hitfx=[];bgF=0;
+  beatMs=(60/TRACKS[ti].bpm)*1000;
+  gameStartTime=performance.now()+beatMs*0.6; // first beat after a short delay
+  beatCount=0;
+  active=true;
+  document.getElementById('sv').textContent='0';
+  document.getElementById('cv').textContent='x0';
+  document.getElementById('av').textContent='-';
+  document.getElementById('tv').textContent='60';
+  clearInterval(timerInt);
+  timerInt=setInterval(function(){
+    timeLeft--;
+    document.getElementById('tv').textContent=timeLeft;
+    if(timeLeft<=0){clearInterval(timerInt);active=false;setTimeout(showEnd,300);}
+  },1000);
+  if(!raf)raf=requestAnimationFrame(loop);
+}
+
+function showEnd(){
+  var t=perfect+goodH+miss;
+  var acc=t>0?Math.round((perfect+goodH)/t*100):0;
+  var grade=acc>=95?'S':acc>=85?'A':acc>=70?'B':acc>=55?'C':'D';
+  var gc={S:'#FFD700',A:'#A3E635',B:'#38BDF8',C:'#F59E0B',D:'#EF4444'};
+  var eg=document.getElementById('eg');
+  eg.textContent=grade;eg.style.color=gc[grade];eg.style.textShadow='0 0 20px '+gc[grade];
+  document.getElementById('esc').textContent=score;
+  document.getElementById('ep').textContent=perfect;
+  document.getElementById('egood').textContent=goodH;
+  document.getElementById('em').textContent=miss;
+  document.getElementById('eacc').textContent=acc+'%';
+  document.getElementById('emx').textContent='x'+maxCombo;
+  document.getElementById('es').style.display='flex';
+}
+
+function goMenu(){
+  active=false;clearInterval(timerInt);circles=[];
+  document.getElementById('es').style.display='none';
+  document.getElementById('ss').style.display='flex';
+}
+
+canvas.addEventListener('click',function(e){handleTap(e.clientX,e.clientY);});
+canvas.addEventListener('touchstart',function(e){
+  e.preventDefault();try{getAC().resume();}catch(err){}
+  for(var i=0;i<e.touches.length;i++)handleTap(e.touches[i].clientX,e.touches[i].clientY);
+},{passive:false});
+window.addEventListener('resize',function(){W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;});
+
+raf=requestAnimationFrame(loop);
+startGame();
+</script>
+</body>
+</html>

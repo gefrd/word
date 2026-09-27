@@ -1,0 +1,1194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Reversi</title>
+    <style>
+        :root {
+            --bg-color: #0a0a1a;
+            --surface: #1a1a2e;
+            --primary: #4ade80;
+            --primary-dark: #22c55e;
+            --accent: #facc15;
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --board-bg: #166534;
+            --board-border: #14532d;
+            --board-lines: #22c55e;
+            --cell-size: min(11vw, 60px);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text);
+            font-family: system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+
+        #app {
+            width: 100%;
+            max-width: 600px;
+            height: 100%;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: var(--bg-color);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 10;
+        }
+
+        .screen.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        #game-screen {
+            justify-content: space-between;
+            padding: 20px 10px;
+            background: radial-gradient(circle at center, #1a1a2e 0%, var(--bg-color) 100%);
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 2rem;
+            color: var(--primary);
+            text-shadow: 0 0 20px rgba(74, 222, 128, 0.5);
+            letter-spacing: 4px;
+        }
+
+        h2 {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .btn {
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            color: #000;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 30px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin: 10px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(74, 222, 128, 0.3);
+            transition: transform 0.1s, box-shadow 0.1s;
+            width: 200px;
+            text-transform: uppercase;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 5px rgba(74, 222, 128, 0.3);
+        }
+
+        .btn.secondary {
+            background: linear-gradient(135deg, #475569, #334155);
+            color: #fff;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn.small {
+            padding: 10px 15px;
+            font-size: 0.9rem;
+            width: auto;
+            min-width: 70px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Game Header */
+        .header {
+            width: 100%;
+            padding: 10px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .score-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .score-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px 20px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .score-box.active {
+            box-shadow: 0 0 15px var(--primary);
+            border-color: var(--primary);
+            transform: scale(1.05);
+        }
+
+        .score-disc {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            box-shadow: inset 0 -2px 5px rgba(0,0,0,0.5), 0 2px 4px rgba(0,0,0,0.4);
+        }
+
+        .score-disc.black {
+            background: radial-gradient(circle at 30% 30%, #444, #000);
+        }
+
+        .score-disc.white {
+            background: radial-gradient(circle at 30% 30%, #fff, #ccc);
+        }
+
+        .score-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background: #fff; /* White */
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: #000; /* Black */
+            width: 50%;
+            transition: width 0.3s ease;
+        }
+
+        .status-text {
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--accent);
+            height: 24px;
+        }
+
+        /* Board */
+        .board-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-grow: 1;
+            perspective: 1000px;
+        }
+
+        .board-wrapper {
+            background: var(--board-border);
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5), inset 0 2px 5px rgba(255,255,255,0.2);
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(8, var(--cell-size));
+            grid-template-rows: repeat(8, var(--cell-size));
+            background-color: var(--board-lines);
+            gap: 2px;
+            border: 2px solid var(--board-lines);
+        }
+
+        .cell {
+            background-color: var(--board-bg);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .cell:active {
+            background-color: #14532d;
+        }
+
+        .cell-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .cell.valid .cell-indicator {
+            opacity: 1;
+        }
+
+        .cell.valid:hover .cell-indicator {
+            background-color: rgba(0, 0, 0, 0.5);
+            transform: scale(1.2);
+        }
+
+        .cell.hint .cell-indicator {
+            background-color: var(--accent);
+            opacity: 0.8;
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        /* Discs */
+        .disc {
+            width: 85%;
+            height: 85%;
+            border-radius: 50%;
+            position: absolute;
+            transform-style: preserve-3d;
+            transition: transform 0.4s ease-in-out;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        }
+
+        .disc-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            backface-visibility: hidden;
+        }
+
+        .disc-black {
+            background: radial-gradient(circle at 30% 30%, #444, #111);
+            transform: rotateY(0deg);
+        }
+
+        .disc-white {
+            background: radial-gradient(circle at 30% 30%, #fff, #ddd);
+            transform: rotateY(180deg);
+        }
+
+        .disc.is-white {
+            transform: rotateY(180deg);
+        }
+
+        .disc.is-black {
+            transform: rotateY(0deg);
+        }
+
+        .last-move::after {
+            content: '';
+            position: absolute;
+            width: 30%;
+            height: 30%;
+            background: rgba(255, 0, 0, 0.8);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 5px red;
+            pointer-events: none;
+        }
+        
+        .disc.new-move {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0); }
+            100% { transform: scale(1); }
+        }
+        
+        .disc.new-move.is-white {
+            animation: popInWhite 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes popInWhite {
+            0% { transform: scale(0) rotateY(180deg); }
+            100% { transform: scale(1) rotateY(180deg); }
+        }
+
+        /* Controls */
+        .controls {
+            width: 100%;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 20px 0;
+            width: 80%;
+            max-width: 400px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        /* Particles */
+        .particle {
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- Start Screen -->
+        <div id="start-screen" class="screen active">
+            <h1>REVERSI</h1>
+            <p style="margin-bottom: 2rem; color: var(--text-dim);">Classic Strategy Game</p>
+            <button class="btn" onclick="startGame('easy')">EASY AI</button>
+            <button class="btn" onclick="startGame('medium')">MEDIUM AI</button>
+            <button class="btn" onclick="startGame('hard')">HARD AI</button>
+            <button class="btn secondary" onclick="showScreen('stats-screen'); updateStatsView();">STATS</button>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div class="header">
+                <div class="score-container">
+                    <div id="score-box-black" class="score-box active">
+                        <div class="score-disc black"></div>
+                        <span id="score-black" class="score-value">2</span>
+                    </div>
+                    <div class="status-text" id="status-text">Black's Turn</div>
+                    <div id="score-box-white" class="score-box">
+                        <span id="score-white" class="score-value">2</span>
+                        <div class="score-disc white"></div>
+                    </div>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                </div>
+            </div>
+
+            <div class="board-container">
+                <div class="board-wrapper">
+                    <div class="board" id="board">
+                        <!-- Cells generated by JS -->
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button class="btn small" onclick="undo()">Undo</button>
+                <button class="btn small" onclick="showHint()">Hint</button>
+                <button class="btn small" id="btn-pass" onclick="passTurn()" disabled>Pass</button>
+                <button class="btn small secondary" onclick="quitGame()">Menu</button>
+            </div>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="game-over-screen" class="screen" style="background: rgba(10, 10, 26, 0.9);">
+            <h1 id="result-title">YOU WIN!</h1>
+            <h2 id="result-score">Black: 34 - White: 30</h2>
+            <p id="result-desc" style="margin-bottom: 2rem; color: var(--text-dim);"></p>
+            <button class="btn" onclick="startGame(currentDifficulty)">PLAY AGAIN</button>
+            <button class="btn secondary" onclick="showScreen('start-screen')">MENU</button>
+        </div>
+        
+        <!-- Stats Screen -->
+        <div id="stats-screen" class="screen">
+            <h2>STATISTICS</h2>
+            <div class="stats-grid" id="stats-container">
+                <!-- Populated by JS -->
+            </div>
+            <button class="btn secondary" onclick="clearStats()">RESET</button>
+            <button class="btn" onclick="showScreen('start-screen')">BACK</button>
+        </div>
+    </div>
+
+    <script>
+        // Constants
+        const EMPTY = 0;
+        const BLACK = 1;
+        const WHITE = 2;
+        const SIZE = 8;
+        const DIRS = [
+            [-1, -1], [-1, 0], [-1, 1],
+            [0, -1],           [0, 1],
+            [1, -1],  [1, 0],  [1, 1]
+        ];
+
+        // Positional weights for AI
+        const WEIGHTS = [
+            [120, -20,  20,   5,   5,  20, -20, 120],
+            [-20, -40,  -5,  -5,  -5,  -5, -40, -20],
+            [ 20,  -5,  15,   3,   3,  15,  -5,  20],
+            [  5,  -5,   3,   3,   3,   3,  -5,   5],
+            [  5,  -5,   3,   3,   3,   3,  -5,   5],
+            [ 20,  -5,  15,   3,   3,  15,  -5,  20],
+            [-20, -40,  -5,  -5,  -5,  -5, -40, -20],
+            [120, -20,  20,   5,   5,  20, -20, 120]
+        ];
+
+        // State
+        let board = [];
+        let currentPlayer = BLACK;
+        let humanPlayer = BLACK;
+        let aiPlayer = WHITE;
+        let currentDifficulty = 'easy';
+        let history = []; // Stack for undo
+        let isAiThinking = false;
+        let lastMove = null;
+        let validMovesMap = new Map(); // key: r,c string, value: array of flipped positions
+
+        // Audio Context (initialized on first interaction)
+        let audioCtx;
+        
+        // Stats
+        let stats = JSON.parse(localStorage.getItem('reversi_stats')) || {
+            easy: { wins: 0, losses: 0, draws: 0 },
+            medium: { wins: 0, losses: 0, draws: 0 },
+            hard: { wins: 0, losses: 0, draws: 0 }
+        };
+
+        // DOM Elements
+        const boardEl = document.getElementById('board');
+        const scoreBlackEl = document.getElementById('score-black');
+        const scoreWhiteEl = document.getElementById('score-white');
+        const boxBlackEl = document.getElementById('score-box-black');
+        const boxWhiteEl = document.getElementById('score-box-white');
+        const statusTextEl = document.getElementById('status-text');
+        const progressFillEl = document.getElementById('progress-bar-fill');
+        const passBtn = document.getElementById('btn-pass');
+
+        // Initialize Board UI
+        function initBoardUI() {
+            boardEl.innerHTML = '';
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.r = r;
+                    cell.dataset.c = c;
+                    
+                    const indicator = document.createElement('div');
+                    indicator.className = 'cell-indicator';
+                    cell.appendChild(indicator);
+                    
+                    cell.addEventListener('click', () => handleCellClick(r, c));
+                    boardEl.appendChild(cell);
+                }
+            }
+        }
+
+        // Initialize Game State
+        function initGame() {
+            board = Array(SIZE).fill(null).map(() => Array(SIZE).fill(EMPTY));
+            board[3][3] = WHITE;
+            board[3][4] = BLACK;
+            board[4][3] = BLACK;
+            board[4][4] = WHITE;
+            currentPlayer = BLACK;
+            lastMove = null;
+            history = [];
+            isAiThinking = false;
+            updateValidMoves();
+            renderBoard();
+            updateScore();
+        }
+
+        // Start Game
+        function startGame(difficulty) {
+            initAudio();
+            currentDifficulty = difficulty;
+            initGame();
+            showScreen('game-screen');
+        }
+
+        // Handle Input
+        function handleCellClick(r, c) {
+            if (isAiThinking || currentPlayer !== humanPlayer) return;
+            
+            const key = `${r},${c}`;
+            if (validMovesMap.has(key)) {
+                playMove(r, c);
+            } else {
+                playSound('buzz');
+                triggerVibrate([50]);
+            }
+        }
+
+        // Game Logic
+        function playMove(r, c) {
+            const key = `${r},${c}`;
+            const flips = validMovesMap.get(key);
+            
+            if (!flips) return;
+
+            // Save state for undo
+            history.push({
+                board: board.map(row => [...row]),
+                currentPlayer,
+                lastMove
+            });
+
+            // Apply move
+            board[r][c] = currentPlayer;
+            for (const [fr, fc] of flips) {
+                board[fr][fc] = currentPlayer;
+            }
+            lastMove = [r, c];
+            
+            // Render before checking next state for animation
+            renderBoard(flips);
+            playSound('place');
+            if (flips.length > 0) {
+                setTimeout(() => playSound('flip'), 150);
+            }
+            triggerVibrate([20, 30, 20]);
+
+            // Switch turn
+            currentPlayer = currentPlayer === BLACK ? WHITE : BLACK;
+            
+            // Check game state after animation
+            setTimeout(checkGameState, 500); // Wait for flips
+        }
+
+        function checkGameState() {
+            updateValidMoves();
+            updateScore();
+
+            if (validMovesMap.size === 0) {
+                // Current player has no moves. Does the other player?
+                const opponent = currentPlayer === BLACK ? WHITE : BLACK;
+                const opponentMoves = getValidMovesForPlayer(opponent, board);
+                
+                if (opponentMoves.size === 0) {
+                    // Game Over
+                    endGame();
+                } else {
+                    // Pass turn
+                    if (currentPlayer === humanPlayer) {
+                        statusTextEl.textContent = "No moves!";
+                        passBtn.disabled = false;
+                        passBtn.classList.add('pulse');
+                    } else {
+                        // AI passes automatically
+                        statusTextEl.textContent = "AI passes";
+                        setTimeout(() => {
+                            currentPlayer = humanPlayer;
+                            checkGameState();
+                        }, 1000);
+                    }
+                }
+            } else {
+                passBtn.disabled = true;
+                passBtn.classList.remove('pulse');
+                
+                if (currentPlayer === aiPlayer) {
+                    makeAIMove();
+                }
+            }
+        }
+
+        function passTurn() {
+            if (currentPlayer !== humanPlayer) return;
+            if (validMovesMap.size > 0) return;
+            
+            playSound('click');
+            passBtn.disabled = true;
+            passBtn.classList.remove('pulse');
+            currentPlayer = aiPlayer;
+            checkGameState();
+        }
+
+        function getValidMovesForPlayer(player, currentBoard) {
+            const opponent = player === BLACK ? WHITE : BLACK;
+            const moves = new Map();
+
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (currentBoard[r][c] !== EMPTY) continue;
+
+                    let flips = [];
+                    for (const [dr, dc] of DIRS) {
+                        let nr = r + dr;
+                        let nc = c + dc;
+                        let tempFlips = [];
+                        
+                        while (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && currentBoard[nr][nc] === opponent) {
+                            tempFlips.push([nr, nc]);
+                            nr += dr;
+                            nc += dc;
+                        }
+                        
+                        if (nr >= 0 && nr < SIZE && nc >= 0 && nc < SIZE && currentBoard[nr][nc] === player && tempFlips.length > 0) {
+                            flips = flips.concat(tempFlips);
+                        }
+                    }
+
+                    if (flips.length > 0) {
+                        moves.set(`${r},${c}`, flips);
+                    }
+                }
+            }
+            return moves;
+        }
+
+        function updateValidMoves() {
+            validMovesMap = getValidMovesForPlayer(currentPlayer, board);
+        }
+
+        // Rendering
+        function renderBoard(justFlipped = []) {
+            const cells = boardEl.children;
+            
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    const idx = r * SIZE + c;
+                    const cell = cells[idx];
+                    const val = board[r][c];
+                    
+                    // Clear cell visuals
+                    cell.classList.remove('valid', 'hint');
+                    const existingDisc = cell.querySelector('.disc');
+                    
+                    if (val !== EMPTY) {
+                        if (!existingDisc) {
+                            const disc = document.createElement('div');
+                            disc.className = `disc new-move is-${val === BLACK ? 'black' : 'white'}`;
+                            
+                            const faceB = document.createElement('div');
+                            faceB.className = 'disc-face disc-black';
+                            
+                            const faceW = document.createElement('div');
+                            faceW.className = 'disc-face disc-white';
+                            
+                            disc.appendChild(faceB);
+                            disc.appendChild(faceW);
+                            
+                            cell.appendChild(disc);
+                            
+                            if (lastMove && lastMove[0] === r && lastMove[1] === c) {
+                                disc.classList.add('last-move');
+                            }
+                        } else {
+                            // Update existing disc
+                            const isBlack = val === BLACK;
+                            if (isBlack && existingDisc.classList.contains('is-white')) {
+                                existingDisc.classList.remove('is-white');
+                                existingDisc.classList.add('is-black');
+                                
+                                // Check if this was just flipped
+                                const flipped = justFlipped.some(f => f[0] === r && f[1] === c);
+                                if (flipped) {
+                                    // Cascade delay based on distance from last move
+                                    if (lastMove) {
+                                        const dist = Math.max(Math.abs(r - lastMove[0]), Math.abs(c - lastMove[1]));
+                                        existingDisc.style.transitionDelay = `${dist * 50}ms`;
+                                        setTimeout(() => { existingDisc.style.transitionDelay = '0ms'; }, 1000);
+                                    }
+                                }
+                            } else if (!isBlack && existingDisc.classList.contains('is-black')) {
+                                existingDisc.classList.remove('is-black');
+                                existingDisc.classList.add('is-white');
+                                
+                                const flipped = justFlipped.some(f => f[0] === r && f[1] === c);
+                                if (flipped) {
+                                    if (lastMove) {
+                                        const dist = Math.max(Math.abs(r - lastMove[0]), Math.abs(c - lastMove[1]));
+                                        existingDisc.style.transitionDelay = `${dist * 50}ms`;
+                                        setTimeout(() => { existingDisc.style.transitionDelay = '0ms'; }, 1000);
+                                    }
+                                }
+                            }
+                            
+                            existingDisc.classList.remove('new-move');
+                            if (lastMove && lastMove[0] === r && lastMove[1] === c) {
+                                existingDisc.classList.add('last-move');
+                            } else {
+                                existingDisc.classList.remove('last-move');
+                            }
+                        }
+                    } else if (existingDisc) {
+                        existingDisc.remove();
+                    }
+                    
+                    // Show valid moves for human
+                    if (currentPlayer === humanPlayer && validMovesMap.has(`${r},${c}`)) {
+                        cell.classList.add('valid');
+                    }
+                }
+            }
+        }
+
+        function updateScore() {
+            let b = 0, w = 0;
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (board[r][c] === BLACK) b++;
+                    else if (board[r][c] === WHITE) w++;
+                }
+            }
+            
+            scoreBlackEl.textContent = b;
+            scoreWhiteEl.textContent = w;
+            
+            const total = b + w;
+            if (total > 0) {
+                progressFillEl.style.width = `${(b / total) * 100}%`;
+            }
+            
+            if (currentPlayer === BLACK) {
+                boxBlackEl.classList.add('active');
+                boxWhiteEl.classList.remove('active');
+                statusTextEl.textContent = "Black's Turn";
+            } else {
+                boxWhiteEl.classList.add('active');
+                boxBlackEl.classList.remove('active');
+                statusTextEl.textContent = "White's Turn";
+            }
+        }
+
+        // Actions
+        function undo() {
+            if (isAiThinking || history.length === 0) return;
+            
+            playSound('click');
+            // Pop the last state. prevState.currentPlayer is whose turn it was BEFORE that move.
+            const prevState = history.pop();
+            
+            // If the state we popped was an AI move (AI's turn before the move),
+            // pop again to also undo the human's move that preceded it.
+            if (prevState.currentPlayer === aiPlayer && history.length > 0) {
+                const prevPrevState = history.pop();
+                board = prevPrevState.board.map(row => [...row]);
+                currentPlayer = prevPrevState.currentPlayer;
+                lastMove = prevPrevState.lastMove;
+            } else {
+                board = prevState.board.map(row => [...row]);
+                currentPlayer = prevState.currentPlayer;
+                lastMove = prevState.lastMove;
+            }
+            
+            updateValidMoves();
+            renderBoard();
+            updateScore();
+        }
+
+        function showHint() {
+            if (isAiThinking || currentPlayer !== humanPlayer) return;
+            playSound('click');
+            
+            // Simple hint: best positional move
+            let bestMove = null;
+            let bestScore = -Infinity;
+            
+            for (const [key, flips] of validMovesMap.entries()) {
+                const [r, c] = key.split(',').map(Number);
+                const score = WEIGHTS[r][c] + flips.length;
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMove = {r, c};
+                }
+            }
+            
+            if (bestMove) {
+                const idx = bestMove.r * SIZE + bestMove.c;
+                boardEl.children[idx].classList.add('hint');
+                setTimeout(() => {
+                    boardEl.children[idx].classList.remove('hint');
+                }, 1500);
+            }
+        }
+
+        function quitGame() {
+            playSound('click');
+            if (confirm("Are you sure you want to quit?")) {
+                showScreen('start-screen');
+            }
+        }
+
+        // AI Logic
+        function makeAIMove() {
+            isAiThinking = true;
+            statusTextEl.textContent = "AI is thinking...";
+            
+            setTimeout(() => {
+                const moves = Array.from(validMovesMap.keys());
+                let selectedKey = null;
+
+                if (currentDifficulty === 'easy') {
+                    selectedKey = moves[Math.floor(Math.random() * moves.length)];
+                } else if (currentDifficulty === 'medium') {
+                    // Positional
+                    let bestScore = -Infinity;
+                    for (const key of moves) {
+                        const [r, c] = key.split(',').map(Number);
+                        const score = WEIGHTS[r][c] + validMovesMap.get(key).length;
+                        if (score > bestScore) {
+                            bestScore = score;
+                            selectedKey = key;
+                        }
+                    }
+                } else {
+                    // Hard: Minimax
+                    const [r, c] = getBestMoveMinimax(board, aiPlayer, 5);
+                    selectedKey = `${r},${c}`;
+                }
+
+                if (selectedKey) {
+                    const [r, c] = selectedKey.split(',').map(Number);
+                    isAiThinking = false;
+                    playMove(r, c);
+                }
+            }, 500); // Artificial delay
+        }
+
+        function getBestMoveMinimax(currentBoard, player, depth) {
+            let bestScore = -Infinity;
+            let bestMove = null;
+            const moves = getValidMovesForPlayer(player, currentBoard);
+            
+            for (const [key, flips] of moves.entries()) {
+                const [r, c] = key.split(',').map(Number);
+                
+                // Make move
+                const newBoard = currentBoard.map(row => [...row]);
+                newBoard[r][c] = player;
+                for (const [fr, fc] of flips) {
+                    newBoard[fr][fc] = player;
+                }
+                
+                const score = minimax(newBoard, depth - 1, -Infinity, Infinity, false, player);
+                // Add tiny random value to break ties randomly
+                const adjustedScore = score + (Math.random() * 0.1);
+                
+                if (adjustedScore > bestScore) {
+                    bestScore = adjustedScore;
+                    bestMove = [r, c];
+                }
+            }
+            return bestMove;
+        }
+
+        function minimax(currentBoard, depth, alpha, beta, isMaximizing, aiColor) {
+            const humanColor = aiColor === BLACK ? WHITE : BLACK;
+            const currentPlayer = isMaximizing ? aiColor : humanColor;
+            const moves = getValidMovesForPlayer(currentPlayer, currentBoard);
+
+            if (depth === 0 || isTerminal(currentBoard, moves, currentPlayer)) {
+                return evaluateBoard(currentBoard, aiColor);
+            }
+
+            if (moves.size === 0) {
+                // Pass turn
+                return minimax(currentBoard, depth - 1, alpha, beta, !isMaximizing, aiColor);
+            }
+
+            if (isMaximizing) {
+                let maxEval = -Infinity;
+                for (const [key, flips] of moves.entries()) {
+                    const [r, c] = key.split(',').map(Number);
+                    const newBoard = currentBoard.map(row => [...row]);
+                    newBoard[r][c] = currentPlayer;
+                    for (const [fr, fc] of flips) {
+                        newBoard[fr][fc] = currentPlayer;
+                    }
+                    
+                    const ev = minimax(newBoard, depth - 1, alpha, beta, false, aiColor);
+                    maxEval = Math.max(maxEval, ev);
+                    alpha = Math.max(alpha, ev);
+                    if (beta <= alpha) break;
+                }
+                return maxEval;
+            } else {
+                let minEval = Infinity;
+                for (const [key, flips] of moves.entries()) {
+                    const [r, c] = key.split(',').map(Number);
+                    const newBoard = currentBoard.map(row => [...row]);
+                    newBoard[r][c] = currentPlayer;
+                    for (const [fr, fc] of flips) {
+                        newBoard[fr][fc] = currentPlayer;
+                    }
+                    
+                    const ev = minimax(newBoard, depth - 1, alpha, beta, true, aiColor);
+                    minEval = Math.min(minEval, ev);
+                    beta = Math.min(beta, ev);
+                    if (beta <= alpha) break;
+                }
+                return minEval;
+            }
+        }
+
+        function isTerminal(currentBoard, moves, player) {
+            if (moves.size > 0) return false;
+            // Check if board is full
+            let full = true;
+            for(let r=0; r<SIZE; r++) {
+                for(let c=0; c<SIZE; c++) {
+                    if(currentBoard[r][c]===EMPTY) full = false;
+                }
+            }
+            if(full) return true;
+            
+            const otherPlayer = player === BLACK ? WHITE : BLACK;
+            return getValidMovesForPlayer(otherPlayer, currentBoard).size === 0;
+        }
+
+        function evaluateBoard(currentBoard, aiColor) {
+            const humanColor = aiColor === BLACK ? WHITE : BLACK;
+            let score = 0;
+            
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (currentBoard[r][c] === aiColor) {
+                        score += WEIGHTS[r][c];
+                    } else if (currentBoard[r][c] === humanColor) {
+                        score -= WEIGHTS[r][c];
+                    }
+                }
+            }
+            return score;
+        }
+
+        // Game Over
+        function endGame() {
+            let b = 0, w = 0;
+            for (let r = 0; r < SIZE; r++) {
+                for (let c = 0; c < SIZE; c++) {
+                    if (board[r][c] === BLACK) b++;
+                    else if (board[r][c] === WHITE) w++;
+                }
+            }
+
+            const title = document.getElementById('result-title');
+            const resultScore = document.getElementById('result-score');
+            const desc = document.getElementById('result-desc');
+
+            resultScore.textContent = `Black: ${b} - White: ${w}`;
+
+            if (b > w) {
+                title.textContent = "YOU WIN!";
+                title.style.color = '#4ade80';
+                desc.textContent = "Excellent strategy!";
+                playSound('fanfare');
+                createConfetti();
+                triggerVibrate([100, 50, 100, 50, 200]);
+                stats[currentDifficulty].wins++;
+            } else if (w > b) {
+                title.textContent = "YOU LOSE!";
+                title.style.color = "#ef4444";
+                desc.textContent = "The AI outsmarted you.";
+                playSound('buzz');
+                triggerVibrate([200]);
+                stats[currentDifficulty].losses++;
+            } else {
+                title.textContent = "DRAW!";
+                title.style.color = '#facc15';
+                desc.textContent = "A battle of equals.";
+                stats[currentDifficulty].draws++;
+            }
+
+            localStorage.setItem('reversi_stats', JSON.stringify(stats));
+
+            setTimeout(() => {
+                showScreen('game-over-screen');
+            }, 1000);
+        }
+
+        // Stats UI
+        function updateStatsView() {
+            const container = document.getElementById('stats-container');
+            container.innerHTML = '';
+            
+            ['easy', 'medium', 'hard'].forEach(diff => {
+                const data = stats[diff];
+                const total = data.wins + data.losses + data.draws;
+                const winRate = total > 0 ? Math.round((data.wins / total) * 100) : 0;
+                
+                const html = `
+                    <div class="stat-card">
+                        <div style="color: var(--text-dim); margin-bottom: 5px; text-transform: uppercase;">${diff}</div>
+                        <div class="stat-value">${data.wins}W - ${data.losses}L</div>
+                        <div style="font-size: 0.8rem; margin-top: 5px;">Win Rate: ${winRate}%</div>
+                    </div>
+                `;
+                container.innerHTML += html;
+            });
+        }
+
+        function clearStats() {
+            if (confirm("Reset all statistics?")) {
+                stats = {
+                    easy: { wins: 0, losses: 0, draws: 0 },
+                    medium: { wins: 0, losses: 0, draws: 0 },
+                    hard: { wins: 0, losses: 0, draws: 0 }
+                };
+                localStorage.setItem('reversi_stats', JSON.stringify(stats));
+                updateStatsView();
+            }
+        }
+
+        // Screen Management
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        // Audio & Haptics
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playSound(type) {
+            if (!audioCtx) return;
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            const now = audioCtx.currentTime;
+            
+            if (type === 'place') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } else if (type === 'flip') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(500, now + 0.1);
+                gain.gain.setValueAtTime(0.5, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+                osc.start(now);
+                osc.stop(now + 0.15);
+            } else if (type === 'click') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(800, now);
+                gain.gain.setValueAtTime(0.3, now);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+                osc.start(now);
+                osc.stop(now + 0.05);
+            } else if (type === 'buzz') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, now);
+                osc.frequency.linearRampToValueAtTime(100, now + 0.2);
+                gain.gain.setValueAtTime(0.5, now);
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+                osc.start(now);
+                osc.stop(now + 0.2);
+            } else if (type === 'fanfare') {
+                // Simple arpeggio
+                osc.type = 'square';
+                gain.gain.setValueAtTime(0.3, now);
+                
+                osc.frequency.setValueAtTime(440, now);
+                osc.frequency.setValueAtTime(554.37, now + 0.1); // C#
+                osc.frequency.setValueAtTime(659.25, now + 0.2); // E
+                osc.frequency.setValueAtTime(880, now + 0.3); // A
+                
+                gain.gain.linearRampToValueAtTime(0.01, now + 0.8);
+                osc.start(now);
+                osc.stop(now + 0.8);
+            }
+        }
+
+        function triggerVibrate(pattern) {
+            if ('vibrate' in navigator) {
+                navigator.vibrate(pattern);
+            }
+        }
+
+        // Confetti
+        function createConfetti() {
+            const colors = ['#4ade80', '#facc15', '#60a5fa', '#f87171', '#c084fc'];
+            for (let i = 0; i < 100; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                
+                const size = Math.random() * 10 + 5;
+                particle.style.width = `${size}px`;
+                particle.style.height = `${size}px`;
+                particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                
+                particle.style.left = '50%';
+                particle.style.top = '50%';
+                
+                document.body.appendChild(particle);
+                
+                const angle = Math.random() * Math.PI * 2;
+                const velocity = Math.random() * 20 + 10;
+                const tx = Math.cos(angle) * velocity * 20;
+                const ty = Math.sin(angle) * velocity * 20;
+                
+                particle.animate([
+                    { transform: 'translate(-50%, -50%) scale(1)', opacity: 1 },
+                    { transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) scale(0)`, opacity: 0 }
+                ], {
+                    duration: Math.random() * 1000 + 1000,
+                    easing: 'cubic-bezier(0, .9, .57, 1)'
+                }).onfinish = () => particle.remove();
+            }
+        }
+
+        // Init
+        initBoardUI();
+    </script>
+</body>
+</html>

@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Pixel Puzzle</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;800;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;}
+body{min-height:100vh;background:#1A1030;overflow:hidden;font-family:'Nunito',sans-serif;color:white;display:flex;flex-direction:column;align-items:center;touch-action:manipulation;}
+
+/* HUD */
+#hud{width:100%;max-width:480px;padding:10px 14px 6px;display:flex;justify-content:space-between;align-items:center;}
+.hp{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:6px 12px;text-align:center;font-size:.85rem;font-weight:800;}
+.hp b{display:block;font-size:1.1rem;}
+.hp.lv b{color:#FB923C;}
+.hp.mv b{color:#A78BFA;}
+.hp.sc b{color:#34D399;}
+
+/* PREVIEW strip */
+#preview-strip{width:100%;max-width:480px;padding:4px 14px 4px;display:flex;align-items:center;gap:10px;}
+#preview-label{font-size:.6rem;font-weight:800;color:rgba(255,255,255,.3);letter-spacing:2px;text-transform:uppercase;white-space:nowrap;}
+#preview-canvas{border-radius:8px;border:2px solid rgba(255,255,255,.15);flex-shrink:0;}
+#puzzle-name{font-family:'Fredoka One';font-size:1.1rem;color:rgba(255,255,255,.5);}
+
+/* GAME AREA: reference tiny + puzzle board */
+#game-area{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;max-width:480px;padding:4px 10px;}
+
+/* PUZZLE BOARD */
+#board{display:grid;gap:3px;margin:0 auto;}
+.piece{border-radius:6px;cursor:pointer;overflow:hidden;position:relative;transition:transform .15s,box-shadow .15s;border:2px solid rgba(255,255,255,.08);}
+.piece canvas{display:block;}
+.piece.selected{transform:scale(1.08);box-shadow:0 0 0 3px #A78BFA, 0 0 20px rgba(167,139,250,.5);border-color:#A78BFA;z-index:10;}
+.piece.correct{border-color:rgba(52,211,153,.5);}
+.piece.empty-slot{background:rgba(255,255,255,.04);cursor:default;border-style:dashed;}
+.piece:active{transform:scale(.92);}
+.piece.selected:active{transform:scale(1.04);}
+
+/* swap flash */
+.piece.flash-ok{animation:flashOk .35s ease;}
+.piece.flash-wrong{animation:flashWrong .35s ease;}
+
+/* BOTTOM BAR */
+#bottom{width:100%;max-width:480px;padding:6px 14px 10px;display:flex;gap:8px;}
+#shuffle-btn{flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.6);border-radius:12px;padding:11px 0;font-family:'Fredoka One';font-size:.95rem;cursor:pointer;}
+#hint-btn2{flex:1;background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.3);color:#A78BFA;border-radius:12px;padding:11px 0;font-family:'Fredoka One';font-size:.95rem;cursor:pointer;}
+
+/* SCREENS */
+.screen{position:fixed;inset:0;z-index:400;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;background:linear-gradient(160deg,#1A1030,#2D1B5E);}
+.px-title{font-family:'Fredoka One';font-size:3rem;background:linear-gradient(135deg,#F472B6,#A78BFA,#38BDF8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;margin-bottom:4px;}
+.px-sub{font-size:.65rem;color:rgba(255,255,255,.3);letter-spacing:3px;text-transform:uppercase;margin-bottom:20px;}
+.how-card{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:18px;padding:14px 20px;margin-bottom:20px;max-width:300px;font-size:.88rem;color:rgba(255,255,255,.55);line-height:2;text-align:center;}
+.px-btn{background:linear-gradient(135deg,#A78BFA,#7C3AED);color:white;border:none;border-radius:14px;padding:15px 52px;font-family:'Fredoka One';font-size:1.2rem;cursor:pointer;box-shadow:0 6px 20px rgba(167,139,250,.4);}
+.px-btn:active{transform:scale(.95);}
+.px-btn.next{background:linear-gradient(135deg,#34D399,#059669);box-shadow:0 6px 20px rgba(52,211,153,.4);}
+.px-btn.ghost{background:rgba(255,255,255,.07);box-shadow:none;margin-top:10px;}
+.diff-row{display:flex;gap:10px;margin-bottom:18px;width:100%;max-width:300px;}
+.dopt{flex:1;background:rgba(255,255,255,.05);border:1.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:10px;padding:10px 4px;font-family:'Fredoka One';font-size:.85rem;cursor:pointer;text-align:center;}
+.dopt.active{border-color:#A78BFA;color:#A78BFA;background:rgba(167,139,250,.12);}
+.dopt div{font-size:.58rem;color:rgba(255,255,255,.3);margin-top:2px;}
+
+/* WIN */
+#win-screen .px-title{font-size:2.5rem;}
+.win-img-wrap{border-radius:14px;overflow:hidden;border:3px solid #34D399;box-shadow:0 0 30px rgba(52,211,153,.4);margin:10px 0;}
+.win-stars{font-size:2.5rem;margin:6px 0;}
+.win-pts{font-family:'Fredoka One';font-size:3.5rem;background:linear-gradient(135deg,#FFD700,#FB923C);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:2px 0;}
+
+@keyframes flashOk{0%,100%{background:rgba(52,211,153,.1);}50%{background:rgba(52,211,153,.35);}}
+@keyframes flashWrong{0%,100%{background:transparent;}50%{background:rgba(239,68,68,.25);}}
+@keyframes completePop{0%{transform:scale(.8);opacity:0;}100%{transform:scale(1);opacity:1;}}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div class="hp lv"><span>LEVEL</span><b id="lv-v">1</b></div>
+  <div class="hp"><span>PUZZLE</span><b id="name-v" style="font-size:.85rem;color:#F472B6">?</b></div>
+  <div class="hp mv"><span>MOVES</span><b id="mv-v">0</b></div>
+  <div class="hp sc"><span>SCORE</span><b id="sc-v">0</b></div>
+</div>
+
+<div id="preview-strip">
+  <div id="preview-label">TARGET →</div>
+  <canvas id="preview-canvas" width="60" height="60"></canvas>
+  <div id="puzzle-name" style="font-family:'Fredoka One';font-size:1rem;color:rgba(255,255,255,.4)"></div>
+</div>
+
+<div id="game-area">
+  <div id="board"></div>
+</div>
+
+<div id="bottom">
+  <button id="shuffle-btn" onclick="shuffleBoard()">🔀 Reshuffle</button>
+  <button id="hint-btn2" onclick="doHint()">💡 Hint</button>
+</div>
+
+<!-- START -->
+<div class="screen" id="start-screen" style="display:none">
+  <div style="font-size:4rem;margin-bottom:10px">🧩</div>
+  <div class="px-title">Pixel Puzzle!</div>
+  <div class="px-sub">Piece it Together</div>
+  <div class="diff-row">
+    <div class="dopt active" onclick="setDiff(this,0)">EASY<div>2×2 grid</div></div>
+    <div class="dopt" onclick="setDiff(this,1)">MEDIUM<div>3×3 grid</div></div>
+    <div class="dopt" onclick="setDiff(this,2)">HARD<div>4×4 grid</div></div>
+  </div>
+  <button class="px-btn" onclick="startGame()">Start Puzzling! 🧩</button>
+</div>
+
+<!-- WIN -->
+<div class="screen" id="win-screen" style="display:none">
+  <div class="win-stars" id="win-stars">⭐⭐⭐</div>
+  <div class="px-title">Solved! 🎉</div>
+  <div class="win-img-wrap"><canvas id="win-canvas" width="140" height="140"></canvas></div>
+  <div class="win-pts" id="win-pts">+500</div>
+  <p style="color:rgba(255,255,255,.35);font-size:.8rem;margin-bottom:16px">Solved in <span id="win-mv" style="color:#A78BFA">0</span> moves</p>
+  <button class="px-btn next" onclick="nextLevel()">Next Puzzle ▶</button>
+  <button class="px-btn ghost" onclick="goMenu()">Menu</button>
+</div>
+
+<script>
+/* ════════════════════════════════════════════
+   PIXEL ART IMAGES — drawn on canvas
+   Each image is a 8×8 colour grid (64 colours, palette indexed)
+   We draw them then cut into pieces
+════════════════════════════════════════════ */
+
+// Palette
+const P={
+  // sky/background
+  sk:'#87CEEB', // sky blue
+  nb:'#0D1B2A', // night
+  ws:'#FFFFFF', // white
+  lg:'#C5E8A0', // light green
+  dg:'#4A7C2F', // dark green
+  br:'#8B4513', // brown
+  rd:'#E63946', // red
+  or:'#F4A261', // orange
+  yw:'#FFD166', // yellow
+  pk:'#FF85A1', // pink
+  gy:'#808080', // gray
+  dg2:'#555555',// dark gray
+  bl:'#2196F3', // blue
+  tl:'#06D6A0', // teal
+  pr:'#9B5DE5', // purple
+  nn:'#FF6B6B', // salmon
+  bk:'#000000', // black
+  cr:'#F2CC8F', // cream/skin
+  _:'',         // transparent (use bg)
+};
+
+// 8 pixel images (8×8 each = 64 cells)
+const IMAGES=[
+  {
+    name:'🐦 Bird',emoji:'🐦',
+    pal:[P.sk,P.bl,P.yw,P.or,P.bk,P.ws],
+    art:[
+      0,0,0,1,1,0,0,0,
+      0,0,1,1,1,1,0,0,
+      0,1,1,4,1,1,2,0,
+      1,1,1,1,1,1,3,3,
+      0,1,1,1,1,2,2,0,
+      0,0,1,2,2,0,0,0,
+      0,0,2,2,0,0,0,0,
+      0,0,0,0,0,0,0,0,
+    ]
+  },
+  {
+    name:'🏠 House',emoji:'🏠',
+    pal:[P.ws,P.rd,P.br,P.yw,P.lg,P.bl],
+    art:[
+      0,0,0,1,1,0,0,0,
+      0,0,1,1,1,1,0,0,
+      0,1,1,1,1,1,1,0,
+      0,2,2,2,2,2,2,0,
+      0,2,5,2,2,5,2,0,
+      0,2,5,2,2,5,2,0,
+      0,2,2,3,3,2,2,0,
+      0,4,4,4,4,4,4,0,
+    ]
+  },
+  {
+    name:'🐱 Cat',emoji:'🐱',
+    pal:[P.or,P.yw,P.bk,P.ws,P.pk,P.cr],
+    art:[
+      0,0,0,0,0,0,0,0,
+      1,1,0,0,0,0,1,1,
+      0,0,0,0,0,0,0,0,
+      0,2,0,3,3,0,2,0,
+      0,0,4,0,0,4,0,0,
+      0,0,5,0,0,0,0,0,
+      0,0,0,0,0,0,0,0,
+      0,5,5,0,0,5,5,0,
+    ]
+  },
+  {
+    name:'🚀 Rocket',emoji:'🚀',
+    pal:[P.gy,P.rd,P.bl,P.yw,P.ws,P.or],
+    art:[
+      0,0,0,3,0,0,0,0,
+      0,0,3,3,3,0,0,0,
+      0,0,0,2,0,0,0,0,
+      0,0,2,2,2,0,0,0,
+      0,1,2,4,2,1,0,0,
+      0,1,2,2,2,1,0,0,
+      1,1,5,0,5,1,1,0,
+      0,0,5,0,5,0,0,0,
+    ]
+  },
+  {
+    name:'🌻 Flower',emoji:'🌻',
+    pal:[P.yw,P.or,P.dg,P.lg,P.bk,P.ws],
+    art:[
+      0,0,1,0,1,0,0,0,
+      0,0,0,1,0,0,0,0,
+      1,0,0,1,0,0,1,0,
+      0,1,1,0,1,1,0,0,
+      0,0,0,4,0,0,0,0,
+      0,0,2,2,2,0,0,0,
+      0,0,0,2,0,0,0,0,
+      0,0,0,3,0,0,0,0,
+    ]
+  },
+  {
+    name:'⭐ Star',emoji:'⭐',
+    pal:[P.yw,P.or,P.ws,P.sk,P.bk],
+    art:[
+      0,0,0,2,0,0,0,0,
+      0,0,0,2,0,0,0,0,
+      3,3,3,2,3,3,3,3,
+      0,0,2,2,2,0,0,0,
+      0,2,2,0,2,2,0,0,
+      2,2,0,0,0,2,2,0,
+      2,0,0,0,0,0,2,0,
+      0,0,0,0,0,0,0,0,
+    ]
+  },
+  {
+    name:'🐸 Frog',emoji:'🐸',
+    pal:[P.tl,P.dg,P.ws,P.bk,P.yw,P.rd],
+    art:[
+      2,2,0,0,0,0,2,2,
+      0,0,0,0,0,0,0,0,
+      0,3,0,0,0,0,3,0,
+      0,0,0,4,4,0,0,0,
+      0,0,0,0,0,0,0,0,
+      0,0,5,0,0,5,0,0,
+      0,0,0,5,5,0,0,0,
+      0,0,0,0,0,0,0,0,
+    ]
+  },
+  {
+    name:'🐠 Fish',emoji:'🐠',
+    pal:[P.or,P.yw,P.bl,P.ws,P.bk,P.rd],
+    art:[
+      0,0,0,0,0,0,2,2,
+      0,0,0,0,0,2,0,2,
+      0,0,1,1,1,1,0,0,
+      0,1,0,1,3,1,1,0,
+      0,1,1,0,1,1,1,0,
+      0,0,1,1,1,0,0,0,
+      0,0,0,0,0,2,0,2,
+      0,0,0,0,0,0,2,2,
+    ]
+  },
+  {
+    name:'🦋 Butterfly',emoji:'🦋',
+    pal:[P.pr,P.pk,P.yw,P.bl,P.bk,P.ws],
+    art:[
+      0,0,2,0,0,3,0,0,
+      0,2,0,0,0,0,3,0,
+      2,0,0,4,4,0,0,3,
+      0,0,4,4,4,4,0,0,
+      0,0,4,4,4,4,0,0,
+      1,0,0,4,4,0,0,0,
+      0,1,0,0,0,0,0,0,
+      0,0,1,0,0,0,0,0,
+    ]
+  },
+  {
+    name:'🏔️ Mountain',emoji:'🏔️',
+    pal:[P.ws,P.gy,P.sk,P.lg,P.dg,P.bk],
+    art:[
+      2,2,2,2,2,2,2,2,
+      2,2,2,1,2,2,2,2,
+      2,2,1,1,1,2,2,2,
+      2,1,0,1,1,1,2,2,
+      1,0,0,0,1,1,1,2,
+      3,0,0,0,0,0,3,3,
+      4,4,3,0,0,3,4,4,
+      4,4,4,4,4,4,4,4,
+    ]
+  },
+  {
+    name:'🤖 Robot',emoji:'🤖',
+    pal:[P.gy,P.bl,P.yw,P.rd,P.bk,P.ws],
+    art:[
+      0,0,0,2,0,0,0,0,
+      0,0,2,0,2,0,0,0,
+      0,0,0,0,0,0,0,0,
+      0,1,1,1,1,1,0,0,
+      0,3,0,5,0,3,0,0,
+      0,1,1,1,1,1,0,0,
+      0,4,1,4,1,4,0,0,
+      0,4,0,0,0,4,0,0,
+    ]
+  },
+  {
+    name:'🌙 Moon',emoji:'🌙',
+    pal:[P.nb,P.yw,P.ws,P.gy,P.or,P.sk],
+    art:[
+      0,0,2,0,0,0,0,0,
+      0,0,0,0,0,2,0,0,
+      0,0,0,1,1,0,0,0,
+      0,0,1,1,1,1,0,0,
+      0,0,1,1,1,1,0,2,
+      0,0,1,1,1,0,0,0,
+      0,0,0,1,0,0,0,0,
+      0,2,0,0,0,0,2,0,
+    ]
+  },
+];
+
+// Difficulty: grid splits
+const DIFFS=[{split:2,label:'2×2'},{split:3,label:'3×3'},{split:4,label:'4×4'}];
+
+let diffIdx=0, levelNum=1, totalScore=0;
+let moves=0, selected=null;
+let pieces=[], currentImage=null, gridSplit=2;
+let imgCanvas=null; // full rendered image
+
+function setDiff(el,d){
+  diffIdx=d;
+  document.querySelectorAll('.dopt').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// Get split for level: easy grows over levels
+function getSplitForLevel(lv){
+  if(diffIdx===0) return lv<=4?2:lv<=10?3:4;
+  if(diffIdx===1) return lv<=3?3:4;
+  return 4;
+}
+
+/* ─── DRAW IMAGE onto canvas ─── */
+function drawImage(canvas, img, size){
+  canvas.width=canvas.height=size;
+  const ctx=canvas.getContext('2d');
+  const cellSize=size/8;
+  img.art.forEach((ci,i)=>{
+    const x=(i%8)*cellSize, y=Math.floor(i/8)*cellSize;
+    const color=img.pal[ci]||img.pal[0];
+    ctx.fillStyle=color;
+    ctx.fillRect(x,y,cellSize,cellSize);
+  });
+}
+
+/* ─── BUILD PIECES ─── */
+function buildPieces(split, imgSize){
+  const pieceSize=imgSize/split;
+  const arr=[];
+  for(let r=0;r<split;r++){
+    for(let c=0;c<split;c++){
+      arr.push({r,c,idx:r*split+c}); // correct position
+    }
+  }
+  return arr;
+}
+
+function shuffleArr(arr){
+  for(let i=arr.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+}
+
+/* ─── RENDER BOARD ─── */
+function renderBoard(){
+  const board=document.getElementById('board');
+  const maxW=Math.min(window.innerWidth-20,460);
+  const maxH=window.innerHeight-180;
+  const boardSize=Math.min(maxW,maxH);
+  const ps=Math.floor((boardSize-gridSplit*3)/gridSplit);
+
+  board.style.gridTemplateColumns=`repeat(${gridSplit},${ps}px)`;
+  board.innerHTML='';
+
+  pieces.forEach((p,slotIdx)=>{
+    const cell=document.createElement('div');
+    cell.className='piece';
+    if(selected===slotIdx) cell.classList.add('selected');
+
+    // Check correct
+    if(p.idx===slotIdx) cell.classList.add('correct');
+
+    const cv=document.createElement('canvas');
+    cv.width=cv.height=ps;
+    // Draw the piece from imgCanvas
+    const srcSize=imgCanvas.width/gridSplit;
+    const ctx=cv.getContext('2d');
+    const sc=p.c*srcSize, sr=p.r*srcSize;
+    ctx.drawImage(imgCanvas,sc,sr,srcSize,srcSize,0,0,ps,ps);
+
+    // Dim if not correct yet
+    if(p.idx!==slotIdx){
+      ctx.fillStyle='rgba(0,0,0,.15)';
+      ctx.fillRect(0,0,ps,ps);
+    }
+
+    cell.appendChild(cv);
+    cell.addEventListener('click',()=>tapPiece(slotIdx));
+    cell.addEventListener('touchstart',e=>{e.preventDefault();tapPiece(slotIdx);},{passive:false});
+    board.appendChild(cell);
+  });
+}
+
+function tapPiece(slotIdx){
+  if(selected===null){
+    selected=slotIdx;
+    renderBoard();
+  } else if(selected===slotIdx){
+    selected=null;
+    renderBoard();
+  } else {
+    // Swap
+    const temp=pieces[selected];
+    pieces[selected]=pieces[slotIdx];
+    pieces[slotIdx]=temp;
+    moves++;
+    document.getElementById('mv-v').textContent=moves;
+
+    const wasOk=(pieces[slotIdx].idx===slotIdx)||(pieces[selected].idx===selected);
+    selected=null;
+    renderBoard();
+
+    // Flash feedback
+    const cells=document.querySelectorAll('.piece');
+    cells[slotIdx]?.classList.add(wasOk?'flash-ok':'flash-wrong');
+    setTimeout(()=>cells[slotIdx]?.classList.remove('flash-ok','flash-wrong'),350);
+
+    if(checkWin()) setTimeout(showWin,500);
+  }
+}
+
+function checkWin(){
+  return pieces.every((p,i)=>p.idx===i);
+}
+
+function shuffleBoard(){
+  shuffleArr(pieces);
+  // Make sure not already solved
+  while(checkWin()) shuffleArr(pieces);
+  selected=null;
+  renderBoard();
+}
+
+function doHint(){
+  // Find first wrong piece and move it to its correct slot (swapping)
+  for(let i=0;i<pieces.length;i++){
+    if(pieces[i].idx!==i){
+      // Find where the correct piece for slot i is
+      const j=pieces.findIndex(p=>p.idx===i);
+      [pieces[i],pieces[j]]=[pieces[j],pieces[i]];
+      moves+=3;
+      document.getElementById('mv-v').textContent=moves;
+      selected=null;
+      renderBoard();
+      if(checkWin()) setTimeout(showWin,400);
+      return;
+    }
+  }
+}
+
+/* ─── WIN ─── */
+function showWin(){
+  const par=gridSplit*gridSplit*1.5;
+  const pts=Math.max(50, Math.round(400+levelNum*15 - moves*4));
+  const stars=moves<=par?'⭐⭐⭐':moves<=par*2?'⭐⭐':'⭐';
+  totalScore+=pts;
+  document.getElementById('sc-v').textContent=totalScore;
+
+  // Draw completed image on win canvas
+  const wc=document.getElementById('win-canvas');
+  drawImage(wc, currentImage, 140);
+
+  document.getElementById('win-stars').textContent=stars;
+  document.getElementById('win-pts').textContent='+'+pts;
+  document.getElementById('win-mv').textContent=moves;
+  document.getElementById('win-screen').style.display='flex';
+}
+
+/* ─── GAME FLOW ─── */
+function startGame(){
+  document.getElementById('start-screen').style.display='none';
+  levelNum=1; totalScore=0; moves=0;
+  document.getElementById('sc-v').textContent='0';
+  loadLevel();
+}
+
+function loadLevel(){
+  // Pick image: cycle through IMAGES by level
+  const imgIdx=(levelNum-1) % IMAGES.length;
+  currentImage=IMAGES[imgIdx];
+  gridSplit=getSplitForLevel(levelNum);
+  moves=0; selected=null;
+
+  document.getElementById('lv-v').textContent=levelNum;
+  document.getElementById('name-v').textContent=currentImage.emoji+' '+currentImage.name.split(' ')[1];
+  document.getElementById('mv-v').textContent='0';
+
+  // Draw full image
+  imgCanvas=document.createElement('canvas');
+  const imgSize=Math.min(window.innerWidth-20,460);
+  drawImage(imgCanvas, currentImage, imgSize);
+
+  // Draw preview
+  const prev=document.getElementById('preview-canvas');
+  drawImage(prev, currentImage, 60);
+  document.getElementById('puzzle-name').textContent=currentImage.name;
+
+  // Build and shuffle pieces
+  pieces=buildPieces(gridSplit, imgSize);
+  shuffleArr(pieces);
+  while(checkWin()) shuffleArr(pieces);
+
+  renderBoard();
+}
+
+function nextLevel(){
+  document.getElementById('win-screen').style.display='none';
+  levelNum++;
+  loadLevel();
+}
+
+function goMenu(){
+  document.getElementById('win-screen').style.display='none';
+  document.getElementById('start-screen').style.display='flex';
+}
+
+window.addEventListener('resize',()=>{ if(currentImage) renderBoard(); });
+
+startGame();
+</script>
+</body>
+</html>

@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>2D Pool Pro – Smart Bot & Clean Prediction</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js">
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background: #121212;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: white;
+            padding: 10px;
+        }
+        #ui-top {
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .panel {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 6px 14px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #coins-panel {
+            color: #ffd700;
+            background: rgba(255, 215, 0, 0.1);
+            border-color: rgba(255, 215, 0, 0.3);
+            cursor: pointer;
+        }
+        #status-bar {
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+        .btn-sm {
+            background: #222;
+            border: 1px solid #444;
+            color: #ccc;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 11px;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-sm.active {
+            background: #4caf50;
+            border-color: #4caf50;
+            color: white;
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            aspect-ratio: 2 / 1;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            touch-action: none;
+        }
+        #shop-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1e1e1e;
+            border: 2px solid #333;
+            border-radius: 16px;
+            padding: 20px;
+            width: 95%;
+            max-width: 380px;
+            z-index: 100;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        }
+        .shop-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            text-align: center;
+            color: #ffd700;
+        }
+        .shop-items-container {
+            max-height: 300px;
+            overflow-y: auto;
+            padding-right: 5px;
+        }
+        .shop-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 10px;
+            border-bottom: 1px solid #333;
+        }
+        .buy-btn {
+            background: #007bff;
+            border: none;
+            color: white;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            min-width: 80px;
+        }
+        .buy-btn.equipped {
+            background: #28a745;
+        }
+        .close-shop {
+            width: 100%;
+            margin-top: 15px;
+            background: #444;
+            border: none;
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui-top">
+        <div class="panel"><span id="p-identity">PLAYER</span>: <span id="p-score">0</span> | <span id="b-identity">BOT</span>: <span id="b-score">0</span></div>
+        <div id="coins-panel" onclick="toggleShop(true)">💰 <span id="coin-count">100</span></div>
+    </div>
+    <div id="status-bar">
+        <div id="status">YOUR TURN</div>
+        <div>
+            <button id="btn-mode-vs" class="btn-sm active" onclick="setGameMode('vsBot')">MATCH</button>
+            <button id="btn-mode-trick" class="btn-sm" onclick="setGameMode('trickshot')">TRICKSHOTS</button>
+            <button id="btn-diff" class="btn-sm" onclick="cycleDifficulty()">BOT: MEDIUM</button>
+        </div>
+    </div>
+    <div id="game-container">
+        <canvas id="tableCanvas" width="800" height="400"></canvas>
+    </div>
+    <div id="shop-modal">
+        <div class="shop-title">CUE SHOP</div>
+        <div class="shop-items-container" id="shop-items"></div>
+        <button class="close-shop" onclick="toggleShop(false)">CLOSE</button>
+    </div>
+
+    <script>
+        (function() {
+            const { Engine, Runner, Bodies, Body, Composite, Vector, Events } = Matter;
+
+            const canvas = document.getElementById('tableCanvas');
+            const ctx = canvas.getContext('2d');
+            const WIDTH = 800, HEIGHT = 400;
+            const borderThickness = 22;
+            const ballRadius = 13;
+            const pocketVisualRadius = 18;
+            const pocketSensorRadius = 9;
+
+            // game state
+            let engine, world, runner;
+            let cueBall;
+            let targetBalls = [];
+            let pockets = [];
+
+            let playerScore = 0, botScore = 0, trickshotShots = 3;
+            let gameState = 'playerTurn';
+            let previousTurn = 'playerTurn';
+            let isAiming = false;
+            let pointerPos = { x: 0, y: 0 };
+            let ballPottedThisTurn = false;
+            let cueBallPottedThisTurn = false;
+
+            // shop & upgrades
+            let coins = parseInt(localStorage.getItem('pool_coins_v5')) || 100;
+            let gameMode = 'vsBot';
+            let botDifficulty = 'medium';
+            let currentClothColor = '#0d3a19';
+            let hasLaser = false, hasGoldGlow = false;
+            let ownedItems = JSON.parse(localStorage.getItem('pool_owned_v5')) || ['cloth-green'];
+
+            let forceMultiplier = 1.0;
+            let aimLineLengthMult = 1.0;
+            let showPredictionLine = false;
+
+            // DOM
+            const statusEl = document.getElementById('status');
+            const pScoreEl = document.getElementById('p-score');
+            const bScoreEl = document.getElementById('b-score');
+            const coinCountEl = document.getElementById('coin-count');
+            const pIdentity = document.getElementById('p-identity');
+            const bIdentity = document.getElementById('b-identity');
+            const btnDiff = document.getElementById('btn-diff');
+
+            // ========== INIT ==========
+            function init() {
+                engine = Engine.create({
+                    gravity: { x: 0, y: 0 },
+                    positionIterations: 12,
+                    velocityIterations: 8
+                });
+                world = engine.world;
+
+                const cushionOpts = { isStatic: true, restitution: 0.85, friction: 0.05 };
+                Composite.add(world, [
+                    Bodies.rectangle(WIDTH / 2, borderThickness / 2, WIDTH, borderThickness, cushionOpts),
+                    Bodies.rectangle(WIDTH / 2, HEIGHT - borderThickness / 2, WIDTH, borderThickness, cushionOpts),
+                    Bodies.rectangle(borderThickness / 2, HEIGHT / 2, borderThickness, HEIGHT, cushionOpts),
+                    Bodies.rectangle(WIDTH - borderThickness / 2, HEIGHT / 2, borderThickness, HEIGHT, cushionOpts)
+                ]);
+
+                const pocketPositions = [
+                    { x: borderThickness + 4, y: borderThickness + 4 },
+                    { x: WIDTH / 2, y: borderThickness - 2 },
+                    { x: WIDTH - borderThickness - 4, y: borderThickness + 4 },
+                    { x: borderThickness + 4, y: HEIGHT - borderThickness - 4 },
+                    { x: WIDTH / 2, y: HEIGHT - borderThickness + 2 },
+                    { x: WIDTH - borderThickness - 4, y: HEIGHT - borderThickness - 4 }
+                ];
+                pockets = pocketPositions.map(pos => {
+                    const p = Bodies.circle(pos.x, pos.y, pocketSensorRadius, { isStatic: true, isSensor: true });
+                    p.visualX = pos.x;
+                    p.visualY = pos.y;
+                    return p;
+                });
+                Composite.add(world, pockets);
+
+                Events.on(engine, 'afterUpdate', () => {
+                    [cueBall, ...targetBalls].forEach(ball => {
+                        if (!ball) return;
+                        const speed = Math.sqrt(ball.velocity.x ** 2 + ball.velocity.y ** 2);
+                        if (speed > 12) {
+                            Body.setVelocity(ball, {
+                                x: ball.velocity.x * 12 / speed,
+                                y: ball.velocity.y * 12 / speed
+                            });
+                        }
+                    });
+                });
+                // Восстановление состояния бустов из сохранения
+                ownedItems.forEach(id => {
+                    if (id.startsWith('cloth-')) { /* последнее выбранное применится через UI */ }
+                    if (id === 'laser') hasLaser = true;
+                    if (id === 'goldglow' && !hasLaser) hasGoldGlow = true; 
+                    if (id === 'powercue') forceMultiplier = 1.4;
+                    if (id === 'precision') aimLineLengthMult = 1.8;
+                    if (id === 'predict') showPredictionLine = true;
+                });
+
+                setupShopItems();
+                updateUI();
+                spawnBalls();
+                setupControls();
+                Events.on(engine, 'collisionStart', handleCollisions);
+
+                runner = Runner.create();
+                Runner.run(runner, engine);
+
+                requestAnimationFrame(renderLoop);
+            }
+
+            function setupShopItems() {
+                const container = document.getElementById('shop-items');
+                const items = [
+                    { id: 'cloth-blue', name: 'Royal Blue Cloth', price: 100, type: 'cloth', value: '#1e40af' },
+                    { id: 'cloth-red', name: 'Crimson Red Cloth', price: 150, type: 'cloth', value: '#991b1b' },
+                    { id: 'cloth-black', name: 'Midnight Black Cloth', price: 200, type: 'cloth', value: '#111827' },
+                    { id: 'cloth-purple', name: 'Imperial Purple Cloth', price: 250, type: 'cloth', value: '#4c1d95' },
+                    { id: 'laser', name: 'Laser Sight', price: 300, type: 'laser' },
+                    { id: 'goldglow', name: 'VIP Golden Glow', price: 500, type: 'goldglow' },
+                    { id: 'powercue', name: 'Power Cue (+40% force)', price: 200, type: 'powercue' },
+                    { id: 'precision', name: 'Precision Sight (longer aim)', price: 250, type: 'precision' },
+                    { id: 'predict', name: 'Prediction Line', price: 350, type: 'predict' }
+                ];
+                container.innerHTML = items.map(item => {
+                    let btnText = item.price + ' 💰';
+                    let isActive = false;
+
+                    if (ownedItems.includes(item.id)) {
+                        if (item.type === 'cloth' && currentClothColor === item.value) isActive = true;
+                        if (item.type === 'laser' && hasLaser) isActive = true;
+                        if (item.type === 'goldglow' && hasGoldGlow) isActive = true;
+                        if (item.type === 'powercue' && forceMultiplier > 1.0) isActive = true;
+                        if (item.type === 'precision' && aimLineLengthMult > 1.0) isActive = true;
+                        if (item.type === 'predict' && showPredictionLine) isActive = true;
+
+                        btnText = isActive ? 'ACTIVE' : 'EQUIP';
+                    }
+
+                    return `
+                        <div class="shop-item">
+                            <span>${item.name}</span>
+                            <button id="item-${item.id}" class="buy-btn ${isActive ? 'equipped' : ''}" 
+                                onclick="window.buyItem('${item.id}', ${item.price}, '${item.type}', '${item.value || ''}')">
+                                ${btnText}
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            window.buyItem = function(id, price, type, value) {
+                if (ownedItems.includes(id)) {
+                    if (type === 'cloth') currentClothColor = value;
+                    if (type === 'laser') { hasLaser = !hasLaser; if (hasLaser) hasGoldGlow = false; }
+                    if (type === 'goldglow') { hasGoldGlow = !hasGoldGlow; if (hasLaser) hasLaser = false; }
+                    if (type === 'powercue') forceMultiplier = forceMultiplier === 1.4 ? 1.0 : 1.4;
+                    if (type === 'precision') aimLineLengthMult = aimLineLengthMult === 1.8 ? 1.0 : 1.8;
+                    if (type === 'predict') showPredictionLine = !showPredictionLine;
+                } else {
+                    if (coins >= price) {
+                        coins -= price;
+                        ownedItems.push(id);
+                        if (type === 'cloth') currentClothColor = value;
+                        if (type === 'laser') { hasLaser = true; hasGoldGlow = false; }
+                        if (type === 'goldglow') { hasGoldGlow = true; hasLaser = false; }
+                        if (type === 'powercue') forceMultiplier = 1.4;
+                        if (type === 'precision') aimLineLengthMult = 1.8;
+                        if (type === 'predict') showPredictionLine = true;
+                    } else {
+                        alert('Not enough coins!');
+                        return;
+                    }
+                }
+                updateUI();
+            };
+
+            window.toggleShop = function(open) {
+                document.getElementById('shop-modal').style.display = open ? 'block' : 'none';
+            };
+
+            function updateUI() {
+                coinCountEl.innerText = coins;
+                localStorage.setItem('pool_coins_v5', coins);
+                localStorage.setItem('pool_owned_v5', JSON.stringify(ownedItems));
+                setupShopItems();
+            }
+
+            function createBall(x, y, color) {
+                return Bodies.circle(x, y, ballRadius, {
+                    restitution: 0.9,
+                    friction: 0.05,
+                    frictionAir: 0.015,
+                    mass: 1,
+                    render: { fillStyle: color }
+                });
+            }
+
+            function spawnBalls() {
+                targetBalls.forEach(b => Composite.remove(world, b));
+                if (cueBall) Composite.remove(world, cueBall);
+                targetBalls = [];
+
+                cueBall = createBall(220, HEIGHT / 2, '#ffffff');
+                Composite.add(world, cueBall);
+
+                if (gameMode === 'vsBot') {
+                    const colors = ['#ffeb3b', '#0288d1', '#d32f2f', '#7b1fa2', '#f57c00', '#388e3c', '#5d4037', '#111111', '#e64a19'];
+                    let idx = 0;
+                    const startX = 540, startY = HEIGHT / 2;
+                    for (let i = 0; i < 4; i++) {
+                        for (let j = 0; j <= i; j++) {
+                            const x = startX + i * (ballRadius * 1.732);
+                            const y = startY - i * ballRadius + j * ballRadius * 2;
+                            const ball = createBall(x, y, colors[idx % colors.length]);
+                            idx++;
+                            targetBalls.push(ball);
+                            Composite.add(world, ball);
+                        }
+                    }
+                } else {
+                    const trickPositions = [
+                        { x: 450, y: 200 }, { x: 490, y: 170 }, { x: 490, y: 230 },
+                        { x: 530, y: 140 }, { x: 530, y: 200 }, { x: 530, y: 260 }, { x: 570, y: 200 }
+                    ];
+                    trickPositions.forEach(pos => {
+                        const ball = createBall(pos.x, pos.y, '#e64a19');
+                        targetBalls.push(ball);
+                        Composite.add(world, ball);
+                    });
+                }
+            }
+
+            function handleCollisions(event) {
+                event.pairs.forEach(pair => {
+                    pockets.forEach(pocket => {
+                        if (pair.bodyA === pocket || pair.bodyB === pocket) {
+                            const ball = pair.bodyA === pocket ? pair.bodyB : pair.bodyA;
+                            if (ball === cueBall) {
+                                cueBallPottedThisTurn = true;
+                                Body.setPosition(cueBall, { x: -200, y: -200 });
+                                Body.setVelocity(cueBall, { x: 0, y: 0 });
+                            } else if (targetBalls.includes(ball)) {
+                                ballPottedThisTurn = true;
+                                targetBalls = targetBalls.filter(b => b !== ball);
+                                Composite.remove(world, ball);
+                                if (gameState === 'ballsMoving' && gameMode === 'vsBot') {
+                                    if (previousTurn === 'playerTurn') {
+                                        playerScore++;
+                                        pScoreEl.innerText = playerScore;
+                                    } else {
+                                        botScore++;
+                                        bScoreEl.innerText = botScore;
+                                    }
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+
+            function setupControls() {
+                function getPointer(e) {
+                    const rect = canvas.getBoundingClientRect();
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    return {
+                        x: (clientX - rect.left) * (WIDTH / rect.width),
+                        y: (clientY - rect.top) * (HEIGHT / rect.height)
+                    };
+                }
+
+                function onStart(e) {
+                    if (gameState !== 'playerTurn') return;
+                    const pos = getPointer(e);
+                    if (Vector.magnitude(Vector.sub(cueBall.position, pos)) < ballRadius * 7) {
+                        isAiming = true;
+                        pointerPos = pos;
+                    }
+                }
+
+                window.addEventListener('mousemove', e => { if (isAiming) pointerPos = getPointer(e); });
+                window.addEventListener('touchmove', e => { if (isAiming) pointerPos = getPointer(e); }, { passive: true });
+
+                function onEnd() {
+                    if (!isAiming) return;
+                    isAiming = false;
+                    const stroke = Vector.sub(cueBall.position, pointerPos);
+                    
+                    // Синхронизируем ограничение расстояния с визуалом прицела
+                    const clampedDist = Math.min(Vector.magnitude(stroke), 250 * aimLineLengthMult);
+                    const baseForce = Math.min(clampedDist * 0.00075, 0.055);
+                    const forceMagnitude = baseForce * forceMultiplier;
+                    
+                    if (forceMagnitude > 0.0015) {
+                        ballPottedThisTurn = false;
+                        cueBallPottedThisTurn = false;
+                        previousTurn = 'playerTurn';
+                        gameState = 'ballsMoving';
+                        if (gameMode === 'trickshot') trickshotShots--;
+                        const dir = Vector.normalise(stroke);
+                        Body.applyForce(cueBall, cueBall.position, Vector.mult(dir, forceMagnitude));
+                        statusEl.textContent = gameMode === 'trickshot' ?
+                            `BALLS MOVING... (shots: ${trickshotShots})` : 'BALLS MOVING...';
+                        statusEl.style.color = '#ffa726';
+                    }
+                }
+
+                canvas.addEventListener('mousedown', onStart);
+                canvas.addEventListener('touchstart', onStart, { passive: true });
+                window.addEventListener('mouseup', onEnd);
+                window.addEventListener('touchend', onEnd);
+            }
+
+            function botTurn() {
+                if (targetBalls.length === 0 || gameState !== 'botTurn') return;
+                statusEl.textContent = 'Bot is thinking...';
+                statusEl.style.color = '#ef5350';
+
+                setTimeout(() => {
+                    if (gameState !== 'botTurn' || targetBalls.length === 0) return;
+
+                    let direction, force;
+                    let bestShot = null;
+                    let bestScore = -Infinity;
+
+                    targetBalls.forEach(ball => {
+                        pockets.forEach(pocket => {
+                            const pocketPos = { x: pocket.visualX, y: pocket.visualY };
+                            const toPocket = Vector.normalise(Vector.sub(pocketPos, ball.position));
+                            const ghostPos = Vector.sub(ball.position, Vector.mult(toPocket, ballRadius * 2));
+                            const toGhost = Vector.sub(ghostPos, cueBall.position);
+                            const distToGhost = Vector.magnitude(toGhost);
+                            if (distToGhost < 0.1) return;
+
+                            const dirToGhost = Vector.normalise(toGhost);
+                            let blocked = false;
+                            for (let other of targetBalls) {
+                                if (other === ball) continue;
+                                const toOther = Vector.sub(other.position, cueBall.position);
+                                const t = Vector.dot(toOther, dirToGhost);
+                                if (t > 0 && t < distToGhost) {
+                                    const closest = Vector.add(cueBall.position, Vector.mult(dirToGhost, t));
+                                    if (Vector.magnitude(Vector.sub(other.position, closest)) < ballRadius * 2.2) {
+                                        blocked = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (!blocked) {
+                                const angle = Math.abs(Math.atan2(
+                                    Vector.cross(dirToGhost, toPocket),
+                                    Vector.dot(dirToGhost, toPocket)
+                                ));
+                                const score = 10 / (angle + 0.2) - distToGhost * 0.002;
+                                if (score > bestScore) {
+                                    bestScore = score;
+                                    bestShot = { dir: dirToGhost, forceBase: 0.02 + 0.01 * (1 / (angle + 0.1)) };
+                                }
+                            }
+                        });
+                    });
+
+                    if (bestShot) {
+                        direction = bestShot.dir;
+                        force = bestShot.forceBase;
+                        if (botDifficulty === 'hard') force += 0.008;
+                        if (botDifficulty === 'easy') {
+                            force *= 0.85;
+                            const errorAngle = (Math.random() - 0.5) * 0.35;
+                            direction = Vector.rotate(direction, errorAngle);
+                        }
+                    } else {
+                        const target = targetBalls[Math.floor(Math.random() * targetBalls.length)];
+                        direction = Vector.normalise(Vector.sub(target.position, cueBall.position));
+                        force = 0.018;
+                        if (botDifficulty === 'hard') force = 0.025;
+                        if (botDifficulty === 'easy') {
+                            force *= 0.8;
+                            const errorAngle = (Math.random() - 0.5) * 0.5;
+                            direction = Vector.rotate(direction, errorAngle);
+                        }
+                    }
+
+                    ballPottedThisTurn = false;
+                    cueBallPottedThisTurn = false;
+                    previousTurn = 'botTurn';
+                    gameState = 'ballsMoving';
+                    Body.applyForce(cueBall, cueBall.position, Vector.mult(direction, force));
+                    statusEl.textContent = 'Bot shoots...';
+                    statusEl.style.color = '#ffa726';
+                }, 800);
+            }
+
+            function isBallOutOfBounds(ball) {
+                const margin = ballRadius + 4;
+                if (ball.position.x > borderThickness && ball.position.x < WIDTH - borderThickness &&
+                    ball.position.y > borderThickness && ball.position.y < HEIGHT - borderThickness) return false;
+                for (let p of pockets) {
+                    const dist = Vector.magnitude(Vector.sub(ball.position, { x: p.visualX, y: p.visualY }));
+                    if (dist < pocketVisualRadius + ballRadius) return false;
+                }
+                return true;
+            }
+
+            function checkBallsStopped() {
+                if (gameState !== 'ballsMoving') return;
+
+                let allStopped = true;
+                [cueBall, ...targetBalls].forEach(ball => {
+                    if (ball.speed > 0.08) allStopped = false;
+                    else { Body.setVelocity(ball, { x: 0, y: 0 }); Body.setAngularVelocity(ball, 0); }
+                });
+
+                if (!allStopped) return;
+
+                if (targetBalls.length === 0) {
+                    gameState = 'gameOver';
+                    if (gameMode === 'vsBot') {
+                        coins += 100;
+                        statusEl.textContent = 'YOU WIN! +100 💰';
+                    } else {
+                        coins += 200;
+                        statusEl.textContent = 'TRICKSHOT COMPLETE! +200 💰';
+                    }
+                    statusEl.style.color = '#4caf50';
+                    updateUI();
+                    setTimeout(resetGame, 4000);
+                    return;
+                }
+
+                if (gameMode === 'trickshot') {
+                    if (trickshotShots <= 0) {
+                        gameState = 'gameOver';
+                        statusEl.textContent = 'NO SHOTS LEFT';
+                        statusEl.style.color = '#ef5350';
+                        setTimeout(resetGame, 3000);
+                    } else {
+                        gameState = 'playerTurn';
+                        statusEl.textContent = `YOUR TURN (shots: ${trickshotShots})`;
+                        statusEl.style.color = '#4caf50';
+                    }
+                    return;
+                }
+
+                if (cueBallPottedThisTurn) {
+                    Body.setPosition(cueBall, { x: 220, y: HEIGHT / 2 });
+                    Body.setVelocity(cueBall, { x: 0, y: 0 });
+                    changeTurn(previousTurn === 'playerTurn' ? 'botTurn' : 'playerTurn', 'FOUL! Cue ball potted.');
+                } else if (isBallOutOfBounds(cueBall)) {
+                    Body.setPosition(cueBall, { x: 220, y: HEIGHT / 2 });
+                    Body.setVelocity(cueBall, { x: 0, y: 0 });
+                    changeTurn(previousTurn === 'playerTurn' ? 'botTurn' : 'playerTurn', 'FOUL! Cue ball off table.');
+                } else if (ballPottedThisTurn) {
+                    changeTurn(previousTurn, previousTurn === 'playerTurn' ? 'Nice shot! Play again.' : 'Bot scored! Bot plays again.');
+                } else {
+                    changeTurn(previousTurn === 'playerTurn' ? 'botTurn' : 'playerTurn', '');
+                }
+            }
+
+            function changeTurn(next, msg) {
+                gameState = next;
+                if (next === 'playerTurn') {
+                    statusEl.textContent = msg || 'YOUR TURN';
+                    statusEl.style.color = '#4caf50';
+                } else if (next === 'botTurn') {
+                    statusEl.textContent = msg || "BOT'S TURN";
+                    statusEl.style.color = '#ef5350';
+                    setTimeout(botTurn, msg ? 1000 : 100);
+                }
+            }
+
+            // ========== RENDERING (CLEAN PREDICTION LINE) ==========
+            function renderLoop() {
+                checkBallsStopped();
+
+                ctx.fillStyle = currentClothColor;
+                ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(220, borderThickness);
+                ctx.lineTo(220, HEIGHT - borderThickness);
+                ctx.stroke();
+
+                pockets.forEach(p => {
+                    ctx.fillStyle = '#111';
+                    ctx.beginPath();
+                    ctx.arc(p.visualX, p.visualY, pocketVisualRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#8a6d3b';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                });
+
+                ctx.fillStyle = '#2e160a';
+                ctx.fillRect(0, 0, WIDTH, borderThickness);
+                ctx.fillRect(0, HEIGHT - borderThickness, WIDTH, borderThickness);
+                ctx.fillRect(0, 0, borderThickness, HEIGHT);
+                ctx.fillRect(WIDTH - borderThickness, 0, borderThickness, HEIGHT);
+
+                // --- AIMING & PREDICTION ---
+                if (isAiming && gameState === 'playerTurn') {
+                    const aimVector = Vector.sub(cueBall.position, pointerPos);
+                    const aimDir = Vector.normalise(aimVector);
+                    const dist = Math.min(Vector.magnitude(aimVector), 250 * aimLineLengthMult);
+
+                    let closestCollisionDist = Infinity;
+                    let targetBallForPred = null;
+
+                    // Длина луча прицеливания зависит от наличия лазера/апгрейда прицела
+                    const scanLength = hasLaser ? 800 : 250 * aimLineLengthMult;
+
+                    // Алгоритм поиска первого столкновения на пути битка (Ray-Circle Cast)
+                    targetBalls.forEach(ball => {
+                        const toBall = Vector.sub(ball.position, cueBall.position);
+                        const proj = Vector.dot(toBall, aimDir); // Проекция на вектор направления
+                        
+                        if (proj > 0 && proj < scanLength) {
+                            const perpDist = Vector.magnitude(Vector.sub(toBall, Vector.mult(aimDir, proj)));
+                            // Расстояние между центрами в момент столкновения должно быть равно двум радиусам
+                            if (perpDist < ballRadius * 2) {
+                                const actualDistToCollision = proj - Math.sqrt((ballRadius * 2) ** 2 - perpDist * perpDist);
+                                if (actualDistToCollision > 0 && actualDistToCollision < closestCollisionDist) {
+                                    closestCollisionDist = actualDistToCollision;
+                                    targetBallForPred = ball;
+                                }
+                            }
+                        }
+                    });
+
+                    // Конечная точка траектории битка до столкновения или конца прицела
+                    const hitOccurred = targetBallForPred && showPredictionLine && closestCollisionDist < scanLength;
+                    const cueLineEndDist = hitOccurred ? closestCollisionDist : (hasLaser ? 700 : 250 * aimLineLengthMult);
+                    const ghostBallPos = Vector.add(cueBall.position, Vector.mult(aimDir, cueLineEndDist));
+
+                    // 1. Отрисовка основной линии направления битка
+                    ctx.beginPath();
+                    ctx.moveTo(cueBall.position.x, cueBall.position.y);
+                    ctx.lineTo(ghostBallPos.x, ghostBallPos.y);
+                    if (hasLaser) {
+                        ctx.strokeStyle = 'rgba(255, 40, 40, 0.9)';
+                        ctx.lineWidth = 1.5;
+                        ctx.setLineDash([]);
+                    } else {
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([6, 8]);
+                    }
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // 2. Отрисовка продвинутого предсказания (если куплен буст и есть прицеливание в шар)
+                    if (hitOccurred) {
+                        // Рисуем фантомный шар в точке удара
+                        ctx.beginPath();
+                        ctx.arc(ghostBallPos.x, ghostBallPos.y, ballRadius, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+                        ctx.fill();
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+
+                        // Траектория целевого шара (линия от центра фантомного шара к целевому)
+                        const targetDir = Vector.normalise(Vector.sub(targetBallForPred.position, ghostBallPos));
+                        const targetLineEnd = Vector.add(targetBallForPred.position, Vector.mult(targetDir, 90));
+                        ctx.beginPath();
+                        ctx.moveTo(targetBallForPred.position.x, targetBallForPred.position.y);
+                        ctx.lineTo(targetLineEnd.x, targetLineEnd.y);
+                        ctx.strokeStyle = '#00ff66'; // Зелёная линия для прицельного шара
+                        ctx.lineWidth = 2.5;
+                        ctx.stroke();
+
+                        // Траектория отскока битка (строго под 90 градусов к движению целевого шара)
+                        const cueDir = Vector.normalise(Vector.sub(aimDir, Vector.mult(targetDir, Vector.dot(aimDir, targetDir))));
+                        const cueLineEnd = Vector.add(ghostBallPos, Vector.mult(cueDir, 70));
+                        ctx.beginPath();
+                        ctx.moveTo(ghostBallPos.x, ghostBallPos.y);
+                        ctx.lineTo(cueLineEnd.x, cueLineEnd.y);
+                        ctx.strokeStyle = '#ffd700'; // Желтая линия для направления отскока битка
+                        ctx.lineWidth = 2.5;
+                        ctx.stroke();
+                    }
+
+                    // 3. Отрисовка кия (Cue Stick)
+                    ctx.strokeStyle = hasGoldGlow ? '#ffd700' : '#e5e7eb';
+                    ctx.lineWidth = hasGoldGlow ? 5 : 4;
+                    if (hasGoldGlow) {
+                        ctx.shadowColor = '#ffd700';
+                        ctx.shadowBlur = 12;
+                    }
+                    ctx.beginPath();
+                    const stickStart = {
+                        x: cueBall.position.x - aimDir.x * (ballRadius + 10),
+                        y: cueBall.position.y - aimDir.y * (ballRadius + 10)
+                    };
+                    const stickEnd = {
+                        x: stickStart.x - aimDir.x * dist * 0.8,
+                        y: stickStart.y - aimDir.y * dist * 0.8
+                    };
+                    ctx.moveTo(stickStart.x, stickStart.y);
+                    ctx.lineTo(stickEnd.x, stickEnd.y);
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+
+                // Draw balls
+                [cueBall, ...targetBalls].forEach(ball => {
+                    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+                    ctx.beginPath();
+                    ctx.arc(ball.position.x + 3, ball.position.y + 3, ballRadius, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.fillStyle = ball === cueBall ? '#ffffff' : ball.render.fillStyle;
+                    ctx.beginPath();
+                    ctx.arc(ball.position.x, ball.position.y, ballRadius, 0, 2 * Math.PI);
+                    ctx.fill();
+                    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+                    ctx.beginPath();
+                    ctx.arc(ball.position.x - 4, ball.position.y - 4, ballRadius * 0.22, 0, 2 * Math.PI);
+                    ctx.fill();
+                });
+
+                requestAnimationFrame(renderLoop);
+            }
+
+            // ========== MODE & DIFFICULTY ==========
+            window.setGameMode = function(mode) {
+                if (gameState === 'ballsMoving') return;
+                gameMode = mode;
+                document.getElementById('btn-mode-vs').classList.toggle('active', mode === 'vsBot');
+                document.getElementById('btn-mode-trick').classList.toggle('active', mode === 'trickshot');
+                btnDiff.style.display = mode === 'vsBot' ? 'inline-block' : 'none';
+                pIdentity.textContent = mode === 'trickshot' ? 'SHOTS' : 'PLAYER';
+                bIdentity.textContent = mode === 'trickshot' ? 'LIMIT' : 'BOT';
+                resetGame();
+            };
+
+            window.cycleDifficulty = function() {
+                if (gameState === 'ballsMoving') return;
+                if (botDifficulty === 'easy') botDifficulty = 'medium';
+                else if (botDifficulty === 'medium') botDifficulty = 'hard';
+                else botDifficulty = 'easy';
+                btnDiff.textContent = 'BOT: ' + botDifficulty.toUpperCase();
+            };
+
+            function resetGame() {
+                playerScore = 0;
+                botScore = 0;
+                trickshotShots = 3;
+                pScoreEl.textContent = '0';
+                bScoreEl.textContent = gameMode === 'trickshot' ? '3' : '0';
+                ballPottedThisTurn = false;
+                cueBallPottedThisTurn = false;
+                spawnBalls();
+                gameState = 'playerTurn';
+                statusEl.textContent = gameMode === 'trickshot' ? 'TRICKSHOT MODE: POTT ALL IN 3 SHOTS' : 'YOUR TURN';
+                statusEl.style.color = '#4caf50';
+            }
+
+            window.onload = init;
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Cooking Frenzy</title>
+<style>
+  :root {
+    --bg-dark: #1e1e2f;
+    --bg-panel: #2a2a40;
+    --accent: #ff4757;
+    --accent-hover: #ff6b81;
+    --success: #2ed573;
+    --warning: #ffa502;
+    --danger: #ff4757;
+    --text: #ffffff;
+    --kitchen-floor: #d1d8e0;
+    --kitchen-wall: #f1f2f6;
+    --counter: #7bed9f;
+    --counter-top: #a4b0be;
+    --wood: #d35400;
+    --metal: #bdc3c7;
+    
+    --env-safe-top: env(safe-area-inset-top, 0px);
+    --env-safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg-dark);
+    color: var(--text);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    touch-action: manipulation;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #game-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    display: none;
+    flex-direction: column;
+    background: linear-gradient(to bottom, var(--kitchen-wall) 40%, var(--kitchen-floor) 40%);
+  }
+
+  /* Screens */
+  .screen {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(30, 30, 47, 0.95);
+    z-index: 100;
+  }
+
+  .screen.hidden { display: none; }
+
+  h1 { font-size: 3rem; margin-bottom: 1rem; color: var(--warning); text-shadow: 2px 2px 4px rgba(0,0,0,0.5); text-align: center; }
+  h2 { font-size: 2rem; margin-bottom: 1rem; color: var(--text); }
+  p { font-size: 1.2rem; margin-bottom: 2rem; text-align: center; max-width: 80%; }
+
+  .btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 1rem 2rem;
+    font-size: 1.5rem;
+    border-radius: 50px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    cursor: pointer;
+    transition: transform 0.1s, background 0.2s;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin: 0.5rem;
+  }
+  .btn:active { transform: scale(0.95); background: var(--accent-hover); }
+  .btn:disabled { background: #747d8c; transform: none; box-shadow: none; opacity: 0.7; }
+
+  /* Top UI */
+  #top-ui {
+    display: flex;
+    justify-content: space-between;
+    padding: calc(10px + var(--env-safe-top)) 15px 10px;
+    background: rgba(42, 42, 64, 0.9);
+    z-index: 10;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  }
+
+  .stat { font-size: 1.2rem; font-weight: bold; display: flex; align-items: center; gap: 5px; }
+  
+  /* Customers Area */
+  #customers-area {
+    flex: 1;
+    display: flex;
+    padding: 10px;
+    gap: 10px;
+    overflow-x: auto;
+    align-items: flex-end;
+  }
+
+  .customer {
+    width: 100px;
+    height: 180px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    animation: slideIn 0.3s ease-out;
+  }
+  
+  @keyframes slideIn {
+    from { transform: translateX(-100px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+  }
+
+  .customer-body {
+    width: 60px;
+    height: 90px;
+    background: #3498db;
+    border-radius: 30px 30px 0 0;
+    position: relative;
+  }
+  .customer.vip .customer-body { background: #9b59b6; }
+  .customer.critic .customer-body { background: #2c3e50; }
+
+  .customer-face {
+    font-size: 3rem;
+    position: absolute;
+    top: -40px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .order-bubble {
+    position: absolute;
+    top: -60px;
+    background: white;
+    border-radius: 10px;
+    padding: 5px;
+    display: flex;
+    gap: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    transform: scale(0);
+    transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .customer.ordered .order-bubble { transform: scale(1); }
+  .order-bubble::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 20px;
+    border-width: 10px 10px 0;
+    border-style: solid;
+    border-color: white transparent transparent transparent;
+  }
+
+  .order-item {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem;
+  }
+
+  .patience-meter {
+    width: 80%; height: 8px;
+    background: #ccc;
+    border-radius: 4px;
+    margin-top: 5px;
+    overflow: hidden;
+  }
+  .patience-fill {
+    height: 100%;
+    background: var(--success);
+    width: 100%;
+    transition: width 0.1s linear, background 0.3s;
+  }
+
+  /* Kitchen Area */
+  #kitchen-area {
+    height: 45%;
+    background: var(--bg-panel);
+    border-top: 5px solid var(--counter-top);
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 5px;
+    padding: 10px;
+    padding-bottom: calc(10px + var(--env-safe-bottom));
+  }
+
+  .station {
+    background: var(--metal);
+    border-radius: 10px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 -3px 0 rgba(0,0,0,0.2);
+    cursor: pointer;
+  }
+  
+  .station-title {
+    position: absolute; top: 2px; font-size: 0.7rem; font-weight: bold; color: #333; text-transform: uppercase;
+  }
+
+  .slot-container {
+    display: flex; gap: 5px; flex-wrap: wrap; justify-content: center; align-items: center; width: 100%; height: 100%; padding-top: 15px;
+  }
+
+  .slot {
+    width: 40px; height: 40px;
+    background: rgba(0,0,0,0.1);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem;
+    position: relative;
+  }
+
+  .progress-ring {
+    position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
+    border-radius: 50%;
+    border: 3px solid transparent;
+    pointer-events: none;
+  }
+
+  .cooking { animation: pulse 1s infinite alternate; }
+  @keyframes pulse { from { transform: scale(1); } to { transform: scale(1.1); } }
+  .ready { animation: bounce 0.5s infinite alternate; border-color: var(--success) !important; }
+  @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+  .burnt { filter: grayscale(1) brightness(0.3); border-color: var(--danger) !important; }
+
+  /* Serving Tray */
+  #serving-tray {
+    grid-column: span 2;
+    background: var(--wood);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  
+  .tray-slot {
+    width: 60px; height: 60px;
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem;
+    position: relative;
+  }
+  
+  .tray-slot .components {
+    position: absolute; bottom: 0; right: 0; display: flex; font-size: 0.8rem; background: rgba(0,0,0,0.5); border-radius: 5px; padding: 2px;
+  }
+
+  /* Upgrades Screen */
+  .upgrades-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    width: 90%;
+    max-width: 400px;
+    max-height: 50vh;
+    overflow-y: auto;
+    margin-bottom: 20px;
+  }
+
+  .upgrade-card {
+    background: var(--bg-panel);
+    padding: 10px;
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    border: 2px solid var(--accent);
+  }
+  
+  .upgrade-title { font-size: 1rem; font-weight: bold; margin: 5px 0; }
+  .upgrade-desc { font-size: 0.8rem; color: #aaa; margin-bottom: 10px; }
+  
+  /* Particles */
+  .particle {
+    position: absolute;
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  .floating-text {
+    position: absolute;
+    font-weight: bold;
+    font-size: 1.5rem;
+    color: var(--warning);
+    text-shadow: 1px 1px 2px #000;
+    pointer-events: none;
+    z-index: 1000;
+    animation: floatUp 1s forwards ease-out;
+  }
+  @keyframes floatUp {
+    0% { transform: translateY(0) scale(1); opacity: 1; }
+    100% { transform: translateY(-50px) scale(1.5); opacity: 0; }
+  }
+
+</style>
+</head>
+<body>
+
+<!-- Audio Context will be initialized on first interaction -->
+
+<div id="start-screen" class="screen">
+  <h1>🍳 Cooking Frenzy 🍔</h1>
+  <p>Cook delicious meals, serve demanding customers, and build your restaurant empire!</p>
+  <button class="btn" id="btn-play">Play</button>
+  <button class="btn" id="btn-reset" style="font-size: 1rem; background: #555; margin-top: 20px;">Reset Progress</button>
+</div>
+
+<div id="level-complete-screen" class="screen hidden">
+  <h1 id="lc-title">Day Complete!</h1>
+  <h2>Day <span id="lc-day">1</span></h2>
+  <div style="font-size: 2rem; margin: 10px 0;">⭐ <span id="lc-stars">3</span>/3</div>
+  <p>Coins Earned: <span id="lc-coins" style="color: var(--warning); font-weight: bold;">0</span></p>
+  <button class="btn" id="btn-upgrades">Upgrades</button>
+  <button class="btn" id="btn-next-day">Next Day</button>
+</div>
+
+<div id="game-over-screen" class="screen hidden">
+  <h1>Too Many Angry Customers!</h1>
+  <p>Day <span id="go-day">1</span> Failed.</p>
+  <button class="btn" id="btn-retry">Retry Day</button>
+</div>
+
+<div id="upgrades-screen" class="screen hidden">
+  <h1>Upgrades</h1>
+  <div class="stat">💰 <span id="upgrade-coins">0</span></div>
+  <div class="upgrades-grid" id="upgrades-container">
+    <!-- Upgrades injected here -->
+  </div>
+  <button class="btn" id="btn-back-upgrades">Back</button>
+</div>
+
+<div id="game-container">
+  <div id="top-ui">
+    <div class="stat">📅 Day <span id="ui-day">1</span></div>
+    <div class="stat">⭐ <span id="ui-score">0</span></div>
+    <div class="stat">💰 <span id="ui-coins">0</span></div>
+  </div>
+
+  <div id="customers-area">
+    <!-- Customers injected here -->
+  </div>
+
+  <div id="kitchen-area">
+    <!-- Grill -->
+    <div class="station" id="station-grill" onclick="handleStationClick('grill')">
+      <div class="station-title">Grill 🍳</div>
+      <div class="slot-container" id="grill-slots"></div>
+    </div>
+    
+    <!-- Fryer -->
+    <div class="station" id="station-fryer" onclick="handleStationClick('fryer')">
+      <div class="station-title">Fryer 🍟</div>
+      <div class="slot-container" id="fryer-slots"></div>
+    </div>
+    
+    <!-- Drink -->
+    <div class="station" id="station-drink" onclick="handleStationClick('drink')">
+      <div class="station-title">Drink 🥤</div>
+      <div class="slot-container" id="drink-slots"></div>
+    </div>
+
+    <!-- Pantry / Breads -->
+    <div class="station" id="station-bread" style="background: #e1b12c;">
+      <div class="station-title">Bread 🍞</div>
+      <div class="slot-container">
+        <div class="slot">🍞</div>
+        <div class="slot">🌮</div>
+      </div>
+    </div>
+
+    <!-- Toppings -->
+    <div class="station" id="station-toppings" onclick="handleStationClick('toppings')" style="background: #44bd32; grid-column: span 2;">
+      <div class="station-title">Toppings 🥬🍅🧀</div>
+      <div class="slot-container">
+        <div class="slot" data-topping="lettuce">🥬</div>
+        <div class="slot" data-topping="tomato">🍅</div>
+        <div class="slot" data-topping="cheese">🧀</div>
+      </div>
+    </div>
+
+    <!-- Serving Tray -->
+    <div id="serving-tray" onclick="handleStationClick('tray')">
+      <div class="station-title" style="color: white;">Serving Tray 🍽️</div>
+      <div class="slot-container" id="tray-slots">
+        <!-- Tray slots injected here -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- Game State & Config ---
+const state = {
+  day: 1,
+  coins: 0,
+  score: 0,
+  customersServed: 0,
+  customersFailed: 0,
+  maxFails: 3,
+  upgrades: {
+    grillSpeed: 0,
+    grillSlots: 1, // 1 to 4
+    fryerSpeed: 0,
+    fryerSlots: 1,
+    patience: 0,
+    tips: 0,
+    traySlots: 2 // 2 to 4
+  },
+  isPlaying: false,
+  customers: [],
+  grill: [], // { id, item, startTime, cookTime, state: 'cooking'|'ready'|'burnt' }
+  fryer: [],
+  drinks: [],
+  tray: [], // { itemType, components: [] }
+  activeItemType: null, // For dragging/selecting
+  lastFrameTime: 0,
+  spawnTimer: 0,
+  customersToSpawn: 0,
+  combo: 0,
+  comboTimer: 0
+};
+
+const RECIPES = {
+  'burger': { icon: '🍔', components: ['patty_cooked', 'bread', 'lettuce', 'tomato', 'cheese'], price: 15 },
+  'hotdog': { icon: '🌭', components: ['sausage_cooked', 'bread'], price: 10 },
+  'fries': { icon: '🍟', components: ['potato_fried'], price: 8 },
+  'drink': { icon: '🥤', components: ['drink_filled'], price: 5 },
+  'taco': { icon: '🌮', components: ['patty_cooked', 'taco_shell', 'lettuce', 'cheese'], price: 18 }
+};
+
+const INGREDIENTS = {
+  'patty_raw': { cookTime: 3000, result: 'patty_cooked', icon: '🥩' },
+  'sausage_raw': { cookTime: 2500, result: 'sausage_cooked', icon: '🌭' }, // simple rep
+  'potato_raw': { cookTime: 4000, result: 'potato_fried', icon: '🥔' },
+  'cup_empty': { cookTime: 2000, result: 'drink_filled', icon: '🥛' }
+};
+
+const UPGRADES_DB = {
+  grillSpeed: { title: "Grill Heat", desc: "Cook meat faster", basePrice: 50, max: 3, icon: "🔥" },
+  grillSlots: { title: "Grill Space", desc: "More grill slots", basePrice: 100, max: 4, icon: "🍳" },
+  fryerSpeed: { title: "Fryer Heat", desc: "Fry faster", basePrice: 60, max: 3, icon: "⚡" },
+  fryerSlots: { title: "Fryer Space", desc: "More fryer slots", basePrice: 120, max: 3, icon: "🍟" },
+  patience: { title: "Comfy Seats", desc: "Customers wait longer", basePrice: 80, max: 5, icon: "🛋️" },
+  tips: { title: "Tip Jar", desc: "More coins per order", basePrice: 150, max: 5, icon: "💰" },
+  traySlots: { title: "Bigger Tray", desc: "Hold more dishes", basePrice: 200, max: 4, icon: "🍽️" }
+};
+
+// --- Audio System (Web Audio API) ---
+let audioCtx;
+const sounds = {};
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  
+  // Simple synth for sound effects
+  const playTone = (freq, type, duration, vol=0.1) => {
+    if(!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  };
+
+  sounds.sizzle = () => playTone(150, 'square', 0.5, 0.05); // Noise-like
+  sounds.ding = () => playTone(880, 'sine', 0.3, 0.1);
+  sounds.cash = () => { playTone(1200, 'square', 0.1, 0.1); setTimeout(()=>playTone(1600, 'square', 0.2, 0.1), 100); };
+  sounds.bell = () => playTone(600, 'sine', 0.4, 0.1);
+  sounds.angry = () => playTone(150, 'sawtooth', 0.5, 0.1);
+  sounds.trash = () => playTone(100, 'triangle', 0.2, 0.1);
+  sounds.click = () => playTone(400, 'sine', 0.05, 0.05);
+}
+
+// --- Persistence ---
+function saveGame() {
+  localStorage.setItem('cookingFrenzySave', JSON.stringify({
+    day: state.day,
+    coins: state.coins,
+    upgrades: state.upgrades
+  }));
+}
+
+function loadGame() {
+  const save = localStorage.getItem('cookingFrenzySave');
+  if (save) {
+    const data = JSON.parse(save);
+    state.day = data.day || 1;
+    state.coins = data.coins || 0;
+    state.upgrades = data.upgrades || state.upgrades;
+  }
+}
+
+// --- UI Elements ---
+const $ = id => document.getElementById(id);
+
+// --- Initialization ---
+function init() {
+  loadGame();
+  updateTopUI();
+  
+  $('btn-play').addEventListener('click', () => { initAudio(); startGame(); });
+  $('btn-reset').addEventListener('click', () => { localStorage.removeItem('cookingFrenzySave'); location.reload(); });
+  $('btn-next-day').addEventListener('click', () => { sounds.click(); startGame(); });
+  $('btn-retry').addEventListener('click', () => { sounds.click(); startGame(); });
+  $('btn-upgrades').addEventListener('click', () => { sounds.click(); showUpgrades(); });
+  $('btn-back-upgrades').addEventListener('click', () => { sounds.click(); $('upgrades-screen').classList.add('hidden'); });
+  
+  // Vibrate
+  if(navigator.vibrate) window.vibrate = navigator.vibrate.bind(navigator);
+  else window.vibrate = () => {};
+}
+
+function updateTopUI() {
+  $('ui-day').innerText = state.day;
+  $('ui-score').innerText = state.score;
+  $('ui-coins').innerText = state.coins;
+  $('upgrade-coins').innerText = state.coins;
+}
+
+// --- Game Loop ---
+function startGame() {
+  $('start-screen').classList.add('hidden');
+  $('level-complete-screen').classList.add('hidden');
+  $('game-over-screen').classList.add('hidden');
+  $('game-container').style.display = 'flex';
+  
+  state.score = 0;
+  state.customersServed = 0;
+  state.customersFailed = 0;
+  state.customersToSpawn = 5 + Math.floor(state.day * 1.5);
+  state.customers = [];
+  state.grill = [];
+  state.fryer = [];
+  state.drinks = [];
+  state.tray = [];
+  state.spawnTimer = 0;
+  state.isPlaying = true;
+  
+  // Setup stations based on upgrades
+  setupStations();
+  
+  updateTopUI();
+  $('customers-area').innerHTML = '';
+  
+  state.lastFrameTime = performance.now();
+  requestAnimationFrame(gameLoop);
+}
+
+function setupStations() {
+  const setup = (id, count) => {
+    $(id).innerHTML = '';
+    for(let i=0; i<count; i++) {
+      const slot = document.createElement('div');
+      slot.className = 'slot';
+      slot.dataset.index = i;
+      $(id).appendChild(slot);
+    }
+  };
+  
+  setup('grill-slots', state.upgrades.grillSlots);
+  setup('fryer-slots', state.upgrades.fryerSlots);
+  setup('drink-slots', 1); // fixed 1 for now
+  setup('tray-slots', state.upgrades.traySlots);
+}
+
+function gameLoop(timestamp) {
+  if (!state.isPlaying) return;
+  
+  const dt = timestamp - state.lastFrameTime;
+  state.lastFrameTime = timestamp;
+  
+  updateGameLogic(dt);
+  render();
+  
+  requestAnimationFrame(gameLoop);
+}
+
+function updateGameLogic(dt) {
+  // Spawning
+  state.spawnTimer -= dt;
+  if (state.spawnTimer <= 0 && state.customersToSpawn > 0 && state.customers.length < 4) {
+    spawnCustomer();
+    state.customersToSpawn--;
+    state.spawnTimer = 3000 + Math.random() * 4000 - (state.day * 100);
+    if (state.spawnTimer < 1500) state.spawnTimer = 1500;
+  }
+  
+  // Update Customers
+  for (let i = state.customers.length - 1; i >= 0; i--) {
+    const c = state.customers[i];
+    if (c.state === 'waiting') {
+      c.patience -= dt;
+      if (c.patience <= 0) {
+        c.state = 'leaving';
+        sounds.angry();
+        window.vibrate(200);
+        state.customersFailed++;
+        spawnFloatingText('-10', c.element, 'var(--danger)');
+        setTimeout(() => removeCustomer(c.id), 1000);
+        
+        if (state.customersFailed >= state.maxFails) {
+          endGame(false);
+          return;
+        }
+      }
+    }
+  }
+  
+  // Update Cooking Stations
+  const updateStation = (arr, speedUpgrade) => {
+    const speedMult = 1 + (speedUpgrade * 0.2);
+    arr.forEach(item => {
+      if (item.state === 'cooking') {
+        item.progress += dt * speedMult;
+        if (item.progress >= INGREDIENTS[item.type].cookTime) {
+          item.state = 'ready';
+          item.progress = 0;
+          sounds.ding();
+        }
+      } else if (item.state === 'ready') {
+        item.progress += dt;
+        if (item.progress >= 4000) { // Time before burnt
+          item.state = 'burnt';
+          sounds.sizzle();
+          window.vibrate(100);
+        }
+      }
+    });
+  };
+  
+  updateStation(state.grill, state.upgrades.grillSpeed);
+  updateStation(state.fryer, state.upgrades.fryerSpeed);
+  updateStation(state.drinks, 0); // No speed upgrade for drinks yet
+  
+  // Combo timer
+  if (state.combo > 0) {
+    state.comboTimer -= dt;
+    if (state.comboTimer <= 0) state.combo = 0;
+  }
+  
+  // Win condition check
+  if (state.customersToSpawn === 0 && state.customers.length === 0 && state.isPlaying) {
+    endGame(true);
+  }
+}
+
+function spawnCustomer() {
+  const id = Date.now() + Math.random();
+  const types = ['normal', 'normal', 'normal', 'vip', 'critic'];
+  const type = types[Math.floor(Math.random() * (state.day > 5 ? 5 : 3))]; // Introduce VIP/critic later
+  
+  let basePatience = 15000 + (state.upgrades.patience * 2000) - (state.day * 300);
+  let priceMult = 1;
+  
+  if (type === 'vip') { basePatience *= 0.7; priceMult = 2; }
+  if (type === 'critic') { basePatience *= 0.5; priceMult = 3; }
+  if (basePatience < 5000) basePatience = 5000;
+  
+  // Select order based on day unlocks
+  const availableOrders = ['burger', 'drink'];
+  if (state.day >= 3) availableOrders.push('hotdog');
+  if (state.day >= 5) availableOrders.push('fries');
+  if (state.day >= 8) availableOrders.push('taco');
+  
+  const orderCount = Math.random() > 0.7 ? 2 : 1; // Sometimes order 2 items
+  const orders = [];
+  for(let i=0; i<orderCount; i++) {
+    orders.push(availableOrders[Math.floor(Math.random() * availableOrders.length)]);
+  }
+  
+  const c = {
+    id,
+    type,
+    orders,
+    maxPatience: basePatience,
+    patience: basePatience,
+    priceMult,
+    state: 'waiting',
+    element: null
+  };
+  
+  state.customers.push(c);
+  sounds.bell();
+  
+  // Create DOM element
+  const el = document.createElement('div');
+  el.className = `customer ${type} ordered`;
+  el.id = `c-${id}`;
+  el.onclick = () => serveCustomer(id);
+  
+  const body = document.createElement('div');
+  body.className = 'customer-body';
+  
+  const face = document.createElement('div');
+  face.className = 'customer-face';
+  face.innerText = '😊';
+  
+  const bubble = document.createElement('div');
+  bubble.className = 'order-bubble';
+  orders.forEach(o => {
+    const item = document.createElement('div');
+    item.className = 'order-item';
+    item.innerText = RECIPES[o].icon;
+    bubble.appendChild(item);
+  });
+  
+  const meter = document.createElement('div');
+  meter.className = 'patience-meter';
+  const fill = document.createElement('div');
+  fill.className = 'patience-fill';
+  meter.appendChild(fill);
+  
+  body.appendChild(face);
+  el.appendChild(bubble);
+  el.appendChild(body);
+  el.appendChild(meter);
+  
+  $('customers-area').appendChild(el);
+  c.element = el;
+}
+
+function removeCustomer(id) {
+  const index = state.customers.findIndex(c => c.id === id);
+  if (index > -1) {
+    const c = state.customers[index];
+    if (c.element && c.element.parentNode) c.element.parentNode.removeChild(c.element);
+    state.customers.splice(index, 1);
+  }
+}
+
+function serveCustomer(id) {
+  const c = state.customers.find(x => x.id === id);
+  if (!c || c.state !== 'waiting') return;
+  
+  // Check if tray has the items
+  let canServe = true;
+  const itemsToConsume = [];
+  
+  c.orders.forEach(orderId => {
+    const reqComponents = RECIPES[orderId].components.slice().sort();
+    
+    // Find matching tray item
+    const trayIndex = state.tray.findIndex((tItem, idx) => {
+      if (itemsToConsume.includes(idx)) return false; // already mapped
+      if (!tItem) return false;
+      const tComps = tItem.components.slice().sort();
+      return JSON.stringify(reqComponents) === JSON.stringify(tComps);
+    });
+    
+    if (trayIndex > -1) {
+      itemsToConsume.push(trayIndex);
+    } else {
+      canServe = false;
+    }
+  });
+  
+  if (canServe) {
+    // Consume items
+    itemsToConsume.sort((a,b)=>b-a).forEach(idx => {
+      state.tray.splice(idx, 1);
+    });
+    
+    // Calculate rewards
+    let baseEarnings = c.orders.reduce((sum, o) => sum + RECIPES[o].price, 0);
+    baseEarnings *= c.priceMult;
+    
+    // Tip based on patience remaining
+    let tipPercent = (c.patience / c.maxPatience);
+    let tips = Math.floor(baseEarnings * tipPercent * (1 + state.upgrades.tips * 0.2));
+    
+    let total = baseEarnings + tips;
+    
+    // Combo
+    state.combo++;
+    state.comboTimer = 3000;
+    if (state.combo > 1) {
+      total += state.combo * 2;
+      spawnFloatingText(`Combo x${state.combo}!`, c.element, 'var(--warning)');
+    }
+    
+    state.coins += total;
+    state.score += total;
+    updateTopUI();
+    
+    c.state = 'served';
+    c.element.querySelector('.customer-face').innerText = '😍';
+    c.element.querySelector('.order-bubble').style.display = 'none';
+    sounds.cash();
+    window.vibrate(50);
+    spawnFloatingText(`+${total}💰`, c.element, 'var(--success)');
+    
+    setTimeout(() => removeCustomer(id), 500);
+  } else {
+    // Wrong order feedback
+    window.vibrate([50, 50, 50]);
+    c.element.style.transform = 'translateX(5px)';
+    setTimeout(() => c.element.style.transform = 'none', 100);
+  }
+}
+
+// --- Interaction Logic ---
+
+window.handleStationClick = function(stationId) {
+  if (!state.isPlaying) return;
+  sounds.click();
+  
+  if (stationId === 'grill') {
+    // If empty slot, add raw item (alternate patty/sausage based on what's needed)
+    if (state.grill.length < state.upgrades.grillSlots) {
+      // Check if any customer needs a hot dog but no sausage is cooking
+      const needsSausage = state.customers.some(c => c.orders.includes('hotdog'));
+      const hasSausage = state.grill.some(g => g.type === 'sausage_raw') || 
+                         state.tray.some(t => t.components.includes('sausage_cooked'));
+      const grillItem = (needsSausage && !hasSausage) ? 'sausage_raw' : 'patty_raw';
+      state.grill.push({ type: grillItem, progress: 0, state: 'cooking' });
+      sounds.sizzle();
+    }
+  } 
+  else if (stationId === 'fryer') {
+    if (state.fryer.length < state.upgrades.fryerSlots) {
+      state.fryer.push({ type: 'potato_raw', progress: 0, state: 'cooking' });
+      sounds.sizzle();
+    }
+  }
+  else if (stationId === 'drink') {
+    if (state.drinks.length < 1) { // 1 slot for now
+      state.drinks.push({ type: 'cup_empty', progress: 0, state: 'cooking' });
+    }
+  }
+  else if (stationId === 'bread') {
+    addToTray('bread');
+  }
+  else if (stationId === 'toppings') {
+    // Individual topping clicks are handled by the click delegation below (slot.dataset.topping)
+    // Station-level click is a no-op — player must tap specific topping emoji
+  }
+  else if (stationId === 'tray') {
+    // Trash item if clicked directly
+    if (state.tray.length > 0) {
+      state.tray.pop(); // simple: remove last
+      sounds.trash();
+    }
+  }
+};
+
+// Global click delegation for slots (easier dynamic management)
+document.addEventListener('click', (e) => {
+  if (!state.isPlaying) return;
+  const slot = e.target.closest('.slot');
+  if (!slot) return;
+  
+  const parentId = slot.parentElement.id;
+  const index = parseInt(slot.dataset.index);
+  
+  if (parentId === 'grill-slots') handleCookingSlot(state.grill, index);
+  else if (parentId === 'fryer-slots') handleCookingSlot(state.fryer, index);
+  else if (parentId === 'drink-slots') handleCookingSlot(state.drinks, index);
+  else if (slot.dataset.topping) {
+    addFeatureToTrayItem(slot.dataset.topping);
+    e.stopPropagation(); // prevent station click
+  }
+});
+
+function handleCookingSlot(arr, index) {
+  if (index >= arr.length) return; // empty slot
+  
+  const item = arr[index];
+  if (item.state === 'ready') {
+    if (addToTray(INGREDIENTS[item.type].result)) {
+      arr.splice(index, 1);
+    }
+  } else if (item.state === 'burnt') {
+    arr.splice(index, 1);
+    sounds.trash();
+  }
+}
+
+function addToTray(component) {
+  if (state.tray.length < state.upgrades.traySlots) {
+    state.tray.push({ components: [component] });
+    return true;
+  }
+  return false;
+}
+
+function addFeatureToTrayItem(feature) {
+  // Find a tray item that makes sense to add this to (e.g. has bread or patty)
+  for (let i = state.tray.length - 1; i >= 0; i--) {
+    let t = state.tray[i];
+    if (!t.components.includes(feature) && (t.components.includes('bread') || t.components.includes('patty_cooked') || t.components.includes('taco_shell'))) {
+      t.components.push(feature);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Special case for bread station clicks (hardcoded HTML for bread/taco)
+document.getElementById('station-bread').addEventListener('click', (e) => {
+  if(e.target.innerText === '🌮') { addToTray('taco_shell'); e.stopPropagation(); }
+  else if(e.target.innerText === '🍞') { addToTray('bread'); e.stopPropagation(); }
+});
+
+// --- Render Logic ---
+function render() {
+  // Update Customers
+  state.customers.forEach(c => {
+    if (!c.element) return;
+    const face = c.element.querySelector('.customer-face');
+    const fill = c.element.querySelector('.patience-fill');
+    
+    let pct = c.patience / c.maxPatience;
+    fill.style.width = `${pct * 100}%`;
+    
+    if (pct > 0.6) { fill.style.background = 'var(--success)'; face.innerText = '😊'; }
+    else if (pct > 0.3) { fill.style.background = 'var(--warning)'; face.innerText = '😐'; }
+    else { fill.style.background = 'var(--danger)'; face.innerText = '😠'; }
+  });
+  
+  // Render Stations
+  const renderArr = (arr, elId) => {
+    const container = $(elId);
+    if(!container) return;
+    const slots = container.querySelectorAll('.slot');
+    slots.forEach((s, i) => {
+      s.innerHTML = '';
+      if (i < arr.length) {
+        const item = arr[i];
+        let icon = item.state === 'ready' || item.state === 'burnt' ? INGREDIENTS[item.type].icon : '⏳';
+        
+        // custom mapping for cooked visually
+        if(item.state === 'ready') {
+            if(item.type==='patty_raw') icon='🥩';
+            if(item.type==='sausage_raw') icon='🌭';
+            if(item.type==='potato_raw') icon='🍟';
+            if(item.type==='cup_empty') icon='🥤';
+        }
+
+        s.innerText = icon;
+        s.className = `slot ${item.state}`;
+        s.dataset.index = i;
+        
+        if (item.state === 'cooking' || item.state === 'ready') {
+          const ring = document.createElement('div');
+          ring.className = 'progress-ring';
+          let p = item.state === 'cooking' ? item.progress / INGREDIENTS[item.type].cookTime : item.progress / 4000;
+          let color = item.state === 'cooking' ? `conic-gradient(var(--warning) ${p*100}%, transparent 0)` : `conic-gradient(var(--danger) ${p*100}%, transparent 0)`;
+          ring.style.background = color;
+          s.appendChild(ring);
+        }
+      }
+    });
+  };
+  
+  renderArr(state.grill, 'grill-slots');
+  renderArr(state.fryer, 'fryer-slots');
+  renderArr(state.drinks, 'drink-slots');
+  
+  // Render Tray
+  const trayContainer = $('tray-slots');
+  trayContainer.innerHTML = '';
+  for(let i=0; i<state.upgrades.traySlots; i++) {
+    const s = document.createElement('div');
+    s.className = 'tray-slot';
+    if (i < state.tray.length) {
+      const item = state.tray[i];
+      // Determine dominant icon
+      let mainIcon = '🍽️';
+      if(item.components.includes('patty_cooked') && item.components.includes('bread')) mainIcon = '🍔';
+      else if(item.components.includes('potato_fried')) mainIcon = '🍟';
+      else if(item.components.includes('drink_filled')) mainIcon = '🥤';
+      else if(item.components.includes('patty_cooked') && item.components.includes('taco_shell')) mainIcon = '🌮';
+      else if(item.components.includes('patty_cooked')) mainIcon = '🥩';
+      else if(item.components.includes('bread')) mainIcon = '🍞';
+      else if(item.components.includes('taco_shell')) mainIcon = '🌮';
+      
+      s.innerText = mainIcon;
+      
+      const comps = document.createElement('div');
+      comps.className = 'components';
+      item.components.forEach(c => {
+        let ci = '';
+        if(c==='lettuce') ci='🥬';
+        if(c==='tomato') ci='🍅';
+        if(c==='cheese') ci='🧀';
+        if(ci) comps.innerHTML += ci;
+      });
+      s.appendChild(comps);
+    }
+    trayContainer.appendChild(s);
+  }
+}
+
+// --- Effects ---
+function spawnFloatingText(text, parentEl, color) {
+  const el = document.createElement('div');
+  el.className = 'floating-text';
+  el.innerText = text;
+  el.style.color = color;
+  // Position relative to parent element's screen position
+  const rect = parentEl.getBoundingClientRect();
+  el.style.left = rect.left + rect.width / 2 + 'px';
+  el.style.top = rect.top + 'px';
+  el.style.position = 'fixed';
+  el.style.transform = 'translateX(-50%)';
+  document.body.appendChild(el);
+  setTimeout(() => { if(el.parentNode) el.parentNode.removeChild(el); }, 1000);
+}
+
+// --- Level Flow ---
+function endGame(success) {
+  state.isPlaying = false;
+  if (success) {
+    sounds.ding(); setTimeout(sounds.cash, 300);
+    state.day++;
+    saveGame();
+    
+    // Calc stars
+    let stars = 3;
+    if (state.customersFailed > 0) stars = 2;
+    if (state.customersFailed > 2) stars = 1;
+    
+    $('lc-title').innerText = "Day Complete!";
+    $('lc-title').style.color = 'var(--success)';
+    $('lc-day').innerText = state.day - 1;
+    $('lc-stars').innerText = stars;
+    $('lc-coins').innerText = state.score;
+    $('level-complete-screen').classList.remove('hidden');
+  } else {
+    sounds.angry();
+    $('go-day').innerText = state.day;
+    $('game-over-screen').classList.remove('hidden');
+  }
+}
+
+function showUpgrades() {
+  $('level-complete-screen').classList.add('hidden');
+  $('upgrades-screen').classList.remove('hidden');
+  renderUpgrades();
+}
+
+function renderUpgrades() {
+  const container = $('upgrades-container');
+  container.innerHTML = '';
+  
+  for (let key in UPGRADES_DB) {
+    const up = UPGRADES_DB[key];
+    const currentLvl = state.upgrades[key];
+    const isMax = currentLvl >= up.max;
+    const cost = Math.floor(up.basePrice * Math.pow(1.5, currentLvl));
+    
+    const card = document.createElement('div');
+    card.className = 'upgrade-card';
+    
+    card.innerHTML = `
+      <div style="font-size: 2rem;">${up.icon}</div>
+      <div class="upgrade-title">${up.title}</div>
+      <div class="upgrade-desc">${up.desc}</div>
+      <div style="margin-bottom: 10px; font-weight: bold;">Lvl ${currentLvl}/${up.max}</div>
+      <button class="btn" style="padding: 0.5rem 1rem; font-size: 1rem; width: 100%;" 
+        ${isMax || state.coins < cost ? 'disabled' : ''}>
+        ${isMax ? 'MAX' : 'Buy ' + cost + '💰'}
+      </button>
+    `;
+    
+    if (!isMax) {
+      card.querySelector('button').addEventListener('click', () => {
+        if (state.coins >= cost) {
+          state.coins -= cost;
+          state.upgrades[key]++;
+          sounds.cash();
+          saveGame();
+          $('upgrade-coins').innerText = state.coins;
+          renderUpgrades(); // refresh
+        }
+      });
+    }
+    
+    container.appendChild(card);
+  }
+}
+
+// Start
+init();
+
+</script>
+</body>
+</html>

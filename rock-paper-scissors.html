@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Rock Paper Scissors</title>
+<style>
+:root {
+  --bg-color: #0f172a;
+  --text-color: #f8fafc;
+  --accent-color: #eab308;
+  --panel-bg: rgba(30, 41, 59, 0.8);
+  --win-color: #22c55e;
+  --lose-color: #ef4444;
+  --draw-color: #eab308;
+}
+* { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 0; }
+body { background: var(--bg-color); color: var(--text-color); overflow: hidden; display: flex; flex-direction: column; height: 100vh; height: 100dvh; touch-action: manipulation; }
+#game-container { display: flex; flex-direction: column; width: 100%; height: 100%; position: relative; }
+
+/* Screens */
+.screen { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg-color); transition: opacity 0.3s; z-index: 10; opacity: 0; pointer-events: none; }
+.screen.active { opacity: 1; pointer-events: auto; z-index: 20; }
+
+/* Home Screen */
+#home-screen { justify-content: center; align-items: center; padding: 2rem; text-align: center; background: radial-gradient(circle at center, #1e293b, #0f172a); }
+.title { font-size: 3rem; font-weight: 800; margin-bottom: 2rem; background: linear-gradient(to right, #38bdf8, #818cf8, #eab308); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.btn { background: var(--panel-bg); color: var(--text-color); border: 2px solid #334155; padding: 1rem 2rem; font-size: 1.2rem; border-radius: 1rem; margin: 0.5rem; cursor: pointer; transition: transform 0.1s, background 0.2s; width: 80%; max-width: 300px; font-weight: bold; }
+.btn:active { transform: scale(0.95); }
+.btn-primary { background: linear-gradient(45deg, #4f46e5, #7c3aed); border: none; box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4); }
+
+/* Settings */
+.settings-group { margin: 1rem 0; width: 100%; max-width: 300px; }
+.settings-group label { display: block; margin-bottom: 0.5rem; font-size: 0.9rem; color: #94a3b8; }
+.toggle-group { display: flex; background: rgba(0,0,0,0.3); border-radius: 0.5rem; overflow: hidden; border: 1px solid #334155; }
+.toggle-btn { flex: 1; padding: 0.5rem; text-align: center; border-right: 1px solid #334155; transition: background 0.2s; font-size: 0.9rem; cursor: pointer; }
+.toggle-btn:last-child { border-right: none; }
+.toggle-btn.active { background: #38bdf8; color: #000; font-weight: bold; }
+
+/* Game Screen */
+#game-screen { display: flex; flex-direction: column; justify-content: space-between; }
+.top-bar { display: flex; justify-content: space-between; padding: env(safe-area-inset-top, 1rem) 1rem 1rem; background: rgba(0,0,0,0.5); font-size: 1.2rem; font-weight: bold; }
+.score-board { display: flex; flex-direction: column; align-items: center; }
+.score-label { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; }
+.streak-counter { color: #f97316; font-weight: bold; display: flex; align-items: center; gap: 0.2rem; text-shadow: 0 0 10px rgba(249, 115, 22, 0.5); }
+
+/* Arena */
+.arena { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+.player-area, .ai-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; position: relative; }
+.hand { font-size: 5rem; filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5)); transition: transform 0.2s; }
+.player-area .hand { transform: scaleX(-1); }
+.ai-area .hand { transform: scaleX(1); }
+
+/* Animations */
+@keyframes shake-p { 0%, 100% { transform: scaleX(-1) translateY(0) rotate(0); } 50% { transform: scaleX(-1) translateY(-30px) rotate(-15deg); } }
+@keyframes shake-a { 0%, 100% { transform: scaleX(1) translateY(0) rotate(0); } 50% { transform: scaleX(1) translateY(-30px) rotate(15deg); } }
+.shaking-p { animation: shake-p 0.5s ease-in-out 3; }
+.shaking-a { animation: shake-a 0.5s ease-in-out 3; }
+
+@keyframes reveal { 0% { transform: scale(0.5); opacity: 0; } 50% { transform: scale(1.2); } 100% { transform: scale(1); opacity: 1; } }
+.reveal { animation: reveal 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.reveal-p { transform: scaleX(-1); animation: reveal 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+.reveal-a { transform: scaleX(1); animation: reveal 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+
+/* Result text */
+.result-text { position: absolute; top: 20%; left: 50%; transform: translate(-50%, -50%); font-size: 4rem; font-weight: 900; opacity: 0; z-index: 30; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 4px 20px rgba(0,0,0,0.8); }
+.result-win { color: var(--win-color); opacity: 1; animation: popText 1s forwards; }
+.result-lose { color: var(--lose-color); opacity: 1; animation: popText 1s forwards; }
+.result-draw { color: var(--draw-color); opacity: 1; animation: popText 1s forwards; }
+
+@keyframes popText { 0% { transform: translate(-50%, -50%) scale(0); opacity: 0; } 20% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; } 100% { transform: translate(-50%, -80%) scale(1); opacity: 0; } }
+
+@keyframes screenShake { 0%, 100% { transform: translate(0, 0); } 20% { transform: translate(-10px, 10px); } 40% { transform: translate(10px, -10px); } 60% { transform: translate(-10px, -5px); } 80% { transform: translate(10px, 5px); } }
+.shake-screen { animation: screenShake 0.4s; }
+
+/* Controls */
+.controls { padding: 1rem; padding-bottom: env(safe-area-inset-bottom, 2rem); display: flex; justify-content: center; gap: 0.5rem; background: linear-gradient(to top, rgba(0,0,0,0.8), transparent); }
+.choice-btn { background: var(--panel-bg); border: 2px solid #334155; border-radius: 50%; width: 4rem; height: 4rem; font-size: 2rem; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
+.choice-btn:active { transform: scale(0.9); background: #334155; }
+.choice-btn:disabled { opacity: 0.5; pointer-events: none; }
+
+/* Stats Screen */
+#stats-screen { padding: 2rem; padding-top: env(safe-area-inset-top, 2rem); overflow-y: auto; }
+.stat-card { background: var(--panel-bg); border-radius: 1rem; padding: 1rem; margin-bottom: 1rem; }
+.stat-row { display: flex; justify-content: space-between; margin-bottom: 0.5rem; font-size: 1.1rem; }
+.stat-title { font-size: 1.5rem; margin-bottom: 1rem; text-align: center; color: var(--accent-color); }
+.diagram { text-align: center; margin-top: 1rem; font-size: 0.9rem; color: #cbd5e1; }
+
+canvas { position: absolute; inset: 0; pointer-events: none; z-index: 50; }
+.back-btn { position: absolute; top: env(safe-area-inset-top, 1rem); left: 1rem; background: none; border: none; color: white; font-size: 1.2rem; z-index: 60; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <canvas id="fx-canvas"></canvas>
+
+  <!-- Home Screen -->
+  <div id="home-screen" class="screen active">
+    <div class="title">RPS<br>PRO</div>
+    
+    <div class="settings-group">
+      <label>GAME MODE</label>
+      <div class="toggle-group" id="mode-toggle">
+        <div class="toggle-btn active" data-val="classic">CLASSIC</div>
+        <div class="toggle-btn" data-val="extended">EXTENDED</div>
+      </div>
+    </div>
+    
+    <div class="settings-group">
+      <label>AI DIFFICULTY</label>
+      <div class="toggle-group" id="diff-toggle">
+        <div class="toggle-btn active" data-val="random">RANDOM</div>
+        <div class="toggle-btn" data-val="smart">SMART</div>
+        <div class="toggle-btn" data-val="genius">GENIUS</div>
+      </div>
+    </div>
+    
+    <div class="settings-group">
+      <label>BEST OF</label>
+      <div class="toggle-group" id="bestof-toggle">
+        <div class="toggle-btn active" data-val="3">3</div>
+        <div class="toggle-btn" data-val="5">5</div>
+        <div class="toggle-btn" data-val="7">7</div>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" onclick="startGame()">PLAY</button>
+    <button class="btn" onclick="showStats()">STATISTICS</button>
+  </div>
+
+  <!-- Game Screen -->
+  <div id="game-screen" class="screen">
+    <div class="top-bar">
+      <div class="score-board">
+        <span class="score-label">YOU</span>
+        <span id="player-score">0</span>
+      </div>
+      <div class="score-board">
+        <span class="score-label">MATCH</span>
+        <span id="match-info">Best of 3</span>
+        <div class="streak-counter" id="streak-counter" style="display:none;">🔥 <span id="streak-val">0</span></div>
+      </div>
+      <div class="score-board">
+        <span class="score-label">AI</span>
+        <span id="ai-score">0</span>
+      </div>
+    </div>
+
+    <div class="arena" id="arena">
+      <div id="result-overlay" class="result-text"></div>
+      <div class="player-area">
+        <div class="hand" id="player-hand">✊</div>
+      </div>
+      <div class="ai-area">
+        <div class="hand" id="ai-hand">✊</div>
+      </div>
+    </div>
+
+    <div class="controls" id="controls">
+      <!-- Generated via JS -->
+    </div>
+    
+    <button class="btn" style="position:absolute; bottom:calc(env(safe-area-inset-bottom, 1rem) + 5rem); left: 50%; transform: translateX(-50%); width: auto; font-size: 0.9rem; padding: 0.5rem 1rem; opacity: 0.7;" onclick="quitGame()">Quit</button>
+  </div>
+
+  <!-- Stats Screen -->
+  <div id="stats-screen" class="screen">
+    <button class="back-btn" onclick="showHome()">◀ BACK</button>
+    <h2 class="stat-title" style="margin-top: 2rem;">STATISTICS</h2>
+    
+    <div class="stat-card">
+      <div class="stat-row"><span>Total Games</span><strong id="stat-total">0</strong></div>
+      <div class="stat-row"><span>Wins</span><strong id="stat-wins" style="color:var(--win-color)">0</strong></div>
+      <div class="stat-row"><span>Losses</span><strong id="stat-losses" style="color:var(--lose-color)">0</strong></div>
+      <div class="stat-row"><span>Draws</span><strong id="stat-draws" style="color:var(--draw-color)">0</strong></div>
+      <div class="stat-row"><span>Best Streak</span><strong id="stat-streak" style="color:#f97316">0</strong></div>
+    </div>
+    
+    <div class="stat-card" id="diagram-card" style="display:none">
+      <h3 style="text-align:center;margin-bottom:0.5rem;">Extended Rules</h3>
+      <div class="diagram">
+        ✂️ cuts 📄<br>
+        📄 covers ✊<br>
+        ✊ crushes 🦎<br>
+        🦎 poisons 🖖<br>
+        🖖 smashes ✂️<br>
+        ✂️ decapitates 🦎<br>
+        🦎 eats 📄<br>
+        📄 disproves 🖖<br>
+        🖖 vaporizes ✊<br>
+        ✊ crushes ✂️
+      </div>
+    </div>
+    <button class="btn" style="width:100%; max-width:none; background:#ef4444; color:white; border:none;" onclick="resetStats()">Reset Stats</button>
+  </div>
+</div>
+
+<script>
+// --- State & Config ---
+const CHOICES = {
+  rock: { icon: '✊', beats: ['scissors', 'lizard'] },
+  paper: { icon: '🤚', beats: ['rock', 'spock'] },
+  scissors: { icon: '✌️', beats: ['paper', 'lizard'] },
+  lizard: { icon: '🦎', beats: ['spock', 'paper'] },
+  spock: { icon: '🖖', beats: ['scissors', 'rock'] }
+};
+
+let config = { mode: 'classic', diff: 'random', bestOf: 3 };
+let state = { pScore: 0, aScore: 0, round: 1, streak: 0, playing: false, history: [] };
+let stats = JSON.parse(localStorage.getItem('rpsStats')) || { total: 0, wins: 0, losses: 0, draws: 0, bestStreak: 0, history: [] };
+
+// --- Audio ---
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
+function initAudio() {
+  if (!audioCtx) audioCtx = new AudioContext();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTone(freq, type, dur, vol=0.1) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type; 
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+  osc.connect(gain); 
+  gain.connect(audioCtx.destination);
+  osc.start(); 
+  osc.stop(audioCtx.currentTime + dur);
+}
+function sfxShoot() { playTone(400, 'sine', 0.1); setTimeout(()=>playTone(500, 'sine', 0.1), 100); setTimeout(()=>playTone(600, 'sine', 0.2), 200); }
+function sfxWin() { playTone(440, 'square', 0.1); setTimeout(()=>playTone(554, 'square', 0.1), 100); setTimeout(()=>playTone(659, 'square', 0.3), 200); }
+function sfxLose() { playTone(300, 'sawtooth', 0.3, 0.2); setTimeout(()=>playTone(250, 'sawtooth', 0.4, 0.2), 200); }
+function sfxDraw() { playTone(400, 'sine', 0.3); }
+function vibrate(ms) { if (navigator.vibrate) navigator.vibrate(ms); }
+
+// --- UI Logic ---
+document.querySelectorAll('.toggle-group').forEach(group => {
+  group.addEventListener('click', e => {
+    if (e.target.classList.contains('toggle-btn')) {
+      group.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+      e.target.classList.add('active');
+      const id = group.id;
+      const val = e.target.dataset.val;
+      if (id === 'mode-toggle') config.mode = val;
+      if (id === 'diff-toggle') config.diff = val;
+      if (id === 'bestof-toggle') config.bestOf = parseInt(val);
+    }
+  });
+});
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function showHome() { showScreen('home-screen'); }
+
+function showStats() {
+  document.getElementById('stat-total').innerText = stats.total;
+  document.getElementById('stat-wins').innerText = stats.wins;
+  document.getElementById('stat-losses').innerText = stats.losses;
+  document.getElementById('stat-draws').innerText = stats.draws;
+  document.getElementById('stat-streak').innerText = stats.bestStreak;
+  document.getElementById('diagram-card').style.display = config.mode === 'extended' ? 'block' : 'none';
+  showScreen('stats-screen');
+}
+
+function resetStats() {
+  stats = { total: 0, wins: 0, losses: 0, draws: 0, bestStreak: 0, history: [] };
+  localStorage.setItem('rpsStats', JSON.stringify(stats));
+  showStats();
+}
+
+function startGame() {
+  initAudio();
+  state = { pScore: 0, aScore: 0, round: 1, streak: state.streak, playing: true, history: [] };
+  updateScoreBoard();
+  
+  const controls = document.getElementById('controls');
+  controls.innerHTML = '';
+  const choices = config.mode === 'extended' ? ['rock', 'paper', 'scissors', 'lizard', 'spock'] : ['rock', 'paper', 'scissors'];
+  choices.forEach(c => {
+    const btn = document.createElement('div');
+    btn.className = 'choice-btn';
+    btn.innerHTML = CHOICES[c].icon;
+    btn.onclick = () => playRound(c);
+    controls.appendChild(btn);
+  });
+  
+  resetHands();
+  showScreen('game-screen');
+}
+
+function quitGame() {
+  state.playing = false;
+  showHome();
+}
+
+function updateScoreBoard() {
+  document.getElementById('player-score').innerText = state.pScore;
+  document.getElementById('ai-score').innerText = state.aScore;
+  document.getElementById('match-info').innerText = `Best of ${config.bestOf}`;
+  
+  const streakEl = document.getElementById('streak-counter');
+  if (state.streak >= 3) {
+    streakEl.style.display = 'flex';
+    document.getElementById('streak-val').innerText = state.streak;
+  } else {
+    streakEl.style.display = 'none';
+  }
+}
+
+function resetHands() {
+  const p = document.getElementById('player-hand');
+  const a = document.getElementById('ai-hand');
+  p.innerHTML = '✊'; p.className = 'hand'; p.style.transform = 'scaleX(-1)';
+  a.innerHTML = '✊'; a.className = 'hand'; a.style.transform = 'scaleX(1)';
+  document.getElementById('result-overlay').className = 'result-text';
+  document.getElementById('result-overlay').innerText = '';
+}
+
+function setControlsDisabled(disabled) {
+  document.querySelectorAll('.choice-btn').forEach(b => b.disabled = disabled);
+}
+
+// --- AI Logic ---
+function getAIChoice() {
+  const choices = config.mode === 'extended' ? ['rock', 'paper', 'scissors', 'lizard', 'spock'] : ['rock', 'paper', 'scissors'];
+  
+  if (config.diff === 'random' || stats.history.length < 5) {
+    return choices[Math.floor(Math.random() * choices.length)];
+  }
+  
+  // Smart/Genius logic
+  const recent = stats.history.slice(-10);
+  const counts = {};
+  recent.forEach(c => counts[c] = (counts[c] || 0) + 1);
+  let predictedPlayer = choices[0];
+  let maxCount = -1;
+  for (let c in counts) { if (counts[c] > maxCount) { maxCount = counts[c]; predictedPlayer = c; } }
+  
+  if (config.diff === 'genius' && Math.random() > 0.3) {
+    // Heavy counter play
+    const possibleCounters = choices.filter(c => CHOICES[c].beats.includes(predictedPlayer));
+    return possibleCounters[Math.floor(Math.random() * possibleCounters.length)];
+  }
+  
+  if (config.diff === 'smart' && Math.random() > 0.5) {
+    const possibleCounters = choices.filter(c => CHOICES[c].beats.includes(predictedPlayer));
+    return possibleCounters[Math.floor(Math.random() * possibleCounters.length)];
+  }
+  
+  return choices[Math.floor(Math.random() * choices.length)];
+}
+
+// --- Game Logic ---
+function playRound(pChoice) {
+  if (!state.playing) return;
+  setControlsDisabled(true);
+  resetHands();
+  
+  const aChoice = getAIChoice();
+  stats.history.push(pChoice);
+  if (stats.history.length > 50) stats.history.shift();
+  
+  // Animation
+  const ph = document.getElementById('player-hand');
+  const ah = document.getElementById('ai-hand');
+  ph.classList.add('shaking-p');
+  ah.classList.add('shaking-a');
+  sfxShoot();
+  vibrate(50);
+  
+  setTimeout(() => {
+    ph.classList.remove('shaking-p');
+    ah.classList.remove('shaking-a');
+    
+    ph.innerHTML = CHOICES[pChoice].icon;
+    ah.innerHTML = CHOICES[aChoice].icon;
+    ph.className = 'hand reveal-p';
+    ah.className = 'hand reveal-a';
+    
+    // Evaluate
+    let res = '';
+    if (pChoice === aChoice) res = 'draw';
+    else if (CHOICES[pChoice].beats.includes(aChoice)) res = 'win';
+    else res = 'lose';
+    
+    showResult(res);
+  }, 1500);
+}
+
+function showResult(res) {
+  const overlay = document.getElementById('result-overlay');
+  
+  if (res === 'win') {
+    state.pScore++;
+    state.streak++;
+    if (state.streak > stats.bestStreak) stats.bestStreak = state.streak;
+    overlay.innerText = 'WIN';
+    overlay.className = 'result-text result-win';
+    sfxWin();
+    vibrate([50, 50, 50]);
+    createParticles(window.innerWidth*0.2, window.innerHeight/2, '#22c55e');
+  } else if (res === 'lose') {
+    state.aScore++;
+    state.streak = 0;
+    overlay.innerText = 'LOSE';
+    overlay.className = 'result-text result-lose';
+    sfxLose();
+    vibrate(200);
+    document.getElementById('arena').classList.add('shake-screen');
+    setTimeout(() => document.getElementById('arena').classList.remove('shake-screen'), 400);
+  } else {
+    overlay.innerText = 'DRAW';
+    overlay.className = 'result-text result-draw';
+    sfxDraw();
+  }
+  
+  updateScoreBoard();
+  
+  const maxScore = Math.ceil(config.bestOf / 2);
+  if (state.pScore >= maxScore || state.aScore >= maxScore) {
+    setTimeout(endMatch, 2000);
+  } else {
+    setTimeout(() => { setControlsDisabled(false); resetHands(); }, 2000);
+  }
+}
+
+function endMatch() {
+  state.playing = false;
+  stats.total++;
+  if (state.pScore > state.aScore) stats.wins++;
+  else if (state.aScore > state.pScore) stats.losses++;
+  else stats.draws++;
+  
+  localStorage.setItem('rpsStats', JSON.stringify(stats));
+  
+  const msg = state.pScore > state.aScore ? 'MATCH WON!' : 'MATCH LOST!';
+  document.getElementById('result-overlay').innerText = msg;
+  document.getElementById('result-overlay').className = state.pScore > state.aScore ? 'result-text result-win' : 'result-text result-lose';
+  
+  setTimeout(showHome, 3000);
+}
+
+// --- Particles ---
+const cvs = document.getElementById('fx-canvas');
+const ctx = cvs.getContext('2d');
+let particles = [];
+
+function resize() { cvs.width = window.innerWidth; cvs.height = window.innerHeight; }
+window.addEventListener('resize', resize);
+resize();
+
+function createParticles(x, y, color) {
+  for (let i = 0; i < 50; i++) {
+    particles.push({
+      x: x, y: y,
+      vx: (Math.random() - 0.5) * 15,
+      vy: (Math.random() - 0.5) * 15 - 5,
+      size: Math.random() * 8 + 4,
+      color: ['#eab308', '#22c55e', '#3b82f6', '#ec4899'][Math.floor(Math.random()*4)],
+      life: 1,
+      decay: Math.random() * 0.02 + 0.01
+    });
+  }
+}
+
+function loop() {
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+  for (let i = particles.length - 1; i >= 0; i--) {
+    let p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.2; // gravity
+    p.life -= p.decay;
+    
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+    ctx.fill();
+    
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  ctx.globalAlpha = 1;
+  requestAnimationFrame(loop);
+}
+loop();
+
+</script>
+</body>
+</html>

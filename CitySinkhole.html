@@ -1,0 +1,2353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+  >
+  <title>City Sinkhole</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #d9dde2;
+      --panel: rgba(18, 21, 26, 0.84);
+      --panel-border: rgba(255, 255, 255, 0.08);
+      --text: #f4f7fb;
+      --muted: rgba(244, 247, 251, 0.72);
+      --accent: #ff9c3a;
+      --button-tint: rgba(255, 156, 58, 0.16);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      touch-action: none;
+      overscroll-behavior: none;
+      user-select: none;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      touch-action: none;
+    }
+
+    #hud {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .panel {
+      position: absolute;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+    }
+
+    #stats {
+      top: calc(env(safe-area-inset-top, 0px) + 14px);
+      left: calc(env(safe-area-inset-left, 0px) + 14px);
+      min-width: 152px;
+      padding: 12px 14px 11px;
+    }
+
+    #clock {
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: 0.02em;
+    }
+
+    #mass {
+      margin-top: 8px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    #status {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.01em;
+    }
+
+    #goal {
+      margin-top: 7px;
+      padding-top: 7px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    #leaderboard {
+      top: calc(env(safe-area-inset-top, 0px) + 14px);
+      right: calc(env(safe-area-inset-right, 0px) + 14px);
+      width: min(212px, calc(100vw - 28px));
+      padding: 12px 12px 11px;
+    }
+
+    #leaderboard h2 {
+      margin: 0 0 9px;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 18px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      font-size: 13px;
+      line-height: 1.2;
+    }
+
+    .row + .row {
+      margin-top: 7px;
+    }
+
+    .rank {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 700;
+    }
+
+    .value {
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(7, 9, 13, 0.56);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    #overlay.show {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .card {
+      width: min(390px, 100%);
+      padding: 20px 18px 18px;
+      border-radius: 20px;
+      background: rgba(14, 17, 21, 0.94);
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 22px 50px rgba(0, 0, 0, 0.32);
+      text-align: center;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .eyebrow {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .card h1 {
+      margin: 8px 0 10px;
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    #themeButtons {
+      margin-top: 16px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .themeBtn {
+      width: 100%;
+      padding: 13px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      text-align: left;
+    }
+
+    .themeBtnHead {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .themeName {
+      font-size: 16px;
+      font-weight: 900;
+      letter-spacing: 0.01em;
+    }
+
+    .themeTag {
+      padding: 5px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: var(--button-tint);
+      color: var(--accent);
+    }
+
+    .themeCopy {
+      margin-top: 7px;
+      font-size: 13px;
+      line-height: 1.4;
+      color: var(--muted);
+    }
+
+    #overlayText {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    #finalRows {
+      margin-top: 14px;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    #finalRows .row {
+      font-size: 14px;
+    }
+
+    .actions {
+      margin-top: 16px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .actionBtn {
+      width: 100%;
+      height: 48px;
+      border: 0;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+    }
+
+    #restartBtn {
+      background: var(--accent);
+      color: #18110a;
+    }
+
+    #menuBtn {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div class="panel" id="stats">
+      <div id="clock">02:00</div>
+      <div id="mass">Mass 0</div>
+      <div id="status">Drag anywhere to move</div>
+      <div id="goal">Goal</div>
+    </div>
+
+    <div class="panel" id="leaderboard">
+      <h2 id="leaderTitle">Leaderboard</h2>
+      <div id="leaderRows"></div>
+    </div>
+  </div>
+
+  <div id="overlay">
+    <div class="card" id="menuView">
+      <div class="eyebrow">Themes</div>
+      <h1>City Sinkhole</h1>
+      <div id="themeButtons"></div>
+    </div>
+
+    <div class="card hidden" id="resultView">
+      <div class="eyebrow">Match Finished</div>
+      <h1 id="resultTitle">City Sinkhole</h1>
+      <p id="overlayText"></p>
+      <div id="finalRows"></div>
+      <div class="actions">
+        <button id="restartBtn" class="actionBtn" type="button">Play Again</button>
+        <button id="menuBtn" class="actionBtn" type="button">Themes</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d", {
+        alpha: false,
+        desynchronized: true
+      });
+
+      const clockEl = document.getElementById("clock");
+      const massEl = document.getElementById("mass");
+      const statusEl = document.getElementById("status");
+      const goalEl = document.getElementById("goal");
+      const leaderRowsEl = document.getElementById("leaderRows");
+      const leaderTitleEl = document.getElementById("leaderTitle");
+      const overlayEl = document.getElementById("overlay");
+      const menuViewEl = document.getElementById("menuView");
+      const resultViewEl = document.getElementById("resultView");
+      const themeButtonsEl = document.getElementById("themeButtons");
+      const resultTitleEl = document.getElementById("resultTitle");
+      const overlayTextEl = document.getElementById("overlayText");
+      const finalRowsEl = document.getElementById("finalRows");
+      const restartBtn = document.getElementById("restartBtn");
+      const menuBtn = document.getElementById("menuBtn");
+
+      const CONFIG = {
+        worldSize: 3000,
+        worldMargin: 80,
+        baseRadius: 28,
+        districtCount: 12,
+        roadCount: 5,
+        botLimit: 5,
+        defaultMatchLength: 120000,
+        consumeMs: 170,
+        holeConsumeMs: 240,
+        itemRespawnMin: 700,
+        itemRespawnMax: 2200,
+        holeRespawnMs: 1800,
+        botThinkMin: 240,
+        botThinkMax: 420,
+        magnetDuration: 5000,
+        magnetRespawnMin: 9000,
+        magnetRespawnMax: 14500,
+        landmarkRespawnMin: 9000,
+        landmarkRespawnMax: 13000,
+        surgeDuration: 2800,
+        effectLimit: 34
+      };
+
+      const BASE_MASS = CONFIG.baseRadius * CONFIG.baseRadius;
+      const HOLE_ACTIVE = 0;
+      const HOLE_CONSUMING = 1;
+      const HOLE_WAITING = 2;
+      const ITEM_ACTIVE = 0;
+      const ITEM_CONSUMING = 1;
+      const ITEM_WAITING = 2;
+
+      const THEMES = {
+        corp: {
+          id: "corp",
+          title: "Super Corp",
+          tag: "Battle",
+          copy: "Grow from kiosks to mega HQ towers. Take over the city skyline.",
+          accent: "#ff9c3a",
+          panel: "rgba(18, 21, 26, 0.84)",
+          buttonTint: "rgba(255, 156, 58, 0.16)",
+          playerName: "Your App",
+          playerColor: "#ff9c3a",
+          leaderTitle: "Market Share",
+          massLabel: "Influence",
+          resultTitle: "Super Corp",
+          resultUnit: "Influence",
+          cleanup: false,
+          matchLength: CONFIG.defaultMatchLength,
+          movingCars: true,
+          botRoster: [
+            { name: "Nova", color: "#4cc9f0" },
+            { name: "Mango", color: "#ffd166" },
+            { name: "Ruby", color: "#ff6b6b" },
+            { name: "Mint", color: "#66d19e" },
+            { name: "Violet", color: "#9b7cff" }
+          ],
+          counts: {
+            person: 118,
+            prop: 76,
+            car: 26,
+            building: 34,
+            landmark: 7,
+            magnet: 3
+          },
+          ground: "#efe3cc",
+          road: "#d6c5af",
+          roadStripe: "rgba(255, 249, 224, 0.72)",
+          grid: "rgba(131, 110, 79, 0.14)",
+          border: "#c8b08e",
+          zoneShape: "square",
+          zoneColors: ["rgba(86, 162, 255, 0.14)", "rgba(255, 156, 58, 0.14)", "rgba(79, 207, 154, 0.14)"],
+          zoneStroke: "rgba(255, 255, 255, 0.22)",
+          parkColor: "rgba(124, 190, 106, 0.24)",
+          waterColor: "rgba(95, 186, 255, 0.22)",
+          personColors: ["#45c5ff", "#ffd166", "#ff8f6c", "#71e7a9", "#8693ff"],
+          propColors: ["#788899", "#6d7f8c", "#87996e", "#a17c60"],
+          carColors: ["#ff5f57", "#ffac30", "#3cbcff", "#37c287", "#8c76ff", "#f48062"],
+          buildingColors: ["#7c6d5e", "#8b7c6c", "#947a86", "#6e7d8a"],
+          landmarkColors: ["#ffb648", "#ff6f61", "#4cc9f0", "#5dd39e"],
+          magnetColor: "#37d8ff",
+          words: {
+            person: "kiosks",
+            prop: "micro hubs",
+            car: "courier vans",
+            building: "factories",
+            landmark: "hq towers",
+            rival: "rivals"
+          }
+        },
+        market: {
+          id: "market",
+          title: "Market Rush",
+          tag: "Battle",
+          copy: "Own the whole market, then swallow giant trade halls and depots.",
+          accent: "#17c17e",
+          panel: "rgba(17, 25, 18, 0.84)",
+          buttonTint: "rgba(23, 193, 126, 0.16)",
+          playerName: "Your Route",
+          playerColor: "#17c17e",
+          leaderTitle: "Monopoly Race",
+          massLabel: "Reach",
+          resultTitle: "Market Rush",
+          resultUnit: "Reach",
+          cleanup: false,
+          matchLength: CONFIG.defaultMatchLength,
+          movingCars: true,
+          botRoster: [
+            { name: "BodaFly", color: "#ffd166" },
+            { name: "Karibu", color: "#59c3ff" },
+            { name: "SokoMax", color: "#ff7b89" },
+            { name: "Haraka", color: "#70e39f" },
+            { name: "SunBus", color: "#9b7cff" }
+          ],
+          counts: {
+            person: 122,
+            prop: 74,
+            car: 28,
+            building: 32,
+            landmark: 7,
+            magnet: 3
+          },
+          ground: "#f1d5aa",
+          road: "#d7b07a",
+          roadStripe: "rgba(255, 245, 215, 0.68)",
+          grid: "rgba(130, 89, 34, 0.14)",
+          border: "#cc955d",
+          zoneShape: "circle",
+          zoneColors: ["rgba(255, 196, 73, 0.16)", "rgba(23, 193, 126, 0.16)", "rgba(245, 111, 79, 0.14)"],
+          zoneStroke: "rgba(255, 250, 230, 0.22)",
+          parkColor: "rgba(88, 177, 95, 0.24)",
+          waterColor: "rgba(71, 183, 240, 0.18)",
+          personColors: ["#ffb11f", "#ff704a", "#ffd76a", "#34c4ff", "#4fd88a"],
+          propColors: ["#b26a2f", "#9b7a30", "#d56d35", "#5d9261"],
+          carColors: ["#ffd166", "#ff6f59", "#16c38b", "#4cb9ff", "#7d7cf1", "#ff9748"],
+          buildingColors: ["#8c4f32", "#b8724d", "#86664d", "#ac7c4c"],
+          landmarkColors: ["#ffd166", "#ff7a59", "#24c28d", "#4db8ff"],
+          magnetColor: "#5de8ff",
+          words: {
+            person: "fruit stalls",
+            prop: "market carts",
+            car: "boda bodas",
+            building: "trade halls",
+            landmark: "grand depots",
+            rival: "routes"
+          }
+        },
+        cleanup: {
+          id: "cleanup",
+          title: "Cleanup Run",
+          tag: "Solo",
+          copy: "Clear small trash, then absorb giant waste mountains to finish the map.",
+          accent: "#59c7ff",
+          panel: "rgba(14, 22, 28, 0.84)",
+          buttonTint: "rgba(89, 199, 255, 0.16)",
+          playerName: "Vac Bot",
+          playerColor: "#59c7ff",
+          leaderTitle: "Cleanup",
+          massLabel: "Load",
+          resultTitle: "Cleanup Run",
+          resultUnit: "Load",
+          cleanup: true,
+          matchLength: 0,
+          movingCars: false,
+          botRoster: [],
+          counts: {
+            person: 138,
+            prop: 78,
+            car: 20,
+            building: 30,
+            landmark: 5,
+            magnet: 3
+          },
+          ground: "#d8edf0",
+          road: "#b8d4da",
+          roadStripe: "rgba(245, 251, 255, 0.62)",
+          grid: "rgba(79, 105, 116, 0.12)",
+          border: "#9fc2cb",
+          zoneShape: "circle",
+          zoneColors: ["rgba(89, 199, 255, 0.14)", "rgba(110, 120, 128, 0.1)", "rgba(98, 184, 145, 0.12)"],
+          zoneStroke: "rgba(255, 255, 255, 0.18)",
+          parkColor: "rgba(120, 196, 184, 0.18)",
+          waterColor: "rgba(102, 206, 255, 0.18)",
+          personColors: ["#6db5d2", "#9dc9d6", "#7da6b4", "#9fd0c2"],
+          propColors: ["#8f9da4", "#7c8a92", "#98a49c", "#7f8e98"],
+          carColors: ["#7896a3", "#6db0c8", "#88aaa7", "#8f9fa7", "#6c92a5", "#8ca3a9"],
+          buildingColors: ["#8b999f", "#7b878e", "#9ca9ae", "#76848c"],
+          landmarkColors: ["#74c9f3", "#89d5e2", "#98bfc9", "#6db2c2"],
+          magnetColor: "#6be3ff",
+          words: {
+            person: "scraps",
+            prop: "bags",
+            car: "bins",
+            building: "junk piles",
+            landmark: "waste mountains",
+            rival: "targets"
+          }
+        }
+      };
+
+      let activeTheme = THEMES.corp;
+      let viewportWidth = 0;
+      let viewportHeight = 0;
+      let dpr = 1;
+      let lastFrame = 0;
+      let gameStarted = false;
+      let ended = false;
+      let matchStartAt = 0;
+      let matchEndAt = 0;
+      let uiNextAt = 0;
+      let cleanupTotalTargets = 0;
+      let cleanupCleared = 0;
+      let playerLandmarks = 0;
+
+      const camera = {
+        x: 0,
+        y: 0,
+        zoom: 1
+      };
+
+      const input = {
+        active: false,
+        pointerId: -1,
+        x: 0,
+        y: 0
+      };
+
+      const holes = [];
+      const items = [];
+      const effects = [];
+      const districts = [];
+      const roadsX = [];
+      const roadsY = [];
+      const zoneScratch = new Float32Array(CONFIG.districtCount);
+      let player = null;
+
+      function clamp(value, min, max) {
+        return value < min ? min : value > max ? max : value;
+      }
+
+      function lerp(start, end, amount) {
+        return start + (end - start) * amount;
+      }
+
+      function rand(min, max) {
+        return min + Math.random() * (max - min);
+      }
+
+      function randInt(min, max) {
+        return min + Math.floor(Math.random() * (max - min + 1));
+      }
+
+      function distanceSq(ax, ay, bx, by) {
+        const dx = ax - bx;
+        const dy = ay - by;
+        return dx * dx + dy * dy;
+      }
+
+      function formatClock(ms) {
+        const totalSeconds = Math.max(0, Math.ceil(ms / 1000));
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+      }
+
+      function formatElapsed(ms) {
+        const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+      }
+
+      function boardMass(hole) {
+        if (hole.state === HOLE_ACTIVE) {
+          return hole.mass;
+        }
+        if (hole.state === HOLE_CONSUMING) {
+          return hole.mass * 0.35;
+        }
+        return BASE_MASS * 0.25;
+      }
+
+      function shownMass(hole) {
+        return Math.max(0, Math.round(boardMass(hole) - BASE_MASS));
+      }
+
+      function updateRadius(hole) {
+        hole.radius = Math.sqrt(hole.mass);
+      }
+
+      function addMass(hole, amount) {
+        hole.mass += amount;
+        if (hole.mass < BASE_MASS) {
+          hole.mass = BASE_MASS;
+        }
+        updateRadius(hole);
+      }
+
+      function holeSpeed(hole) {
+        return Math.max(50, 248 / (1 + hole.radius * 0.035));
+      }
+
+      function pointFromDistrict(zoneIndex, spread) {
+        const district = districts[zoneIndex];
+        return {
+          x: clamp(district.x + rand(-spread, spread), CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin),
+          y: clamp(district.y + rand(-spread, spread), CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin)
+        };
+      }
+
+      function nearestDistrictIndex(x, y) {
+        let best = 0;
+        let bestDist = Infinity;
+        for (let i = 0; i < districts.length; i += 1) {
+          const dist = distanceSq(x, y, districts[i].x, districts[i].y);
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = i;
+          }
+        }
+        return best;
+      }
+
+      function isNearActiveHole(x, y, padding, ignoreId) {
+        const limit = padding * padding;
+        for (let i = 0; i < holes.length; i += 1) {
+          const hole = holes[i];
+          if (hole.id === ignoreId || hole.state !== HOLE_ACTIVE) {
+            continue;
+          }
+          if (distanceSq(x, y, hole.x, hole.y) < limit) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function findSpawnPoint(radius, ignoreId, favorCenter) {
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          const x = favorCenter && attempt < 10
+            ? CONFIG.worldSize * 0.5 + rand(-220, 220)
+            : rand(CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+          const y = favorCenter && attempt < 10
+            ? CONFIG.worldSize * 0.5 + rand(-220, 220)
+            : rand(CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+
+          if (!isNearActiveHole(x, y, radius + 230, ignoreId)) {
+            return { x, y };
+          }
+        }
+
+        return {
+          x: rand(CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin),
+          y: rand(CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin)
+        };
+      }
+
+      function cleanupConsumedNow() {
+        let total = cleanupCleared;
+        for (let i = 0; i < items.length; i += 1) {
+          const item = items[i];
+          if (item.kind !== "magnet" && item.state === ITEM_CONSUMING) {
+            total += 1;
+          }
+        }
+        return total;
+      }
+
+      function cleanupPercent() {
+        if (!cleanupTotalTargets) {
+          return 100;
+        }
+        return Math.round((cleanupConsumedNow() / cleanupTotalTargets) * 100);
+      }
+
+      function pushEffect(effect) {
+        if (effects.length >= CONFIG.effectLimit) {
+          effects.shift();
+        }
+        effects.push(effect);
+      }
+
+      function spawnFloatText(x, y, text, color, size, life, now) {
+        pushEffect({
+          kind: "text",
+          x,
+          y,
+          text,
+          color,
+          size,
+          start: now,
+          end: now + life
+        });
+      }
+
+      function spawnBurst(x, y, radius, color, now) {
+        pushEffect({
+          kind: "burst",
+          x,
+          y,
+          radius,
+          color,
+          start: now,
+          end: now + 420
+        });
+      }
+
+      function updateEffects(now) {
+        for (let i = effects.length - 1; i >= 0; i -= 1) {
+          if (now >= effects[i].end) {
+            effects.splice(i, 1);
+          }
+        }
+      }
+
+      function applyTheme(theme) {
+        activeTheme = theme;
+        const rootStyle = document.documentElement.style;
+        rootStyle.setProperty("--bg", theme.ground);
+        rootStyle.setProperty("--panel", theme.panel);
+        rootStyle.setProperty("--accent", theme.accent);
+        rootStyle.setProperty("--button-tint", theme.buttonTint);
+        leaderTitleEl.textContent = theme.leaderTitle;
+      }
+
+      function buildThemeButtons() {
+        let html = "";
+        const ids = Object.keys(THEMES);
+        for (let i = 0; i < ids.length; i += 1) {
+          const theme = THEMES[ids[i]];
+          html +=
+            '<button class="themeBtn" type="button" data-theme="' + theme.id + '" style="--accent:' + theme.accent + ";--button-tint:" + theme.buttonTint + ';">' +
+            '<div class="themeBtnHead">' +
+            '<div class="themeName">' + theme.title + "</div>" +
+            '<div class="themeTag">' + theme.tag + "</div>" +
+            "</div>" +
+            '<div class="themeCopy">' + theme.copy + "</div>" +
+            "</button>";
+        }
+        themeButtonsEl.innerHTML = html;
+      }
+
+      function showMenu() {
+        gameStarted = false;
+        ended = false;
+        input.active = false;
+        menuViewEl.classList.remove("hidden");
+        resultViewEl.classList.add("hidden");
+        overlayEl.classList.add("show");
+      }
+
+      function hideOverlay() {
+        overlayEl.classList.remove("show");
+      }
+
+      function makeHole(id, name, color, isPlayer) {
+        return {
+          id,
+          name,
+          color,
+          isPlayer,
+          x: 0,
+          y: 0,
+          vx: 0,
+          vy: 0,
+          targetX: 0,
+          targetY: 0,
+          thinkAt: 0,
+          speedScale: 1,
+          magnetUntil: 0,
+          surgeUntil: 0,
+          mass: BASE_MASS,
+          radius: CONFIG.baseRadius,
+          state: HOLE_ACTIVE,
+          consumeBy: -1,
+          consumeStart: 0,
+          consumeEnd: 0,
+          startX: 0,
+          startY: 0,
+          respawnAt: 0
+        };
+      }
+
+      function resetHole(hole, now, initial) {
+        hole.mass = BASE_MASS;
+        hole.radius = CONFIG.baseRadius;
+        hole.vx = 0;
+        hole.vy = 0;
+        hole.state = HOLE_ACTIVE;
+        hole.consumeBy = -1;
+        hole.consumeStart = 0;
+        hole.consumeEnd = 0;
+        hole.respawnAt = 0;
+        hole.speedScale = 1;
+        hole.magnetUntil = 0;
+        hole.surgeUntil = 0;
+
+        const point = hole.isPlayer && initial
+          ? findSpawnPoint(hole.radius, hole.id, true)
+          : findSpawnPoint(hole.radius, hole.id, false);
+
+        hole.x = point.x;
+        hole.y = point.y;
+        hole.targetX = point.x;
+        hole.targetY = point.y;
+        hole.thinkAt = now + rand(CONFIG.botThinkMin, CONFIG.botThinkMax);
+      }
+
+      function startConsumeHole(predator, victim, now) {
+        if (predator.state !== HOLE_ACTIVE || victim.state !== HOLE_ACTIVE) {
+          return;
+        }
+
+        victim.state = HOLE_CONSUMING;
+        victim.consumeBy = predator.id;
+        victim.consumeStart = now;
+        victim.consumeEnd = now + CONFIG.holeConsumeMs;
+        victim.startX = victim.x;
+        victim.startY = victim.y;
+        victim.vx = 0;
+        victim.vy = 0;
+        const gain = Math.max(BASE_MASS * 0.35, victim.mass * 0.58);
+        addMass(predator, gain);
+        predator.surgeUntil = Math.max(predator.surgeUntil, now + CONFIG.surgeDuration * 0.6);
+        spawnFloatText(victim.x, victim.y, victim.isPlayer ? "PLAYER +" + Math.round(gain) : "RIVAL +" + Math.round(gain), predator.color, 15, 780, now);
+        spawnBurst(victim.x, victim.y, victim.radius * 0.9, predator.color, now);
+      }
+
+      function makeItem(kind) {
+        return {
+          kind,
+          state: ITEM_ACTIVE,
+          x: 0,
+          y: 0,
+          r: 0,
+          w: 0,
+          h: 0,
+          size: 0,
+          gain: 0,
+          zone: 0,
+          axis: 0,
+          dir: 1,
+          variant: 0,
+          speed: 0,
+          color: "#000000",
+          consumeBy: -1,
+          consumeStart: 0,
+          consumeEnd: 0,
+          respawnAt: 0,
+          startX: 0,
+          startY: 0
+        };
+      }
+
+      function placeStaticItem(item, spread) {
+        const gap = item.kind === "building" || item.kind === "landmark"
+          ? item.size * 0.8
+          : item.kind === "magnet"
+            ? 140
+            : 90;
+        for (let attempt = 0; attempt < 34; attempt += 1) {
+          const point = pointFromDistrict(item.zone, spread);
+          if (!isNearActiveHole(point.x, point.y, gap, -1)) {
+            item.x = point.x;
+            item.y = point.y;
+            return;
+          }
+        }
+
+        item.x = rand(CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+        item.y = rand(CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+      }
+
+      function activateItem(item) {
+        item.state = ITEM_ACTIVE;
+        item.consumeBy = -1;
+        item.consumeStart = 0;
+        item.consumeEnd = 0;
+
+        if (item.kind === "person") {
+          item.zone = randInt(0, districts.length - 1);
+          item.r = rand(3, 5);
+          item.w = 0;
+          item.h = 0;
+          item.size = item.r * 2.2;
+          item.gain = activeTheme.cleanup ? 8 : 12;
+          item.color = activeTheme.personColors[randInt(0, activeTheme.personColors.length - 1)];
+          placeStaticItem(item, 125);
+          return;
+        }
+
+        if (item.kind === "prop") {
+          item.zone = randInt(0, districts.length - 1);
+          item.w = rand(12, 20);
+          item.h = rand(10, 18);
+          item.r = 0;
+          item.size = Math.max(item.w, item.h);
+          item.gain = activeTheme.cleanup ? 18 : 28;
+          item.color = activeTheme.propColors[randInt(0, activeTheme.propColors.length - 1)];
+          placeStaticItem(item, 150);
+          return;
+        }
+
+        if (item.kind === "car") {
+          item.axis = Math.random() < 0.5 ? 0 : 1;
+          item.dir = Math.random() < 0.5 ? -1 : 1;
+          item.speed = activeTheme.movingCars ? rand(34, 52) : 0;
+          item.w = rand(26, 34);
+          item.h = rand(14, 18);
+          item.r = 0;
+          item.size = item.w;
+          item.gain = activeTheme.cleanup ? 34 : 66;
+          item.color = activeTheme.carColors[randInt(0, activeTheme.carColors.length - 1)];
+
+          if (activeTheme.movingCars) {
+            if (item.axis === 0) {
+              item.y = roadsY[randInt(0, roadsY.length - 1)];
+              item.x = rand(-120, CONFIG.worldSize + 120);
+            } else {
+              item.x = roadsX[randInt(0, roadsX.length - 1)];
+              item.y = rand(-120, CONFIG.worldSize + 120);
+            }
+          } else {
+            item.zone = randInt(0, districts.length - 1);
+            placeStaticItem(item, 160);
+          }
+
+          item.zone = nearestDistrictIndex(item.x, item.y);
+          return;
+        }
+
+        if (item.kind === "building") {
+          item.zone = randInt(0, districts.length - 1);
+          item.r = 0;
+          item.w = rand(54, 96);
+          item.h = item.w;
+          item.size = item.w;
+          item.gain = activeTheme.cleanup ? 92 : 210;
+          item.color = activeTheme.buildingColors[randInt(0, activeTheme.buildingColors.length - 1)];
+          placeStaticItem(item, 200);
+          return;
+        }
+
+        if (item.kind === "landmark") {
+          item.zone = randInt(0, districts.length - 1);
+          item.variant = randInt(0, 1);
+          item.r = 0;
+          item.w = rand(116, 152);
+          item.h = item.variant === 0 ? rand(126, 176) : rand(108, 144);
+          item.size = Math.max(item.w, item.h);
+          item.gain = activeTheme.cleanup ? 180 : 620;
+          item.color = activeTheme.landmarkColors[randInt(0, activeTheme.landmarkColors.length - 1)];
+          placeStaticItem(item, 240);
+          return;
+        }
+
+        item.zone = randInt(0, districts.length - 1);
+        item.r = 11;
+        item.w = 0;
+        item.h = 0;
+        item.size = 22;
+        item.gain = 20;
+        item.color = activeTheme.magnetColor;
+        placeStaticItem(item, 190);
+      }
+
+      function scheduleItemRespawn(item, now) {
+        if (activeTheme.cleanup && item.kind !== "magnet") {
+          item.state = ITEM_WAITING;
+          item.respawnAt = Infinity;
+          cleanupCleared += 1;
+          return;
+        }
+
+        item.state = ITEM_WAITING;
+        if (item.kind === "magnet") {
+          item.respawnAt = now + rand(CONFIG.magnetRespawnMin, CONFIG.magnetRespawnMax);
+          return;
+        }
+
+        if (item.kind === "landmark") {
+          item.respawnAt = now + rand(CONFIG.landmarkRespawnMin, CONFIG.landmarkRespawnMax);
+          return;
+        }
+
+        item.respawnAt = now + rand(
+          CONFIG.itemRespawnMin + (item.kind === "building" ? 600 : 0),
+          CONFIG.itemRespawnMax + (item.kind === "building" ? 500 : 0)
+        );
+      }
+
+      function startConsumeItem(item, hole, now) {
+        if (item.state !== ITEM_ACTIVE || hole.state !== HOLE_ACTIVE) {
+          return;
+        }
+
+        item.state = ITEM_CONSUMING;
+        item.consumeBy = hole.id;
+        item.consumeStart = now;
+        item.consumeEnd = now + CONFIG.consumeMs;
+        item.startX = item.x;
+        item.startY = item.y;
+
+        if (item.kind === "magnet") {
+          hole.magnetUntil = Math.max(hole.magnetUntil, now + CONFIG.magnetDuration);
+          addMass(hole, item.gain);
+          spawnFloatText(item.x, item.y, "MAGNET", activeTheme.magnetColor, 15, 760, now);
+          spawnBurst(item.x, item.y, 26, activeTheme.magnetColor, now);
+          return;
+        }
+
+        addMass(hole, item.gain);
+
+        if (item.kind === "landmark") {
+          hole.surgeUntil = Math.max(hole.surgeUntil, now + CONFIG.surgeDuration);
+          if (hole.isPlayer) {
+            playerLandmarks += 1;
+          }
+          spawnFloatText(item.x, item.y, "MEGA +" + item.gain, item.color, 18, 900, now);
+          spawnBurst(item.x, item.y, item.size * 0.55, item.color, now);
+          return;
+        }
+
+        if (item.kind === "building") {
+          spawnFloatText(item.x, item.y, "+" + item.gain, item.color, 14, 700, now);
+          spawnBurst(item.x, item.y, item.size * 0.38, item.color, now);
+          return;
+        }
+
+        if (item.kind === "car") {
+          spawnFloatText(item.x, item.y, "+" + item.gain, item.color, 13, 680, now);
+          return;
+        }
+
+        spawnFloatText(item.x, item.y, "+" + item.gain, item.color, 12, 620, now);
+      }
+
+      function clearWorld() {
+        holes.length = 0;
+        items.length = 0;
+        effects.length = 0;
+        districts.length = 0;
+        roadsX.length = 0;
+        roadsY.length = 0;
+        player = null;
+        cleanupTotalTargets = 0;
+        cleanupCleared = 0;
+        playerLandmarks = 0;
+      }
+
+      function buildWorld(now) {
+        clearWorld();
+
+        for (let i = 0; i < CONFIG.districtCount; i += 1) {
+          districts.push({
+            x: rand(260, CONFIG.worldSize - 260),
+            y: rand(260, CONFIG.worldSize - 260),
+            size: rand(80, 150)
+          });
+        }
+
+        for (let i = 1; i <= CONFIG.roadCount; i += 1) {
+          roadsX.push((CONFIG.worldSize * i) / (CONFIG.roadCount + 1) + rand(-85, 85));
+          roadsY.push((CONFIG.worldSize * i) / (CONFIG.roadCount + 1) + rand(-85, 85));
+        }
+
+        player = makeHole(0, activeTheme.playerName, activeTheme.playerColor, true);
+        holes.push(player);
+        resetHole(player, now, true);
+
+        const botCount = Math.min(CONFIG.botLimit, activeTheme.botRoster.length);
+        for (let i = 0; i < botCount; i += 1) {
+          const info = activeTheme.botRoster[i];
+          const bot = makeHole(i + 1, info.name, info.color, false);
+          holes.push(bot);
+          resetHole(bot, now, false);
+        }
+
+        const countConfig = activeTheme.counts;
+        for (let i = 0; i < countConfig.person; i += 1) {
+          items.push(makeItem("person"));
+        }
+        for (let i = 0; i < countConfig.prop; i += 1) {
+          items.push(makeItem("prop"));
+        }
+        for (let i = 0; i < countConfig.car; i += 1) {
+          items.push(makeItem("car"));
+        }
+        for (let i = 0; i < countConfig.building; i += 1) {
+          items.push(makeItem("building"));
+        }
+        for (let i = 0; i < countConfig.landmark; i += 1) {
+          items.push(makeItem("landmark"));
+        }
+        for (let i = 0; i < countConfig.magnet; i += 1) {
+          items.push(makeItem("magnet"));
+        }
+
+        for (let i = 0; i < items.length; i += 1) {
+          const item = items[i];
+          if (item.kind === "magnet") {
+            item.state = ITEM_WAITING;
+            item.respawnAt = now + rand(3500, 6500);
+          } else {
+            activateItem(item);
+          }
+        }
+
+        cleanupTotalTargets = items.length - countConfig.magnet;
+        cleanupCleared = 0;
+        camera.x = player.x;
+        camera.y = player.y;
+        camera.zoom = 1.04;
+        matchStartAt = now;
+        matchEndAt = activeTheme.cleanup ? Infinity : now + activeTheme.matchLength;
+        uiNextAt = 0;
+        input.active = false;
+        ended = false;
+        gameStarted = true;
+        hideOverlay();
+      }
+
+      function resize() {
+        viewportWidth = window.innerWidth;
+        viewportHeight = window.innerHeight;
+        dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+        canvas.width = Math.max(1, Math.round(viewportWidth * dpr));
+        canvas.height = Math.max(1, Math.round(viewportHeight * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function pointerWorldX() {
+        return camera.x + (input.x - viewportWidth * 0.5) / camera.zoom;
+      }
+
+      function pointerWorldY() {
+        return camera.y + (input.y - viewportHeight * 0.5) / camera.zoom;
+      }
+
+      function moveHoleToward(hole, targetX, targetY, dt, speedScale) {
+        const dx = targetX - hole.x;
+        const dy = targetY - hole.y;
+        const lenSq = dx * dx + dy * dy;
+        const drag = Math.max(0, 1 - dt * 8);
+
+        if (lenSq > 4) {
+          const len = Math.sqrt(lenSq);
+          const speed = holeSpeed(hole) * speedScale;
+          const desiredVX = (dx / len) * speed;
+          const desiredVY = (dy / len) * speed;
+          const steer = Math.min(1, dt * 7.4);
+          hole.vx = lerp(hole.vx, desiredVX, steer);
+          hole.vy = lerp(hole.vy, desiredVY, steer);
+        } else {
+          hole.vx *= drag;
+          hole.vy *= drag;
+        }
+
+        hole.x += hole.vx * dt;
+        hole.y += hole.vy * dt;
+        hole.x = clamp(hole.x, CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+        hole.y = clamp(hole.y, CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+      }
+
+      function updatePlayer(dt, now) {
+        if (!player || player.state !== HOLE_ACTIVE) {
+          return;
+        }
+
+        if (input.active) {
+          moveHoleToward(player, pointerWorldX(), pointerWorldY(), dt, player.surgeUntil > now ? 1.16 : 1);
+        } else {
+          player.vx *= Math.max(0, 1 - dt * 7);
+          player.vy *= Math.max(0, 1 - dt * 7);
+          player.x += player.vx * dt;
+          player.y += player.vy * dt;
+          player.x = clamp(player.x, CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+          player.y = clamp(player.y, CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+        }
+      }
+
+      function chooseBotTarget(bot, now) {
+        let threatDx = 0;
+        let threatDy = 0;
+        let threatDist = Infinity;
+        let prey = null;
+        let preyDist = Infinity;
+        let bestItem = null;
+        let bestItemScore = -Infinity;
+        let bestZone = -1;
+        let bestZoneScore = -Infinity;
+
+        for (let i = 0; i < zoneScratch.length; i += 1) {
+          zoneScratch[i] = 0;
+        }
+
+        for (let i = 0; i < holes.length; i += 1) {
+          const other = holes[i];
+          if (other.id === bot.id || other.state !== HOLE_ACTIVE) {
+            continue;
+          }
+
+          const dx = other.x - bot.x;
+          const dy = other.y - bot.y;
+          const distSq = dx * dx + dy * dy;
+
+          if (other.radius > bot.radius * 1.08) {
+            const fleeRange = 360 + other.radius * 2.2;
+            if (distSq < fleeRange * fleeRange && distSq < threatDist) {
+              threatDx = dx;
+              threatDy = dy;
+              threatDist = distSq;
+            }
+          } else if (bot.radius > other.radius * 1.12) {
+            const huntRange = 420 + bot.radius * 1.4;
+            if (distSq < huntRange * huntRange && distSq < preyDist) {
+              prey = other;
+              preyDist = distSq;
+            }
+          }
+        }
+
+        if (threatDist < Infinity) {
+          const len = Math.sqrt(threatDist) || 1;
+          bot.targetX = clamp(bot.x - (threatDx / len) * 340, CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+          bot.targetY = clamp(bot.y - (threatDy / len) * 340, CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+          bot.thinkAt = now + rand(180, 280);
+          return 1.08;
+        }
+
+        if (prey && Math.sqrt(preyDist) < 360) {
+          bot.targetX = prey.x;
+          bot.targetY = prey.y;
+          bot.thinkAt = now + rand(200, 320);
+          return 1.03;
+        }
+
+        for (let i = 0; i < items.length; i += 1) {
+          const item = items[i];
+          if (item.state !== ITEM_ACTIVE || item.size >= bot.radius * 2) {
+            continue;
+          }
+
+          const dx = item.x - bot.x;
+          const dy = item.y - bot.y;
+          const distSq = dx * dx + dy * dy;
+          if (distSq > 920 * 920) {
+            continue;
+          }
+
+          const dist = Math.sqrt(distSq);
+          let itemScore = item.gain * 13 - dist * 0.07;
+          if (item.kind === "building") {
+            itemScore += 14;
+          }
+          if (item.kind === "landmark") {
+            itemScore += 180;
+          }
+          if (item.kind === "magnet") {
+            itemScore += 220;
+          }
+
+          if (itemScore > bestItemScore) {
+            bestItemScore = itemScore;
+            bestItem = item;
+          }
+
+          zoneScratch[item.zone] += item.gain * 7 - dist * 0.03 + (item.kind === "magnet" ? 80 : 0) + (item.kind === "landmark" ? 120 : 0);
+        }
+
+        for (let i = 0; i < districts.length; i += 1) {
+          if (zoneScratch[i] > bestZoneScore) {
+            bestZoneScore = zoneScratch[i];
+            bestZone = i;
+          }
+        }
+
+        if (bestZone >= 0 && bestZoneScore > 50) {
+          const district = districts[bestZone];
+          bot.targetX = clamp(district.x + rand(-70, 70), CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+          bot.targetY = clamp(district.y + rand(-70, 70), CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+          bot.thinkAt = now + rand(CONFIG.botThinkMin, CONFIG.botThinkMax);
+          return 1;
+        }
+
+        if (bestItem) {
+          bot.targetX = bestItem.x;
+          bot.targetY = bestItem.y;
+          bot.thinkAt = now + rand(CONFIG.botThinkMin, CONFIG.botThinkMax);
+          return 1;
+        }
+
+        const district = districts[randInt(0, districts.length - 1)];
+        bot.targetX = district.x + rand(-90, 90);
+        bot.targetY = district.y + rand(-90, 90);
+        bot.thinkAt = now + rand(320, 520);
+        return 0.94;
+      }
+
+      function updateBots(dt, now) {
+        if (activeTheme.cleanup) {
+          return;
+        }
+
+        for (let i = 1; i < holes.length; i += 1) {
+          const bot = holes[i];
+
+          if (bot.state === HOLE_WAITING) {
+            if (!ended && now >= bot.respawnAt) {
+              resetHole(bot, now, false);
+            }
+            continue;
+          }
+
+          if (bot.state === HOLE_CONSUMING) {
+            if (now >= bot.consumeEnd) {
+              bot.state = HOLE_WAITING;
+              bot.respawnAt = now + CONFIG.holeRespawnMs;
+            }
+            continue;
+          }
+
+          let speedScale = bot.speedScale || 1;
+          if (now >= bot.thinkAt) {
+            speedScale = chooseBotTarget(bot, now);
+            bot.speedScale = speedScale;
+          }
+
+          moveHoleToward(bot, bot.targetX, bot.targetY, dt, speedScale * (bot.surgeUntil > now ? 1.12 : 1));
+        }
+      }
+
+      function updatePlayerRespawn(now) {
+        if (!player || activeTheme.cleanup) {
+          return;
+        }
+
+        if (player.state === HOLE_CONSUMING && now >= player.consumeEnd) {
+          player.state = HOLE_WAITING;
+          player.respawnAt = now + CONFIG.holeRespawnMs + 300;
+        }
+
+        if (player.state === HOLE_WAITING && !ended && now >= player.respawnAt) {
+          resetHole(player, now, false);
+        }
+      }
+
+      function updateItems(dt, now) {
+        for (let i = 0; i < items.length; i += 1) {
+          const item = items[i];
+
+          if (item.state === ITEM_WAITING) {
+            if (now >= item.respawnAt) {
+              activateItem(item);
+            }
+            continue;
+          }
+
+          if (item.state === ITEM_CONSUMING) {
+            if (now >= item.consumeEnd) {
+              scheduleItemRespawn(item, now);
+            }
+            continue;
+          }
+
+          if (item.kind === "car" && activeTheme.movingCars) {
+            if (item.axis === 0) {
+              item.x += item.dir * item.speed * dt;
+              if (item.x < -140) {
+                item.x = CONFIG.worldSize + 140;
+              } else if (item.x > CONFIG.worldSize + 140) {
+                item.x = -140;
+              }
+            } else {
+              item.y += item.dir * item.speed * dt;
+              if (item.y < -140) {
+                item.y = CONFIG.worldSize + 140;
+              } else if (item.y > CONFIG.worldSize + 140) {
+                item.y = -140;
+              }
+            }
+          }
+        }
+      }
+
+      function applyMagnetFields(dt, now) {
+        for (let h = 0; h < holes.length; h += 1) {
+          const hole = holes[h];
+          if (hole.state !== HOLE_ACTIVE || hole.magnetUntil <= now) {
+            continue;
+          }
+
+          const range = Math.min(420, 180 + hole.radius * 2.4);
+          const rangeSq = range * range;
+          const maxSize = hole.radius * 2;
+
+          for (let i = 0; i < items.length; i += 1) {
+            const item = items[i];
+            if (item.state !== ITEM_ACTIVE || item.kind === "magnet" || item.size >= maxSize) {
+              continue;
+            }
+
+            const dx = hole.x - item.x;
+            const dy = hole.y - item.y;
+            const distSq = dx * dx + dy * dy;
+            if (distSq > rangeSq || distSq < 4) {
+              continue;
+            }
+
+            const dist = Math.sqrt(distSq);
+            const force = (1 - dist / range) * (90 + hole.radius * 0.85);
+            item.x += (dx / dist) * force * dt;
+            item.y += (dy / dist) * force * dt;
+            if (item.kind === "car" && activeTheme.movingCars) {
+              item.x = clamp(item.x, -140, CONFIG.worldSize + 140);
+              item.y = clamp(item.y, -140, CONFIG.worldSize + 140);
+            } else {
+              item.x = clamp(item.x, CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+              item.y = clamp(item.y, CONFIG.worldMargin, CONFIG.worldSize - CONFIG.worldMargin);
+            }
+          }
+        }
+      }
+
+      function updateSwallowChecks(now) {
+        for (let h = 0; h < holes.length; h += 1) {
+          const hole = holes[h];
+          if (hole.state !== HOLE_ACTIVE) {
+            continue;
+          }
+
+          const holeRadiusSq = hole.radius * hole.radius;
+          const holeDiameter = hole.radius * 2;
+
+          for (let i = 0; i < items.length; i += 1) {
+            const item = items[i];
+            if (item.state !== ITEM_ACTIVE || item.size >= holeDiameter) {
+              continue;
+            }
+
+            if (distanceSq(hole.x, hole.y, item.x, item.y) <= holeRadiusSq) {
+              startConsumeItem(item, hole, now);
+            }
+          }
+        }
+
+        if (activeTheme.cleanup) {
+          return;
+        }
+
+        for (let i = 0; i < holes.length; i += 1) {
+          const holeA = holes[i];
+          if (holeA.state !== HOLE_ACTIVE) {
+            continue;
+          }
+
+          for (let j = i + 1; j < holes.length; j += 1) {
+            const holeB = holes[j];
+            if (holeB.state !== HOLE_ACTIVE) {
+              continue;
+            }
+
+            let predator = holeA;
+            let victim = holeB;
+            if (holeB.radius > holeA.radius) {
+              predator = holeB;
+              victim = holeA;
+            }
+
+            if (victim.radius >= predator.radius * 0.96) {
+              continue;
+            }
+
+            if (distanceSq(predator.x, predator.y, victim.x, victim.y) <= predator.radius * predator.radius) {
+              startConsumeHole(predator, victim, now);
+            }
+          }
+        }
+      }
+
+      function updateCamera(dt) {
+        if (!player) {
+          return;
+        }
+        const targetX = player.x;
+        const targetY = player.y;
+        const targetZoom = clamp(1.16 - (player.radius - CONFIG.baseRadius) * 0.0068, 0.57, 1.05);
+        camera.x = lerp(camera.x, targetX, Math.min(1, dt * 4.8));
+        camera.y = lerp(camera.y, targetY, Math.min(1, dt * 4.8));
+        camera.zoom = lerp(camera.zoom, targetZoom, Math.min(1, dt * 2.8));
+      }
+
+      function getStandings() {
+        const ranking = holes.slice();
+        ranking.sort((a, b) => boardMass(b) - boardMass(a));
+        return ranking;
+      }
+
+      function buildRows(rows) {
+        let html = "";
+        for (let i = 0; i < rows.length; i += 1) {
+          html +=
+            '<div class="row">' +
+            '<div class="rank">' + rows[i].rank + "</div>" +
+            '<div class="name" style="' + (rows[i].style || "") + '">' + rows[i].name + "</div>" +
+            '<div class="value">' + rows[i].value + "</div>" +
+            "</div>";
+        }
+        return html;
+      }
+
+      function countVisibleItems(kind) {
+        let count = 0;
+        for (let i = 0; i < items.length; i += 1) {
+          const item = items[i];
+          if (item.kind === kind && item.state !== ITEM_WAITING) {
+            count += 1;
+          }
+        }
+        return count;
+      }
+
+      function nextLandmarkSize(diameter) {
+        let next = Infinity;
+        let ready = 0;
+        for (let i = 0; i < items.length; i += 1) {
+          const item = items[i];
+          if (item.kind !== "landmark" || item.state !== ITEM_ACTIVE) {
+            continue;
+          }
+          if (item.size < diameter) {
+            ready += 1;
+          } else if (item.size < next) {
+            next = item.size;
+          }
+        }
+        return { next, ready };
+      }
+
+      function currentStageName() {
+        const mass = shownMass(player);
+        if (activeTheme.cleanup) {
+          if (mass < 400) {
+            return "Sweep";
+          }
+          if (mass < 1200) {
+            return "Deep Clean";
+          }
+          if (mass < 2600) {
+            return "Heavy Lift";
+          }
+          return "Zero Waste";
+        }
+
+        if (mass < 300) {
+          return "Street";
+        }
+        if (mass < 900) {
+          return "Local";
+        }
+        if (mass < 2100) {
+          return "District";
+        }
+        if (mass < 4200) {
+          return "Skyline";
+        }
+        return "Monopoly";
+      }
+
+      function currentGoalText() {
+        const stage = currentStageName();
+        if (activeTheme.cleanup) {
+          return "Stage " + stage + " • Clear " + cleanupPercent() + "% • " + countVisibleItems("landmark") + " mega targets";
+        }
+
+        const next = nextLandmarkSize(player.radius * 2);
+        if (next.ready > 0) {
+          return "Stage " + stage + " • " + next.ready + " mega " + activeTheme.words.landmark + " ready";
+        }
+        if (next.next < Infinity) {
+          return "Stage " + stage + " • Next mega " + activeTheme.words.landmark + " " + Math.ceil(next.next);
+        }
+        return "Stage " + stage + " • Captured " + playerLandmarks + " mega " + activeTheme.words.landmark;
+      }
+
+      function currentBattleStatus(now) {
+        if (ended) {
+          return "Match finished";
+        }
+        if (player.state !== HOLE_ACTIVE) {
+          return "Respawning...";
+        }
+        if (player.surgeUntil > now) {
+          return "Skyline rush";
+        }
+        if (player.magnetUntil > now) {
+          return "Magnet online";
+        }
+        if (player.radius < 34) {
+          return "Eat " + activeTheme.words.person + " and " + activeTheme.words.prop;
+        }
+        if (player.radius < 46) {
+          return "Eat " + activeTheme.words.car + " and " + activeTheme.words.prop;
+        }
+        if (player.radius < 60) {
+          return "Eat " + activeTheme.words.building + " and " + activeTheme.words.rival;
+        }
+        return "Hunt the biggest " + activeTheme.words.rival;
+      }
+
+      function currentCleanupStatus(now) {
+        if (ended) {
+          return "Map cleared";
+        }
+        if (player.surgeUntil > now) {
+          return "Turbo vacuum";
+        }
+        if (player.magnetUntil > now) {
+          return "Magnet online";
+        }
+        const percent = cleanupPercent();
+        if (percent < 35) {
+          return "Vacuum " + activeTheme.words.person + " and " + activeTheme.words.prop;
+        }
+        if (percent < 75) {
+          return "Pull in " + activeTheme.words.car + " and " + activeTheme.words.building;
+        }
+        return "Finish the last " + activeTheme.words.building;
+      }
+
+      function updateHud(now) {
+        if (!gameStarted || !player || now < uiNextAt) {
+          return;
+        }
+
+        uiNextAt = now + 120;
+        if (activeTheme.cleanup) {
+          clockEl.textContent = formatElapsed(now - matchStartAt);
+        } else {
+          clockEl.textContent = formatClock(matchEndAt - now);
+        }
+        massEl.textContent = activeTheme.massLabel + " " + shownMass(player);
+        statusEl.textContent = activeTheme.cleanup ? currentCleanupStatus(now) : currentBattleStatus(now);
+        goalEl.textContent = currentGoalText();
+
+        if (activeTheme.cleanup) {
+          const cleared = cleanupConsumedNow();
+          const left = Math.max(0, cleanupTotalTargets - cleared);
+          const rows = [
+            { rank: "%", name: "Cleared", value: cleanupPercent() + "%" },
+            { rank: "#", name: "Left", value: String(left) },
+            { rank: "M", name: "Mega", value: String(countVisibleItems("landmark")) },
+            { rank: "+", name: "Magnet", value: player.magnetUntil > now ? Math.ceil((player.magnetUntil - now) / 1000) + "s" : "Ready" }
+          ];
+          leaderRowsEl.innerHTML = buildRows(rows);
+          return;
+        }
+
+        const ranking = getStandings();
+        const rows = [];
+        for (let i = 0; i < ranking.length; i += 1) {
+          rows.push({
+            rank: "#" + (i + 1),
+            name: ranking[i].name,
+            value: String(shownMass(ranking[i])),
+            style: "color:" + ranking[i].color + ";"
+          });
+        }
+        rows.push({
+          rank: "M",
+          name: "Mega Captured",
+          value: String(playerLandmarks)
+        });
+        leaderRowsEl.innerHTML = buildRows(rows);
+      }
+
+      function endMatch(now) {
+        ended = true;
+        input.active = false;
+        updateHud(now);
+
+        menuViewEl.classList.add("hidden");
+        resultViewEl.classList.remove("hidden");
+        overlayEl.classList.add("show");
+
+        if (activeTheme.cleanup) {
+          resultTitleEl.textContent = "Cleanup Complete";
+          overlayTextEl.textContent =
+            "Map cleared in " + formatElapsed(now - matchStartAt) + " with " + activeTheme.resultUnit.toLowerCase() + " " + shownMass(player) + ".";
+          finalRowsEl.innerHTML = buildRows([
+            { rank: "%", name: "Cleared", value: "100%" },
+            { rank: "@", name: "Time", value: formatElapsed(now - matchStartAt) },
+            { rank: "M", name: "Mega Cleared", value: String(playerLandmarks) },
+            { rank: "+", name: activeTheme.resultUnit, value: String(shownMass(player)) }
+          ]);
+          return;
+        }
+
+        const ranking = getStandings();
+        let playerRank = 1;
+        for (let i = 0; i < ranking.length; i += 1) {
+          if (ranking[i].id === player.id) {
+            playerRank = i + 1;
+            break;
+          }
+        }
+
+        resultTitleEl.textContent = activeTheme.resultTitle;
+        overlayTextEl.textContent =
+          "Final rank #" + playerRank + " with " + activeTheme.resultUnit.toLowerCase() + " " + shownMass(player) + ".";
+
+        const rows = [];
+        for (let i = 0; i < ranking.length; i += 1) {
+          rows.push({
+            rank: "#" + (i + 1),
+            name: ranking[i].name,
+            value: String(shownMass(ranking[i])),
+            style: "color:" + ranking[i].color + ";"
+          });
+        }
+        rows.push({ rank: "M", name: "Mega Captured", value: String(playerLandmarks) });
+        finalRowsEl.innerHTML = buildRows(rows);
+      }
+
+      function worldBounds() {
+        const halfWidth = viewportWidth * 0.5 / camera.zoom;
+        const halfHeight = viewportHeight * 0.5 / camera.zoom;
+        return {
+          left: camera.x - halfWidth - 120,
+          right: camera.x + halfWidth + 120,
+          top: camera.y - halfHeight - 120,
+          bottom: camera.y + halfHeight + 120
+        };
+      }
+
+      function onScreen(x, y, size, bounds) {
+        return !(x + size < bounds.left || x - size > bounds.right || y + size < bounds.top || y - size > bounds.bottom);
+      }
+
+      function drawGround(bounds) {
+        ctx.fillStyle = activeTheme.ground;
+        ctx.fillRect(0, 0, CONFIG.worldSize, CONFIG.worldSize);
+
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = activeTheme.waterColor;
+        ctx.fillRect(CONFIG.worldSize * 0.71 - 70, 0, 140, CONFIG.worldSize);
+        ctx.fillRect(0, CONFIG.worldSize * 0.33 - 46, CONFIG.worldSize, 92);
+
+        ctx.fillStyle = activeTheme.parkColor;
+        for (let i = 0; i < districts.length; i += 2) {
+          const district = districts[i];
+          const parkSize = district.size * 0.42;
+          const parkX = district.x + (i % 4 === 0 ? district.size * 0.7 : -district.size * 0.7);
+          const parkY = district.y + (i % 3 === 0 ? -district.size * 0.7 : district.size * 0.7);
+          if (!onScreen(parkX, parkY, parkSize + 20, bounds)) {
+            continue;
+          }
+          ctx.beginPath();
+          ctx.arc(parkX, parkY, parkSize, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        for (let i = 0; i < districts.length; i += 1) {
+          const district = districts[i];
+          const size = district.size;
+          if (!onScreen(district.x, district.y, size + 40, bounds)) {
+            continue;
+          }
+
+          ctx.fillStyle = activeTheme.zoneColors[i % activeTheme.zoneColors.length];
+          if (activeTheme.zoneShape === "square") {
+            ctx.fillRect(district.x - size, district.y - size, size * 2, size * 2);
+            ctx.strokeStyle = activeTheme.zoneStroke;
+            ctx.lineWidth = 3;
+            ctx.strokeRect(district.x - size, district.y - size, size * 2, size * 2);
+          } else {
+            ctx.beginPath();
+            ctx.arc(district.x, district.y, size, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = activeTheme.zoneStroke;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+          }
+
+          const blockCount = 4 + (i % 2);
+          for (let block = 0; block < blockCount; block += 1) {
+            const angle = ((i * 1.37) + block * 1.22) % (Math.PI * 2);
+            const offset = size * (0.42 + block * 0.12);
+            const blockX = district.x + Math.cos(angle) * offset;
+            const blockY = district.y + Math.sin(angle) * offset;
+            const blockW = 24 + ((i + block * 7) % 22);
+            const blockH = 18 + ((i * 3 + block * 5) % 16);
+            if (!onScreen(blockX, blockY, Math.max(blockW, blockH) + 10, bounds)) {
+              continue;
+            }
+            ctx.fillStyle = activeTheme.buildingColors[(i + block) % activeTheme.buildingColors.length];
+            ctx.globalAlpha = 0.24;
+            ctx.fillRect(blockX - blockW * 0.5, blockY - blockH * 0.5, blockW, blockH);
+            ctx.globalAlpha = 1;
+          }
+        }
+
+        ctx.fillStyle = activeTheme.road;
+        for (let i = 0; i < roadsX.length; i += 1) {
+          const x = roadsX[i];
+          if (x + 28 >= bounds.left && x - 28 <= bounds.right) {
+            ctx.fillRect(x - 22, bounds.top, 44, bounds.bottom - bounds.top);
+          }
+        }
+        for (let i = 0; i < roadsY.length; i += 1) {
+          const y = roadsY[i];
+          if (y + 28 >= bounds.top && y - 28 <= bounds.bottom) {
+            ctx.fillRect(bounds.left, y - 22, bounds.right - bounds.left, 44);
+          }
+        }
+
+        ctx.strokeStyle = activeTheme.roadStripe;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([22, 20]);
+        ctx.beginPath();
+        for (let i = 0; i < roadsX.length; i += 1) {
+          const x = roadsX[i];
+          if (x + 24 >= bounds.left && x - 24 <= bounds.right) {
+            ctx.moveTo(x, bounds.top);
+            ctx.lineTo(x, bounds.bottom);
+          }
+        }
+        for (let i = 0; i < roadsY.length; i += 1) {
+          const y = roadsY[i];
+          if (y + 24 >= bounds.top && y - 24 <= bounds.bottom) {
+            ctx.moveTo(bounds.left, y);
+            ctx.lineTo(bounds.right, y);
+          }
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.strokeStyle = activeTheme.grid;
+        ctx.lineWidth = 2;
+        const step = 120;
+        const startX = Math.floor(bounds.left / step) * step;
+        const endX = Math.ceil(bounds.right / step) * step;
+        const startY = Math.floor(bounds.top / step) * step;
+        const endY = Math.ceil(bounds.bottom / step) * step;
+
+        ctx.beginPath();
+        for (let x = startX; x <= endX; x += step) {
+          ctx.moveTo(x, bounds.top);
+          ctx.lineTo(x, bounds.bottom);
+        }
+        for (let y = startY; y <= endY; y += step) {
+          ctx.moveTo(bounds.left, y);
+          ctx.lineTo(bounds.right, y);
+        }
+        ctx.stroke();
+
+        ctx.strokeStyle = activeTheme.border;
+        ctx.lineWidth = 12;
+        ctx.strokeRect(0, 0, CONFIG.worldSize, CONFIG.worldSize);
+      }
+
+      function drawRectObject(x, y, w, h, fill, alpha) {
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
+        ctx.fillRect(x - w * 0.5 + 4, y - h * 0.5 + 5, w, h);
+        ctx.fillStyle = fill;
+        ctx.fillRect(x - w * 0.5, y - h * 0.5, w, h);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+        ctx.fillRect(x - w * 0.5 + 3, y - h * 0.5 + 3, w - 6, Math.max(4, h * 0.18));
+        ctx.globalAlpha = 1;
+      }
+
+      function drawLandmarkObject(item, x, y, scale, alpha) {
+        const w = item.w * scale;
+        const h = item.h * scale;
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.16)";
+        ctx.fillRect(x - w * 0.5 + 8, y - h * 0.5 + 10, w, h);
+        ctx.fillStyle = item.color;
+        ctx.fillRect(x - w * 0.5, y - h * 0.5, w, h);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.18)";
+        ctx.fillRect(x - w * 0.5 + 7, y - h * 0.5 + 8, w - 14, Math.max(10, h * 0.16));
+        ctx.fillStyle = "rgba(14, 22, 28, 0.22)";
+
+        if (item.variant === 0) {
+          const cols = 3;
+          const rows = 4;
+          const padX = w * 0.14;
+          const padY = h * 0.22;
+          const cellW = (w - padX * 2) / cols;
+          const cellH = (h - padY * 2) / rows;
+          for (let row = 0; row < rows; row += 1) {
+            for (let col = 0; col < cols; col += 1) {
+              ctx.fillRect(
+                x - w * 0.5 + padX + col * cellW + cellW * 0.16,
+                y - h * 0.5 + padY + row * cellH + cellH * 0.16,
+                cellW * 0.46,
+                cellH * 0.42
+              );
+            }
+          }
+        } else {
+          ctx.beginPath();
+          ctx.arc(x, y + h * 0.08, Math.min(w, h) * 0.24, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillRect(x - w * 0.28, y - h * 0.06, w * 0.56, h * 0.14);
+        }
+
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.42)";
+        ctx.lineWidth = Math.max(3, w * 0.03);
+        ctx.strokeRect(x - w * 0.5, y - h * 0.5, w, h);
+        ctx.globalAlpha = 1;
+      }
+
+      function drawMagnetItem(x, y, size, alpha) {
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
+        ctx.beginPath();
+        ctx.arc(x + 2, y + 3, size * 0.62, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = activeTheme.magnetColor;
+        ctx.beginPath();
+        ctx.arc(x, y, size * 0.58, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.lineWidth = Math.max(2, size * 0.14);
+        ctx.strokeStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(x, y, size * 0.33, Math.PI * 0.18, Math.PI * 0.82);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(x - size * 0.18, y - size * 0.05);
+        ctx.lineTo(x - size * 0.18, y + size * 0.3);
+        ctx.moveTo(x + size * 0.18, y - size * 0.05);
+        ctx.lineTo(x + size * 0.18, y + size * 0.3);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      function drawItems(now, bounds) {
+        for (let i = 0; i < items.length; i += 1) {
+          const item = items[i];
+          if (item.state === ITEM_WAITING) {
+            continue;
+          }
+
+          let x = item.x;
+          let y = item.y;
+          let scale = 1;
+          let alpha = 1;
+
+          if (item.state === ITEM_CONSUMING) {
+            const eater = holes[item.consumeBy];
+            const progress = clamp((now - item.consumeStart) / (item.consumeEnd - item.consumeStart), 0, 1);
+            x = lerp(item.startX, eater ? eater.x : item.startX, progress * 0.72);
+            y = lerp(item.startY, eater ? eater.y : item.startY, progress * 0.72);
+            scale = 1 - progress * progress;
+            alpha = 1 - progress;
+          }
+
+          const size = (item.size || item.r * 2) * scale;
+          if (!onScreen(x, y, size + 20, bounds)) {
+            continue;
+          }
+
+          if (item.kind === "person") {
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = item.color;
+            ctx.beginPath();
+            ctx.arc(x, y, item.r * scale, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            continue;
+          }
+
+          if (item.kind === "prop") {
+            drawRectObject(x, y, item.w * scale, item.h * scale, item.color, alpha);
+            continue;
+          }
+
+          if (item.kind === "car") {
+            const width = (item.axis === 0 ? item.w : item.h) * scale;
+            const height = (item.axis === 0 ? item.h : item.w) * scale;
+            drawRectObject(x, y, width, height, item.color, alpha);
+            continue;
+          }
+
+          if (item.kind === "building") {
+            drawRectObject(x, y, item.w * scale, item.h * scale, item.color, alpha);
+            continue;
+          }
+
+          if (item.kind === "landmark") {
+            drawLandmarkObject(item, x, y, scale, alpha);
+            continue;
+          }
+
+          drawMagnetItem(x, y, Math.max(8, size * 0.75), alpha);
+        }
+      }
+
+      function drawEffects(now, bounds) {
+        for (let i = 0; i < effects.length; i += 1) {
+          const effect = effects[i];
+          const progress = clamp((now - effect.start) / (effect.end - effect.start), 0, 1);
+          if (effect.kind === "burst") {
+            const radius = effect.radius * (0.55 + progress * 0.9);
+            if (!onScreen(effect.x, effect.y, radius + 10, bounds)) {
+              continue;
+            }
+            ctx.globalAlpha = 0.34 * (1 - progress);
+            ctx.strokeStyle = effect.color;
+            ctx.lineWidth = Math.max(2, effect.radius * 0.08);
+            ctx.beginPath();
+            ctx.arc(effect.x, effect.y, radius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+            continue;
+          }
+
+          const y = effect.y - progress * 36;
+          if (!onScreen(effect.x, y, 70, bounds)) {
+            continue;
+          }
+          ctx.globalAlpha = 1 - progress;
+          ctx.fillStyle = effect.color;
+          ctx.font = "900 " + effect.size + "px system-ui, sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(effect.text, effect.x, y);
+          ctx.globalAlpha = 1;
+        }
+      }
+
+      function drawHole(hole, now, bounds) {
+        if (hole.state === HOLE_WAITING) {
+          return;
+        }
+
+        let x = hole.x;
+        let y = hole.y;
+        let radius = hole.radius;
+        let alpha = 1;
+
+        if (hole.state === HOLE_CONSUMING) {
+          const eater = holes[hole.consumeBy];
+          const progress = clamp((now - hole.consumeStart) / (hole.consumeEnd - hole.consumeStart), 0, 1);
+          x = lerp(hole.startX, eater ? eater.x : hole.startX, progress * 0.78);
+          y = lerp(hole.startY, eater ? eater.y : hole.startY, progress * 0.78);
+          radius = hole.radius * (1 - progress * progress);
+          alpha = 1 - progress;
+        }
+
+        if (radius <= 0.5 || !onScreen(x, y, radius + 34, bounds)) {
+          return;
+        }
+
+        ctx.globalAlpha = alpha;
+        if (hole.magnetUntil > now) {
+          const pulse = 1 + Math.sin(now * 0.014 + hole.id) * 0.06;
+          ctx.lineWidth = Math.max(3, radius * 0.08);
+          ctx.strokeStyle = activeTheme.magnetColor;
+          ctx.beginPath();
+          ctx.arc(x, y, radius * 1.34 * pulse, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        if (hole.surgeUntil > now) {
+          const pulse = 1 + Math.sin(now * 0.02 + hole.id * 2) * 0.08;
+          ctx.lineWidth = Math.max(3, radius * 0.1);
+          ctx.strokeStyle = activeTheme.accent;
+          ctx.beginPath();
+          ctx.arc(x, y, radius * 1.18 * pulse, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        ctx.lineWidth = Math.max(4, radius * 0.14);
+        ctx.strokeStyle = hole.color;
+        ctx.beginPath();
+        ctx.arc(x, y, radius + ctx.lineWidth * 0.25, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = "#050505";
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.lineWidth = Math.max(1.5, radius * 0.05);
+        ctx.strokeStyle = "rgba(255,255,255,0.08)";
+        ctx.beginPath();
+        ctx.arc(x, y, radius * 0.82, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.font = "600 12px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "bottom";
+        ctx.fillStyle = "rgba(12, 14, 18, 0.82)";
+        ctx.fillText(hole.name, x, y - radius - 12);
+        ctx.globalAlpha = 1;
+      }
+
+      function drawTouchMarker() {
+        if (!input.active || ended || !gameStarted) {
+          return;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = 0.65;
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
+        ctx.beginPath();
+        ctx.arc(input.x, input.y, 18, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(input.x, input.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function renderMenuBackground() {
+        ctx.fillStyle = activeTheme.ground;
+        ctx.fillRect(0, 0, viewportWidth, viewportHeight);
+
+        ctx.fillStyle = activeTheme.zoneColors[0];
+        ctx.beginPath();
+        ctx.arc(viewportWidth * 0.18, viewportHeight * 0.28, Math.min(viewportWidth, viewportHeight) * 0.24, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = activeTheme.zoneColors[1];
+        ctx.beginPath();
+        ctx.arc(viewportWidth * 0.78, viewportHeight * 0.2, Math.min(viewportWidth, viewportHeight) * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = activeTheme.zoneColors[2];
+        ctx.beginPath();
+        ctx.arc(viewportWidth * 0.7, viewportHeight * 0.82, Math.min(viewportWidth, viewportHeight) * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = activeTheme.grid;
+        ctx.lineWidth = 2;
+
+        const step = 90;
+        ctx.beginPath();
+        for (let x = 0; x <= viewportWidth; x += step) {
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, viewportHeight);
+        }
+        for (let y = 0; y <= viewportHeight; y += step) {
+          ctx.moveTo(0, y);
+          ctx.lineTo(viewportWidth, y);
+        }
+        ctx.stroke();
+      }
+
+      function render(now) {
+        ctx.clearRect(0, 0, viewportWidth, viewportHeight);
+
+        if (!gameStarted || !player) {
+          renderMenuBackground();
+          drawTouchMarker();
+          return;
+        }
+
+        ctx.fillStyle = activeTheme.ground;
+        ctx.fillRect(0, 0, viewportWidth, viewportHeight);
+
+        ctx.save();
+        ctx.translate(viewportWidth * 0.5, viewportHeight * 0.5);
+        ctx.scale(camera.zoom, camera.zoom);
+        ctx.translate(-camera.x, -camera.y);
+
+        const bounds = worldBounds();
+        drawGround(bounds);
+        drawItems(now, bounds);
+        drawEffects(now, bounds);
+
+        for (let i = 0; i < holes.length; i += 1) {
+          drawHole(holes[i], now, bounds);
+        }
+
+        ctx.restore();
+        drawTouchMarker();
+      }
+
+      function update(now) {
+        if (!lastFrame) {
+          lastFrame = now;
+        }
+
+        const dt = Math.min(0.033, (now - lastFrame) / 1000);
+        lastFrame = now;
+
+        if (gameStarted && !ended) {
+          updatePlayer(dt, now);
+          updateBots(dt, now);
+          updatePlayerRespawn(now);
+          updateItems(dt, now);
+          applyMagnetFields(dt, now);
+          updateSwallowChecks(now);
+          updateCamera(dt);
+          updateEffects(now);
+          updateHud(now);
+
+          if (activeTheme.cleanup) {
+            if (cleanupConsumedNow() >= cleanupTotalTargets) {
+              endMatch(now);
+            }
+          } else if (now >= matchEndAt) {
+            endMatch(now);
+          }
+        } else {
+          updateEffects(now);
+        }
+
+        render(now);
+        requestAnimationFrame(update);
+      }
+
+      function onPointerDown(event) {
+        if (!gameStarted || ended || overlayEl.classList.contains("show")) {
+          return;
+        }
+
+        event.preventDefault();
+        input.active = true;
+        input.pointerId = event.pointerId;
+        input.x = event.clientX;
+        input.y = event.clientY;
+        canvas.setPointerCapture(event.pointerId);
+      }
+
+      function onPointerMove(event) {
+        if (!input.active || input.pointerId !== event.pointerId) {
+          return;
+        }
+
+        event.preventDefault();
+        input.x = event.clientX;
+        input.y = event.clientY;
+      }
+
+      function onPointerUp(event) {
+        if (input.pointerId !== event.pointerId) {
+          return;
+        }
+
+        input.active = false;
+        input.pointerId = -1;
+      }
+
+      function startTheme(themeId) {
+        applyTheme(THEMES[themeId]);
+        const now = performance.now();
+        lastFrame = now;
+        buildWorld(now);
+        updateHud(now);
+      }
+
+      function restartGame() {
+        startTheme(activeTheme.id);
+      }
+
+      themeButtonsEl.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-theme]");
+        if (!button) {
+          return;
+        }
+        startTheme(button.getAttribute("data-theme"));
+      });
+
+      restartBtn.addEventListener("click", restartGame);
+      menuBtn.addEventListener("click", () => {
+        applyTheme(activeTheme);
+        showMenu();
+      });
+
+      window.addEventListener("resize", resize);
+      canvas.addEventListener("pointerdown", onPointerDown, { passive: false });
+      canvas.addEventListener("pointermove", onPointerMove, { passive: false });
+      canvas.addEventListener("pointerup", onPointerUp, { passive: false });
+      canvas.addEventListener("pointercancel", onPointerUp, { passive: false });
+      window.addEventListener("pointerup", onPointerUp, { passive: false });
+      window.addEventListener("pointercancel", onPointerUp, { passive: false });
+
+      buildThemeButtons();
+      applyTheme(activeTheme);
+      resize();
+      startTheme("corp");
+      requestAnimationFrame(update);
+    })();
+  </script>
+</body>
+</html>

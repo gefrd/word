@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>3D Pro Bowling</title>
+    <style>
+        :root {
+            --bg-color: #0a0a1a;
+            --accent: #00ffcc;
+            --neon-glow: 0 0 10px #00ffcc, 0 0 20px #00ffcc;
+            --score-bg: rgba(0, 20, 40, 0.8);
+            --safe-top: env(safe-area-inset-top, 10px);
+            --safe-bottom: env(safe-area-inset-bottom, 10px);
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+            overflow: hidden;
+            color: white;
+        }
+
+        #gameCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* Screens */
+        .screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(10, 10, 26, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            pointer-events: auto;
+            transition: opacity 0.5s;
+        }
+        .hidden { opacity: 0; pointer-events: none; display: none !important; }
+
+        h1 {
+            font-size: 3rem;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: var(--neon-glow);
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .btn {
+            background: transparent;
+            border: 2px solid var(--accent);
+            color: var(--accent);
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            border-radius: 30px;
+            box-shadow: 0 0 10px rgba(0,255,204,0.3), inset 0 0 10px rgba(0,255,204,0.1);
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin: 10px;
+            transition: all 0.2s;
+            pointer-events: auto;
+        }
+        .btn:active {
+            background: var(--accent);
+            color: #000;
+            box-shadow: 0 0 20px var(--accent);
+        }
+
+        /* Scorecard */
+        #scorecard {
+            background: var(--score-bg);
+            border-bottom: 2px solid var(--accent);
+            padding: calc(var(--safe-top) + 5px) 5px 5px 5px;
+            display: flex;
+            justify-content: space-between;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+        }
+
+        .frame {
+            flex: 1;
+            border: 1px solid rgba(0, 255, 204, 0.3);
+            margin: 0 2px;
+            display: flex;
+            flex-direction: column;
+            border-radius: 4px;
+            background: rgba(0,0,0,0.4);
+        }
+
+        .frame.active {
+            border-color: var(--accent);
+            box-shadow: inset 0 0 8px rgba(0, 255, 204, 0.5);
+            background: rgba(0, 50, 40, 0.4);
+        }
+
+        .frame-num {
+            font-size: 0.6rem;
+            text-align: center;
+            border-bottom: 1px solid rgba(0, 255, 204, 0.3);
+            color: #aaa;
+            padding: 2px 0;
+        }
+
+        .rolls {
+            display: flex;
+            height: 20px;
+        }
+
+        .roll {
+            flex: 1;
+            border-left: 1px solid rgba(0, 255, 204, 0.3);
+            text-align: center;
+            font-size: 0.8rem;
+            font-weight: bold;
+            line-height: 20px;
+        }
+        .roll:first-child { border-left: none; }
+
+        .frame-score {
+            text-align: center;
+            font-size: 0.9rem;
+            font-weight: bold;
+            padding: 2px 0;
+            color: var(--accent);
+        }
+
+        /* 10th frame special */
+        .frame:last-child .rolls { flex: 3; }
+
+        /* Celebrations */
+        #celebration {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            font-size: 4rem;
+            font-weight: 900;
+            color: #fff;
+            text-shadow: 0 0 20px #ff00ff, 0 0 40px #ff00ff;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 50;
+            text-align: center;
+        }
+        #celebration.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .instructions {
+            text-align: center;
+            color: #ccc;
+            font-size: 1rem;
+            max-width: 80%;
+            margin-bottom: 2rem;
+            line-height: 1.5;
+        }
+        
+        #controls-hint {
+            position: absolute;
+            bottom: calc(var(--safe-bottom) + 20px);
+            width: 100%;
+            text-align: center;
+            color: rgba(255,255,255,0.5);
+            font-size: 0.9rem;
+            pointer-events: none;
+        }
+        
+        .color-picker {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .color-option {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            border: 2px solid #333;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+        .color-option.selected { border-color: white; box-shadow: 0 0 10px white; }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="ui-layer">
+        <div id="scorecard" class="hidden">
+            <!-- JS will populate frames -->
+        </div>
+        <div id="controls-hint" class="hidden">Drag to position &bull; Swipe up to throw</div>
+    </div>
+
+    <div id="celebration">STRIKE!</div>
+
+    <!-- Start Screen -->
+    <div id="startScreen" class="screen">
+        <h1>Neon Bowl 3D</h1>
+        <div class="instructions">
+            Drag horizontally to position ball.<br>
+            Swipe UP to throw. Curve your swipe to add spin.<br>
+            Score a Perfect 300!
+        </div>
+        <div style="margin-bottom: 10px; color: #aaa;">Select Ball:</div>
+        <div class="color-picker">
+            <div class="color-option selected" style="background: radial-gradient(circle at 30% 30%, #ff5555, #880000);" data-color="#cc0000"></div>
+            <div class="color-option" style="background: radial-gradient(circle at 30% 30%, #5555ff, #000088);" data-color="#0000cc"></div>
+            <div class="color-option" style="background: radial-gradient(circle at 30% 30%, #55ff55, #008800);" data-color="#00cc00"></div>
+            <div class="color-option" style="background: radial-gradient(circle at 30% 30%, #ffff55, #888800);" data-color="#cccc00"></div>
+            <div class="color-option" style="background: radial-gradient(circle at 30% 30%, #ff55ff, #880088);" data-color="#cc00cc"></div>
+        </div>
+        <button class="btn" id="btnPlay">Play Game</button>
+        <button class="btn" id="btnPractice" style="font-size: 1rem; padding: 10px 20px;">Practice Mode</button>
+        <div style="margin-top: 20px; color: #888;">High Score: <span id="highScoreDisp">0</span></div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="screen hidden">
+        <h1>Game Over</h1>
+        <h2 style="font-size: 4rem; color: #fff; margin-bottom: 10px;" id="finalScore">0</h2>
+        <div style="margin-bottom: 2rem; color: #aaa;">High Score: <span id="goHighScore">0</span></div>
+        <button class="btn" id="btnRestart">Play Again</button>
+        <button class="btn" id="btnMenu" style="font-size: 1rem; padding: 10px 20px;">Menu</button>
+    </div>
+
+<script>
+    // System setup
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Audio Context (initialized on first interaction)
+    let audioCtx;
+    const sounds = {};
+
+    function initAudio() {
+        if(audioCtx) return;
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Simple synthetic sounds
+        sounds.roll = createNoiseBuffer(2.0, 'brown'); // Rumble
+        sounds.hit = createNoiseBuffer(0.5, 'white');  // Crash
+        sounds.gutter = createNoiseBuffer(1.0, 'pink');
+    }
+
+    function createNoiseBuffer(duration, type) {
+        if(!audioCtx) return null;
+        const bufferSize = audioCtx.sampleRate * duration;
+        const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = buffer.getChannelData(0);
+        let lastOut = 0;
+        for (let i = 0; i < bufferSize; i++) {
+            const white = Math.random() * 2 - 1;
+            if (type === 'white') data[i] = white;
+            else if (type === 'pink') {
+                lastOut = (lastOut * 0.99) + (white * 0.05);
+                data[i] = lastOut;
+            } else if (type === 'brown') {
+                lastOut = (lastOut * 0.999) + (white * 0.02);
+                data[i] = lastOut;
+            }
+        }
+        return buffer;
+    }
+
+    function playSound(buffer, vol=1, loop=false) {
+        if(!audioCtx || !buffer) return null;
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.loop = loop;
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = vol;
+        source.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        source.start();
+        return { source, gainNode };
+    }
+
+    // --- GAME ENGINE ---
+    // 3D parameters
+    const FOV = 400;
+    const CAM_Y = 15;
+    const CAM_Z = -20; // Player stands slightly behind foul line (0)
+    
+    // Lane dimensions
+    const LANE_LENGTH = 120;
+    const LANE_WIDTH = 22; // -11 to +11
+    const GUTTER_WIDTH = 2.5;
+    const PIN_DECK = 100;
+    
+    // Game entities
+    const BALL_RADIUS = 1.2;
+    const PIN_RADIUS = 0.6;
+    const PIN_HEIGHT = 4.0;
+    const PIN_MASS = 1.5;
+    const BALL_MASS = 14;
+
+    let ballColor = '#cc0000';
+    
+    class Ball {
+        constructor() {
+            this.reset();
+        }
+        reset() {
+            this.x = 0;
+            this.y = BALL_RADIUS;
+            this.z = 0;
+            this.vx = 0;
+            this.vy = 0;
+            this.vz = 0;
+            this.spin = 0; // Angular velocity affecting curve
+            this.state = 'idle'; // idle, moving, gutter, dead
+            this.rollSound = null;
+        }
+        update(dt) {
+            if (this.state === 'moving' || this.state === 'gutter') {
+                this.x += this.vx * dt;
+                this.y += this.vy * dt;
+                this.z += this.vz * dt;
+                
+                // Spin effect (hook/curve) - late hook oil pattern simulation
+                if (this.state === 'moving') {
+                    // Oil until z=70, then dry lane (more friction/curve)
+                    let curveFactor = this.z > 70 ? 0.08 : 0.01;
+                    this.vx += this.spin * curveFactor * dt * this.vz; 
+                }
+
+                // Gutter detection
+                if (this.state !== 'gutter' && (this.x < -LANE_WIDTH/2 + GUTTER_WIDTH/2 || this.x > LANE_WIDTH/2 - GUTTER_WIDTH/2)) {
+                    this.state = 'gutter';
+                    this.y = -0.5; // drop into gutter
+                    this.vx = 0;
+                    this.spin = 0;
+                    if(this.rollSound) {
+                        this.rollSound.source.stop();
+                        this.rollSound = null;
+                        playSound(sounds.gutter, 0.3);
+                        if(navigator.vibrate) navigator.vibrate(100);
+                    }
+                }
+
+                if (this.z > LANE_LENGTH + 20) {
+                    this.state = 'dead';
+                    if(this.rollSound) {
+                        this.rollSound.source.stop();
+                        this.rollSound = null;
+                    }
+                    onBallFinish();
+                }
+            }
+        }
+    }
+
+    class Pin {
+        constructor(id, x, z) {
+            this.id = id;
+            this.startX = x;
+            this.startZ = z;
+            this.reset();
+        }
+        reset() {
+            this.x = this.startX;
+            this.y = 0;
+            this.z = this.startZ;
+            this.vx = 0;
+            this.vy = 0;
+            this.vz = 0;
+            this.angleX = 0;
+            this.angleZ = 0;
+            this.state = 'standing'; // standing, falling, dead
+            this.active = true;
+        }
+        update(dt) {
+            if (!this.active) return;
+            
+            if (this.state === 'falling') {
+                this.x += this.vx * dt;
+                this.z += this.vz * dt;
+                
+                // Simple tumble
+                this.angleX += this.vz * 0.5 * dt;
+                this.angleZ -= this.vx * 0.5 * dt;
+
+                // Friction
+                this.vx *= 0.95;
+                this.vz *= 0.95;
+
+                // Fall over limit
+                if (Math.abs(this.angleX) > Math.PI/2 || Math.abs(this.angleZ) > Math.PI/2) {
+                    this.angleX = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.angleX));
+                    this.angleZ = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.angleZ));
+                }
+
+                // Off lane
+                if (this.z > LANE_LENGTH + 5 || this.x < -12 || this.x > 12) {
+                    this.active = false; 
+                }
+            }
+        }
+    }
+
+    let ball = new Ball();
+    let pins = [];
+    let particles = [];
+
+    // Init pins (triangle formation)
+    const pinSpacing = 2.5;
+    let pinId = 0;
+    for(let row=0; row<4; row++) {
+        for(let col=0; col<=row; col++) {
+            let x = (col - row/2) * pinSpacing;
+            let z = PIN_DECK + row * (pinSpacing * 0.866);
+            pins.push(new Pin(pinId++, x, z));
+        }
+    }
+
+    // --- GAME STATE ---
+    let gameState = 'MENU'; // MENU, PLAYING, RESULT, GAMEOVER
+    let mode = 'NORMAL';
+    let currentFrame = 1;
+    let currentRoll = 1;
+    let frameScores = Array(10).fill().map(() => ({ rolls: [], score: null }));
+    let runningScore = 0;
+    
+    // --- INPUT HANDLING ---
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let ballStartX = 0;
+    let swipeHistory = [];
+    let touchId = null;
+
+    canvas.addEventListener('pointerdown', e => {
+        if (gameState !== 'PLAYING' || ball.state !== 'idle') return;
+        initAudio();
+        isDragging = true;
+        touchId = e.pointerId;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        ballStartX = ball.x;
+        swipeHistory = [{x: e.clientX, y: e.clientY, time: performance.now()}];
+    });
+
+    canvas.addEventListener('pointermove', e => {
+        if (!isDragging || e.pointerId !== touchId) return;
+        
+        swipeHistory.push({x: e.clientX, y: e.clientY, time: performance.now()});
+        if(swipeHistory.length > 10) swipeHistory.shift();
+
+        // Move ball horizontally if dragging mostly sideways and hasn't moved much vertically yet
+        let dy = dragStartY - e.clientY;
+        if (dy < 50) {
+            let dx = e.clientX - dragStartX;
+            // Map screen pixels to lane width
+            let laneDx = (dx / width) * LANE_WIDTH * 1.5;
+            ball.x = Math.max(-LANE_WIDTH/2 + GUTTER_WIDTH + BALL_RADIUS, Math.min(LANE_WIDTH/2 - GUTTER_WIDTH - BALL_RADIUS, ballStartX + laneDx));
+        }
+    });
+
+    canvas.addEventListener('pointerup', e => {
+        if (!isDragging || e.pointerId !== touchId) return;
+        isDragging = false;
+        touchId = null;
+
+        // Calculate swipe
+        if (swipeHistory.length > 2) {
+            let first = swipeHistory[0];
+            let last = swipeHistory[swipeHistory.length-1];
+            let dt = (last.time - first.time) / 1000;
+            if (dt > 0) {
+                let dx = last.x - first.x;
+                let dy = first.y - last.y; // positive is UP
+
+                if (dy > 100 && dy / dt > 300) { // Fast enough swipe up
+                    throwBall(dx, dy, dt);
+                }
+            }
+        }
+    });
+
+    function throwBall(dx, dy, dt) {
+        ball.state = 'moving';
+        // vZ based on swipe speed, max out
+        let speedY = Math.min(dy / dt, 2000);
+        ball.vz = 40 + (speedY / 2000) * 40; // 40 to 80 units/sec
+        
+        // vX based on sideways swipe
+        ball.vx = (dx / width) * 20; 
+
+        // Spin based on curve of swipe. 
+        // Simple heuristic: if end dx is vastly different from overall dx
+        let spin = (dx / dt) * 0.05;
+        ball.spin = -spin; // negative for intuitive curve
+
+        ball.rollSound = playSound(sounds.roll, 0.4, true);
+    }
+
+    // --- PHYSICS ENGINE ---
+    function resolveCollisions() {
+        // Ball vs Pins
+        if (ball.state === 'moving' && ball.z > PIN_DECK - BALL_RADIUS - PIN_RADIUS) {
+            let hitAny = false;
+            pins.forEach(pin => {
+                if(!pin.active) return;
+                
+                let dx = pin.x - ball.x;
+                let dz = pin.z - ball.z;
+                let dist = Math.hypot(dx, dz);
+                let minDist = BALL_RADIUS + PIN_RADIUS;
+
+                if (dist < minDist) {
+                    // Collision
+                    hitAny = true;
+                    if(pin.state === 'standing') {
+                        pin.state = 'falling';
+                        createParticles(pin.x, pin.y + PIN_HEIGHT, pin.z, '#fff', 5);
+                    }
+                    
+                    // Simple inelastic transfer
+                    let nx = dx / dist;
+                    let nz = dz / dist;
+                    
+                    // Push pin
+                    let impact = Math.hypot(ball.vx, ball.vz) * 1.2;
+                    pin.vx += nx * impact;
+                    pin.vz += nz * impact;
+                    
+                    // Deflect ball slightly
+                    ball.vx -= nx * impact * (PIN_MASS / BALL_MASS);
+                    ball.vz -= nz * impact * (PIN_MASS / BALL_MASS);
+                }
+            });
+            if(hitAny && sounds.hit) {
+                playSound(sounds.hit, 0.8);
+                if(navigator.vibrate) navigator.vibrate(200);
+            }
+        }
+
+        // Pin vs Pin
+        for(let i=0; i<pins.length; i++) {
+            let p1 = pins[i];
+            if(!p1.active) continue;
+            for(let j=i+1; j<pins.length; j++) {
+                let p2 = pins[j];
+                if(!p2.active) continue;
+
+                let dx = p2.x - p1.x;
+                let dz = p2.z - p1.z;
+                let dist = Math.hypot(dx, dz);
+                let minDist = PIN_RADIUS * 2.5; // larger hit box for tumbling pins
+
+                if(dist < minDist) {
+                    let nx = dx / dist;
+                    let nz = dz / dist;
+                    
+                    let v1 = Math.hypot(p1.vx, p1.vz);
+                    let v2 = Math.hypot(p2.vx, p2.vz);
+                    
+                    if(v1 > 1 || v2 > 1) { // If moving
+                        if(p1.state === 'standing' && v2 > 1) p1.state = 'falling';
+                        if(p2.state === 'standing' && v1 > 1) p2.state = 'falling';
+                        
+                        let tx = p1.vx; let tz = p1.vz;
+                        p1.vx = p2.vx * 0.8; p1.vz = p2.vz * 0.8;
+                        p2.vx = tx * 0.8; p2.vz = tz * 0.8;
+                        
+                        // Separate
+                        let sep = (minDist - dist) / 2;
+                        p1.x -= nx * sep; p1.z -= nz * sep;
+                        p2.x += nx * sep; p2.z += nz * sep;
+                    }
+                }
+            }
+        }
+    }
+
+    // --- GAME LOGIC ---
+    let frameWaitTimer = 0;
+    
+    function onBallFinish() {
+        // Wait 2 seconds for pins to finish falling, then evaluate
+        frameWaitTimer = 2.0;
+    }
+
+    function evaluateThrow() {
+        let downed = 0;
+        pins.forEach(p => {
+            if(p.state === 'falling' || !p.active) {
+                downed++;
+                p.active = false; // remove from play
+            }
+        });
+        
+        let frame = frameScores[currentFrame - 1];
+        let rollScore = downed;
+        
+        // If it's a spare roll, score is pins downed THIS roll (total downed - first roll score)
+        if (currentRoll === 2 && currentFrame < 10) {
+            rollScore = downed - frame.rolls[0];
+        } else if (currentFrame === 10) {
+             if (currentRoll === 2 && frame.rolls[0] < 10) rollScore = downed - frame.rolls[0];
+             else if (currentRoll === 3 && frame.rolls[1] < 10 && frame.rolls[0] === 10) rollScore = downed - frame.rolls[1];
+             else if (currentRoll === 3 && frame.rolls[1] === 10) rollScore = downed; // 3rd ball after 2 strikes
+        }
+
+        frame.rolls.push(rollScore);
+        
+        // Animations
+        if (currentRoll === 1 && rollScore === 10) {
+            showCelebration("STRIKE!");
+            createParticles(0, 10, PIN_DECK, '#ff00ff', 50);
+        } else if (currentRoll === 2 && frame.rolls[0] + rollScore === 10 && currentFrame < 10) {
+            showCelebration("SPARE!");
+        }
+
+        updateScorecardUI();
+        
+        // Advance logic
+        setTimeout(nextRoll, 2000);
+    }
+
+    function nextRoll() {
+        let frame = frameScores[currentFrame - 1];
+        let isTenth = currentFrame === 10;
+
+        if (!isTenth) {
+            if (currentRoll === 1 && frame.rolls[0] === 10) {
+                // Strike, move to next frame
+                currentFrame++;
+                currentRoll = 1;
+                resetPins();
+            } else if (currentRoll === 1) {
+                // Second roll
+                currentRoll = 2;
+                sweepPins(); // removes inactive pins visually
+            } else {
+                // Frame over
+                currentFrame++;
+                currentRoll = 1;
+                resetPins();
+            }
+        } else {
+            // 10th frame
+            if (currentRoll === 1) {
+                currentRoll = 2;
+                if (frame.rolls[0] === 10) resetPins();
+                else sweepPins();
+            } else if (currentRoll === 2) {
+                if (frame.rolls[0] + frame.rolls[1] >= 10) {
+                    currentRoll = 3;
+                    if (frame.rolls[1] === 10 || frame.rolls[0] + frame.rolls[1] === 10) resetPins();
+                    else sweepPins();
+                } else {
+                    gameOver();
+                }
+            } else {
+                gameOver();
+            }
+        }
+
+        if (currentFrame > 10) gameOver();
+        else {
+            ball.reset();
+            updateScorecardUI();
+        }
+    }
+
+    function resetPins() {
+        pins.forEach(p => p.reset());
+    }
+    
+    function sweepPins() {
+        // Just hide dead ones, living ones stay
+    }
+
+    function calculateScores() {
+        let run = 0;
+        for (let i = 0; i < 10; i++) {
+            let f = frameScores[i];
+            f.score = null;
+            if (f.rolls.length === 0) continue;
+
+            let score = f.rolls[0];
+            if (f.rolls.length > 1) score += f.rolls[1];
+
+            if (i < 9) {
+                if (f.rolls[0] === 10) { // Strike
+                    let next = frameScores[i+1];
+                    if (next && next.rolls.length > 0) {
+                        score += next.rolls[0];
+                        if (next.rolls[0] === 10) {
+                            let nextNext = frameScores[i+2];
+                            if (nextNext && nextNext.rolls.length > 0) score += nextNext.rolls[0];
+                            else if (i === 8 && next.rolls.length > 1) score += next.rolls[1]; // 10th frame 2nd roll
+                            else continue; // wait for nextNext
+                        } else if (next.rolls.length > 1) {
+                            score += next.rolls[1];
+                        } else continue; // wait for 2nd roll of next frame
+                    } else continue; // wait for next frame
+                } else if (f.rolls[0] + f.rolls[1] === 10) { // Spare
+                    let next = frameScores[i+1];
+                    if (next && next.rolls.length > 0) score += next.rolls[0];
+                    else continue;
+                }
+            } else {
+                // 10th frame
+                if (f.rolls.length > 2) score += f.rolls[2];
+            }
+
+            run += score;
+            f.score = run;
+            runningScore = run;
+        }
+    }
+
+    // --- UI ---
+    function buildScorecardUI() {
+        const sc = document.getElementById('scorecard');
+        sc.innerHTML = '';
+        for (let i = 0; i < 10; i++) {
+            let div = document.createElement('div');
+            div.className = `frame ${i === currentFrame - 1 ? 'active' : ''}`;
+            div.id = `frame-${i}`;
+            
+            let html = `<div class="frame-num">${i + 1}</div><div class="rolls">`;
+            let numRolls = i === 9 ? 3 : 2;
+            for(let r=0; r<numRolls; r++) {
+                html += `<div class="roll" id="r-${i}-${r}"></div>`;
+            }
+            html += `</div><div class="frame-score" id="s-${i}"></div>`;
+            div.innerHTML = html;
+            sc.appendChild(div);
+        }
+    }
+
+    function updateScorecardUI() {
+        calculateScores();
+        
+        document.querySelectorAll('.frame').forEach(f => f.classList.remove('active'));
+        if (currentFrame <= 10) {
+            const curF = document.getElementById(`frame-${currentFrame-1}`);
+            if(curF) curF.classList.add('active');
+        }
+
+        for (let i = 0; i < 10; i++) {
+            let f = frameScores[i];
+            
+            for(let r=0; r<f.rolls.length; r++) {
+                let el = document.getElementById(`r-${i}-${r}`);
+                if(!el) continue;
+                let val = f.rolls[r];
+                let disp = val;
+                
+                if (i < 9) {
+                    if (r === 0 && val === 10) disp = 'X';
+                    else if (r === 1 && f.rolls[0] + val === 10) disp = '/';
+                    else if (val === 0) disp = '-';
+                } else {
+                    // 10th frame rendering rules
+                    if (val === 10) disp = 'X';
+                    else if (r === 1 && f.rolls[0] !== 10 && f.rolls[0] + val === 10) disp = '/';
+                    else if (r === 2 && f.rolls[1] !== 10 && f.rolls[1] + val === 10 && f.rolls[0]===10) disp = '/';
+                    else if (val === 0) disp = '-';
+                }
+                el.innerText = disp;
+            }
+            
+            if (f.score !== null) {
+                document.getElementById(`s-${i}`).innerText = f.score;
+            }
+        }
+    }
+
+    function showCelebration(text) {
+        const el = document.getElementById('celebration');
+        el.innerText = text;
+        el.classList.add('show');
+        setTimeout(() => el.classList.remove('show'), 1500);
+    }
+
+    function gameOver() {
+        gameState = 'GAMEOVER';
+        document.getElementById('scorecard').classList.add('hidden');
+        document.getElementById('controls-hint').classList.add('hidden');
+        document.getElementById('gameOverScreen').classList.remove('hidden');
+        document.getElementById('finalScore').innerText = runningScore;
+        
+        let hs = localStorage.getItem('bowling_hs') || 0;
+        if (runningScore > hs && mode !== 'PRACTICE') {
+            hs = runningScore;
+            localStorage.setItem('bowling_hs', hs);
+            showCelebration("NEW HIGH SCORE!");
+        }
+        document.getElementById('goHighScore').innerText = hs;
+    }
+
+    // --- RENDERING ---
+    // Project 3D point to 2D screen
+    function project(x, y, z) {
+        let relZ = z - CAM_Z;
+        let scale = FOV / Math.max(1, relZ);
+        return {
+            x: width / 2 + x * scale,
+            y: height / 2.5 - (y - CAM_Y) * scale, // Adjust 2.5 for horizon level
+            scale: scale
+        };
+    }
+
+    function drawPolygon(points, fillStyle, strokeStyle = null) {
+        if (points.length < 3) return;
+        ctx.beginPath();
+        let first = project(points[0].x, points[0].y, points[0].z);
+        ctx.moveTo(first.x, first.y);
+        for(let i=1; i<points.length; i++) {
+            let p = project(points[i].x, points[i].y, points[i].z);
+            ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+        if (fillStyle) {
+            ctx.fillStyle = fillStyle;
+            ctx.fill();
+        }
+        if (strokeStyle) {
+            ctx.strokeStyle = strokeStyle;
+            ctx.stroke();
+        }
+    }
+
+    function render() {
+        // Clear
+        ctx.fillStyle = '#0a0a1a';
+        ctx.fillRect(0, 0, width, height);
+
+        // Neon grid / Environment background
+        ctx.strokeStyle = 'rgba(0, 255, 204, 0.1)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for(let i=0; i<10; i++) {
+            let p1 = project(-50, -5, i*20);
+            let p2 = project(50, -5, i*20);
+            ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+        }
+        ctx.stroke();
+
+        // Draw Gutters
+        drawPolygon([
+            {x: -LANE_WIDTH/2, y: -2, z: 0},
+            {x: -LANE_WIDTH/2 + GUTTER_WIDTH, y: 0, z: 0},
+            {x: -LANE_WIDTH/2 + GUTTER_WIDTH, y: 0, z: LANE_LENGTH},
+            {x: -LANE_WIDTH/2, y: -2, z: LANE_LENGTH}
+        ], '#1a1a2e');
+        drawPolygon([
+            {x: LANE_WIDTH/2 - GUTTER_WIDTH, y: 0, z: 0},
+            {x: LANE_WIDTH/2, y: -2, z: 0},
+            {x: LANE_WIDTH/2, y: -2, z: LANE_LENGTH},
+            {x: LANE_WIDTH/2 - GUTTER_WIDTH, y: 0, z: LANE_LENGTH}
+        ], '#1a1a2e');
+
+        // Draw Lane
+        const lanePoints = [
+            {x: -LANE_WIDTH/2 + GUTTER_WIDTH, y: 0, z: 0},
+            {x: LANE_WIDTH/2 - GUTTER_WIDTH, y: 0, z: 0},
+            {x: LANE_WIDTH/2 - GUTTER_WIDTH, y: 0, z: LANE_LENGTH},
+            {x: -LANE_WIDTH/2 + GUTTER_WIDTH, y: 0, z: LANE_LENGTH}
+        ];
+        
+        // Wood gradient
+        let pt0 = project(0, 0, 0);
+        let pt1 = project(0, 0, LANE_LENGTH);
+        let grad = ctx.createLinearGradient(0, pt0.y, 0, pt1.y);
+        grad.addColorStop(0, '#c79255');
+        grad.addColorStop(1, '#523414');
+        drawPolygon(lanePoints, grad);
+
+        // Lane markings (arrows)
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        for(let i=-2; i<=2; i++) {
+            let ax = i * 2.5;
+            let az = 15 + Math.abs(i)*2;
+            let p1 = project(ax, 0, az);
+            let p2 = project(ax-0.5, 0, az-2);
+            let p3 = project(ax+0.5, 0, az-2);
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.fill();
+        }
+
+        // Pin Deck
+        drawPolygon([
+            {x: -LANE_WIDTH/2 + GUTTER_WIDTH, y: 0, z: PIN_DECK},
+            {x: LANE_WIDTH/2 - GUTTER_WIDTH, y: 0, z: PIN_DECK},
+            {x: LANE_WIDTH/2 - GUTTER_WIDTH, y: 0, z: LANE_LENGTH},
+            {x: -LANE_WIDTH/2 + GUTTER_WIDTH, y: 0, z: LANE_LENGTH}
+        ], '#8b5a2b'); // Darker wood
+
+        // Sort renderables by Z depth (Painters algorithm)
+        let renderables = [];
+        pins.forEach(p => { if(p.active) renderables.push({type: 'pin', obj: p, z: p.z}) });
+        if(ball.state !== 'dead') renderables.push({type: 'ball', obj: ball, z: ball.z});
+        
+        renderables.sort((a, b) => b.z - a.z);
+
+        renderables.forEach(r => {
+            if (r.type === 'pin') {
+                let p = r.obj;
+                let proj = project(p.x, p.y + PIN_HEIGHT/2, p.z);
+                let w = PIN_RADIUS * proj.scale;
+                let h = PIN_HEIGHT * proj.scale;
+
+                ctx.save();
+                ctx.translate(proj.x, proj.y);
+                ctx.rotate(p.angleZ); // Simple 2D rotation approximation
+                
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                ctx.beginPath();
+                ctx.ellipse(0, h/2, w, w/2, 0, 0, Math.PI*2);
+                ctx.fill();
+
+                // Pin Body
+                let pGrad = ctx.createLinearGradient(-w, 0, w, 0);
+                pGrad.addColorStop(0, '#ddd');
+                pGrad.addColorStop(0.5, '#fff');
+                pGrad.addColorStop(1, '#999');
+                
+                ctx.fillStyle = pGrad;
+                ctx.beginPath();
+                // Base
+                ctx.moveTo(-w, h/2);
+                // Body curve
+                ctx.bezierCurveTo(-w*1.5, h/6, -w*0.5, -h/4, -w*0.8, -h/2);
+                // Top
+                ctx.arc(0, -h/2, w*0.8, Math.PI, 0);
+                ctx.bezierCurveTo(w*0.5, -h/4, w*1.5, h/6, w, h/2);
+                ctx.closePath();
+                ctx.fill();
+
+                // Red stripes
+                ctx.strokeStyle = '#d00';
+                ctx.lineWidth = h * 0.05;
+                ctx.beginPath(); ctx.moveTo(-w*0.7, -h/4); ctx.lineTo(w*0.7, -h/4); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(-w*0.75, -h/6); ctx.lineTo(w*0.75, -h/6); ctx.stroke();
+                
+                ctx.restore();
+            } 
+            else if (r.type === 'ball') {
+                let proj = project(ball.x, ball.y, ball.z);
+                let r2 = BALL_RADIUS * proj.scale;
+
+                // Shadow
+                ctx.fillStyle = 'rgba(0,0,0,0.6)';
+                ctx.beginPath();
+                ctx.ellipse(proj.x, proj.y + r2*0.8, r2, r2*0.3, 0, 0, Math.PI*2);
+                ctx.fill();
+
+                // Ball
+                let bGrad = ctx.createRadialGradient(proj.x - r2*0.3, proj.y - r2*0.3, r2*0.1, proj.x, proj.y, r2);
+                bGrad.addColorStop(0, '#fff');
+                bGrad.addColorStop(0.2, ballColor);
+                bGrad.addColorStop(1, '#000');
+                
+                ctx.fillStyle = bGrad;
+                ctx.beginPath();
+                ctx.arc(proj.x, proj.y, r2, 0, Math.PI*2);
+                ctx.fill();
+            }
+        });
+
+        // Particles
+        particles.forEach(p => {
+            let proj = project(p.x, p.y, p.z);
+            ctx.fillStyle = p.c;
+            ctx.globalAlpha = p.life / p.maxLife;
+            ctx.beginPath();
+            ctx.arc(proj.x, proj.y, p.size * proj.scale, 0, Math.PI*2);
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+    }
+
+    // Particles
+    function createParticles(x, y, z, color, count) {
+        for(let i=0; i<count; i++) {
+            particles.push({
+                x: x, y: y, z: z,
+                vx: (Math.random()-0.5)*10,
+                vy: Math.random()*10,
+                vz: (Math.random()-0.5)*10,
+                c: color,
+                size: Math.random()*0.5 + 0.2,
+                life: 1.0,
+                maxLife: 1.0
+            });
+        }
+    }
+
+    function updateParticles(dt) {
+        for(let i=particles.length-1; i>=0; i--) {
+            let p = particles[i];
+            p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+            p.vy -= 20 * dt; // gravity
+            p.life -= dt;
+            if(p.life <= 0) particles.splice(i, 1);
+        }
+    }
+
+
+    // --- MAIN LOOP ---
+    let lastTime = 0;
+    function loop(timestamp) {
+        let dt = (timestamp - lastTime) / 1000;
+        lastTime = timestamp;
+        if(dt > 0.1) dt = 0.1; // clamp
+
+        if (gameState === 'PLAYING') {
+            ball.update(dt);
+            pins.forEach(p => p.update(dt));
+            resolveCollisions();
+            updateParticles(dt);
+
+            if (frameWaitTimer > 0) {
+                frameWaitTimer -= dt;
+                if (frameWaitTimer <= 0) evaluateThrow();
+            }
+        }
+
+        render();
+        requestAnimationFrame(loop);
+    }
+
+
+    // --- INIT ---
+    document.getElementById('highScoreDisp').innerText = localStorage.getItem('bowling_hs') || 0;
+
+    // Ball color select
+    document.querySelectorAll('.color-option').forEach(el => {
+        el.addEventListener('click', () => {
+            document.querySelectorAll('.color-option').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            ballColor = el.getAttribute('data-color');
+        });
+    });
+
+    function startGame(isPractice) {
+        initAudio();
+        mode = isPractice ? 'PRACTICE' : 'NORMAL';
+        gameState = 'PLAYING';
+        currentFrame = 1;
+        currentRoll = 1;
+        runningScore = 0;
+        frameScores = Array(10).fill().map(() => ({ rolls: [], score: null }));
+        
+        document.getElementById('startScreen').classList.add('hidden');
+        document.getElementById('gameOverScreen').classList.add('hidden');
+        document.getElementById('scorecard').classList.remove('hidden');
+        document.getElementById('controls-hint').classList.remove('hidden');
+        
+        buildScorecardUI();
+        resetPins();
+        ball.reset();
+    }
+
+    document.getElementById('btnPlay').addEventListener('click', () => startGame(false));
+    document.getElementById('btnPractice').addEventListener('click', () => startGame(true));
+    document.getElementById('btnRestart').addEventListener('click', () => startGame(mode === 'PRACTICE'));
+    document.getElementById('btnMenu').addEventListener('click', () => {
+        document.getElementById('gameOverScreen').classList.add('hidden');
+        document.getElementById('startScreen').classList.remove('hidden');
+        gameState = 'MENU';
+    });
+
+    requestAnimationFrame(timestamp => {
+        lastTime = timestamp;
+        loop(timestamp);
+    });
+
+</script>
+</body>
+</html>

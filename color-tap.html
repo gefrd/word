@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Color Tap!</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+    user-select: none;
+    transition: background 0.25s;
+    background: #e3f2fd;
+  }
+
+  #header {
+    width: 100%;
+    background: #1565c0;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 0 #0d47a1;
+  }
+  #header h1 { color: #fff; font-size: 22px; }
+  .stat {
+    background: #fff;
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 16px;
+    font-weight: bold;
+    color: #1565c0;
+  }
+
+  #timer-wrap {
+    width: 100%;
+    height: 10px;
+    background: #90caf9;
+  }
+  #timer-fill {
+    height: 10px;
+    background: #1565c0;
+    transition: width 0.1s linear;
+    width: 100%;
+  }
+
+  #game-area {
+    flex: 1;
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+    gap: 20px;
+  }
+
+  #instruction {
+    font-size: 17px;
+    color: #1565c0;
+    font-weight: bold;
+    text-align: center;
+    min-height: 26px;
+  }
+
+  #color-word-box {
+    width: 100%;
+    background: #fff;
+    border-radius: 28px;
+    padding: 32px 20px;
+    text-align: center;
+    box-shadow: 0 6px 0 #90caf9;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  #task-label {
+    font-size: 13px;
+    color: #90a4ae;
+    letter-spacing: 2px;
+    font-weight: bold;
+  }
+
+  #color-word {
+    font-size: 52px;
+    font-weight: bold;
+    transition: color 0.15s;
+    /* The word is displayed in a COLOR different from its text */
+  }
+
+  #feedback-text {
+    font-size: 30px;
+    min-height: 40px;
+    animation: pop 0.2s;
+  }
+  @keyframes pop { 0%{transform:scale(1.5)} 100%{transform:scale(1)} }
+
+  #choices {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .choice-btn {
+    height: 76px;
+    border-radius: 20px;
+    border: 4px solid rgba(255,255,255,0.5);
+    font-size: 16px;
+    font-weight: bold;
+    color: #fff;
+    cursor: pointer;
+    box-shadow: 0 6px 0 rgba(0,0,0,0.18);
+    transition: transform 0.08s, box-shadow 0.08s;
+    font-family: inherit;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    letter-spacing: 1px;
+  }
+  .choice-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 rgba(0,0,0,0.18); }
+  .choice-btn.correct { filter: brightness(1.15); border-color: #fff; }
+  .choice-btn.wrong   { filter: brightness(0.6); }
+
+  #lives-row {
+    display: flex;
+    gap: 8px;
+    font-size: 24px;
+  }
+
+  /* Overlay */
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(227,242,253,0.97);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    z-index: 100;
+    padding: 24px;
+  }
+  #overlay h2 { font-size: 32px; color: #1565c0; text-align: center; }
+  #overlay .big { font-size: 58px; font-weight: bold; color: #0d47a1; }
+  #overlay p { font-size: 16px; color: #555; text-align: center; line-height: 1.7; }
+  #play-btn {
+    background: #1565c0;
+    color: #fff;
+    border: none;
+    border-radius: 50px;
+    padding: 16px 50px;
+    font-size: 22px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 5px 0 #0d47a1;
+    font-family: inherit;
+  }
+  #play-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #0d47a1; }
+
+  #round-label {
+    font-size: 14px;
+    color: #90a4ae;
+    font-weight: bold;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>🌈 COLOR TAP</h1>
+  <div class="stat">⭐ <span id="score-el">0</span></div>
+  <div class="stat">❤️ <span id="lives-el">3</span></div>
+</div>
+<div id="timer-wrap"><div id="timer-fill"></div></div>
+
+<div id="game-area">
+  <div id="color-word-box">
+    <div id="task-label">INK COLOR</div>
+    <div id="color-word">RED</div>
+  </div>
+  <div id="feedback-text"></div>
+  <div id="lives-row" id="lives-hearts"></div>
+  <div id="choices">
+    <button class="choice-btn" id="c0">RED</button>
+    <button class="choice-btn" id="c1">BLUE</button>
+    <button class="choice-btn" id="c2">GREEN</button>
+    <button class="choice-btn" id="c3">YELLOW</button>
+  </div>
+  <div id="round-label">Round <span id="round-el">1</span></div>
+</div>
+
+<div id="overlay" style="display:none;">
+  <h2>🌈 COLOR TAP!</h2>
+  <p>The word says one color —<br>but it's written in a <b>different color!</b><br><br>Tap the color the <b>ink</b> actually is!</p>
+  <div class="big">Ready?</div>
+  <button id="play-btn">PLAY!</button>
+</div>
+
+<script>
+var scoreEl   = document.getElementById('score-el');
+var livesEl   = document.getElementById('lives-el');
+var timerFill = document.getElementById('timer-fill');
+var colorWord = document.getElementById('color-word');
+var feedbackEl= document.getElementById('feedback-text');
+var overlay   = document.getElementById('overlay');
+var roundEl   = document.getElementById('round-el');
+var choiceBtns= [
+  document.getElementById('c0'),
+  document.getElementById('c1'),
+  document.getElementById('c2'),
+  document.getElementById('c3'),
+];
+
+var COLORS = [
+  { name: 'RED',    hex: '#f44336' },
+  { name: 'BLUE',   hex: '#2196f3' },
+  { name: 'GREEN',  hex: '#4caf50' },
+  { name: 'YELLOW', hex: '#fbc02d' },
+  { name: 'ORANGE', hex: '#ff9800' },
+  { name: 'PINK',   hex: '#e91e63' },
+  { name: 'PURPLE', hex: '#9c27b0' },
+  { name: 'TEAL',   hex: '#009688' },
+];
+
+var score = 0, lives = 3, round = 0, best = 0;
+var correctColorHex = '';
+var canAnswer = false;
+var timerInterval = null;
+var TIME_PER_Q = 5; // seconds - gets faster
+
+function shuffle(arr) {
+  var a = arr.slice();
+  for (var i = a.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+function updateHearts() {
+  livesEl.textContent = lives;
+  document.getElementById('lives-row').textContent =
+    (lives >= 1 ? '❤️' : '🖤') +
+    (lives >= 2 ? '❤️' : '🖤') +
+    (lives >= 3 ? '❤️' : '🖤');
+}
+
+function nextRound() {
+  clearInterval(timerInterval);
+  round++;
+  roundEl.textContent = round;
+  feedbackEl.textContent = '';
+
+  // Pick 4 distinct colors for choices
+  var shuffled = shuffle(COLORS).slice(0, 4);
+  // The INK color (what we're asking about)
+  var inkColor = shuffled[0];
+  // The WORD shown (different from ink)
+  var wordColor = shuffled[1];
+
+  correctColorHex = inkColor.hex;
+  colorWord.textContent = wordColor.name;
+  colorWord.style.color  = inkColor.hex;
+
+  // Set body bg to something neutral
+  document.body.style.background = '#e3f2fd';
+
+  // Fill choice buttons
+  var choiceColors = shuffle(shuffled);
+  choiceBtns.forEach(function(btn, i) {
+    var col = choiceColors[i];
+    btn.textContent = col.name;
+    btn.style.background = col.hex;
+    btn.style.boxShadow  = '0 6px 0 ' + darken(col.hex);
+    btn.className = 'choice-btn';
+    btn.disabled = false;
+    btn.dataset.hex = col.hex;
+  });
+
+  canAnswer = true;
+
+  // Timer
+  var qTime = Math.max(2500, (TIME_PER_Q * 1000) - round * 60);
+  var start = Date.now();
+  timerFill.style.background = '#1565c0';
+  timerFill.style.width = '100%';
+
+  timerInterval = setInterval(function() {
+    var elapsed = Date.now() - start;
+    var pct = Math.max(0, 100 - (elapsed / qTime) * 100);
+    timerFill.style.width = pct + '%';
+    if (pct < 30) timerFill.style.background = '#ef5350';
+    if (elapsed >= qTime && canAnswer) {
+      canAnswer = false;
+      clearInterval(timerInterval);
+      lives--;
+      updateHearts();
+      feedbackEl.textContent = '⏰ Too slow!';
+      // Highlight correct
+      choiceBtns.forEach(function(btn) {
+        btn.disabled = true;
+        if (btn.dataset.hex === correctColorHex) btn.className = 'choice-btn correct';
+      });
+      if (lives <= 0) {
+        setTimeout(endGame, 900);
+      } else {
+        setTimeout(nextRound, 1000);
+      }
+    }
+  }, 60);
+}
+
+function darken(hex) {
+  // Simple darkening
+  var r = parseInt(hex.slice(1,3),16);
+  var g = parseInt(hex.slice(3,5),16);
+  var b = parseInt(hex.slice(5,7),16);
+  return 'rgb(' + Math.round(r*0.65) + ',' + Math.round(g*0.65) + ',' + Math.round(b*0.65) + ')';
+}
+
+function answer(hexVal) {
+  if (!canAnswer) return;
+  canAnswer = false;
+  clearInterval(timerInterval);
+
+  choiceBtns.forEach(function(btn) {
+    btn.disabled = true;
+    if (btn.dataset.hex === correctColorHex) btn.className = 'choice-btn correct';
+  });
+
+  if (hexVal === correctColorHex) {
+    score += 10 + Math.floor(round / 3);
+    scoreEl.textContent = score;
+    feedbackEl.textContent = '✅ Correct!';
+    document.body.style.background = '#c8e6c9';
+    if (lives < 3 && round % 5 === 0) { lives++; updateHearts(); feedbackEl.textContent = '✅ Correct! +❤️'; }
+    setTimeout(nextRound, 800);
+  } else {
+    lives--;
+    updateHearts();
+    feedbackEl.textContent = '❌ Wrong!';
+    document.body.style.background = '#ffcdd2';
+    choiceBtns.forEach(function(btn) {
+      if (btn.dataset.hex === hexVal) btn.className = 'choice-btn wrong';
+    });
+    if (lives <= 0) {
+      setTimeout(endGame, 900);
+    } else {
+      setTimeout(nextRound, 1000);
+    }
+  }
+}
+
+choiceBtns.forEach(function(btn) {
+  btn.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    answer(btn.dataset.hex);
+  }, { passive: false });
+  btn.addEventListener('click', function() {
+    answer(btn.dataset.hex);
+  });
+});
+
+function startGame() {
+  score = 0; lives = 3; round = 0;
+  scoreEl.textContent = '0';
+  updateHearts();
+  overlay.style.display = 'none';
+  nextRound();
+}
+
+function endGame() {
+  clearInterval(timerInterval);
+  if (score > best) best = score;
+
+  overlay.innerHTML = '';
+  var h2 = document.createElement('h2');
+  h2.textContent = round >= 20 ? '🏆 Color Master!' : '🎨 Game Over!';
+  var big = document.createElement('div');
+  big.className = 'big';
+  big.textContent = score + ' pts';
+  var p = document.createElement('p');
+  p.textContent = 'Rounds: ' + round + '\nBest: ' + best + ' pts';
+  p.style.whiteSpace = 'pre-line';
+  var btn = document.createElement('button');
+  btn.id = 'play-btn';
+  btn.textContent = 'PLAY AGAIN!';
+  btn.addEventListener('click', startGame);
+  btn.addEventListener('touchstart', function(e) { e.preventDefault(); startGame(); }, { passive: false });
+
+  overlay.appendChild(h2);
+  overlay.appendChild(big);
+  overlay.appendChild(p);
+  overlay.appendChild(btn);
+  overlay.style.display = 'flex';
+}
+
+document.getElementById('play-btn').addEventListener('click', startGame);
+document.getElementById('play-btn').addEventListener('touchstart', function(e) {
+  e.preventDefault(); startGame();
+}, { passive: false });
+
+startGame();
+</script>
+</body>
+</html>

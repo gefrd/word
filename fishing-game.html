@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Serene Fishing</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --text: #f8fafc;
+      --accent: #38bdf8;
+      --ui-bg: rgba(15, 23, 42, 0.85);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    * { box-sizing: border-box; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
+    #gameCanvas { display: block; width: 100%; height: 100%; }
+    
+    /* UI Overlays */
+    .screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; padding: calc(20px + var(--safe-top)) 20px calc(20px + var(--safe-bottom)); background: var(--ui-bg); backdrop-filter: blur(8px); z-index: 10; transition: opacity 0.3s; opacity: 0; pointer-events: none; }
+    .screen.active { opacity: 1; pointer-events: auto; }
+    
+    .hud { position: absolute; top: 0; left: 0; width: 100%; padding: calc(10px + var(--safe-top)) 15px 10px; display: flex; justify-content: space-between; align-items: flex-start; z-index: 5; pointer-events: none; }
+    .hud-left, .hud-right { display: flex; flex-direction: column; gap: 8px; pointer-events: auto; }
+    
+    .btn { background: rgba(56, 189, 248, 0.2); border: 1px solid var(--accent); color: var(--text); padding: 12px 24px; border-radius: 99px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(56, 189, 248, 0.1); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; }
+    .btn:active { transform: scale(0.95); background: rgba(56, 189, 248, 0.4); }
+    .btn.primary { background: var(--accent); color: #0f172a; }
+    .btn-icon { width: 44px; height: 44px; padding: 0; border-radius: 50%; font-size: 20px; }
+    
+    .stat-badge { background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 99px; font-size: 14px; font-weight: 500; display: flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,0.1); }
+    
+    h1 { font-size: 2.5rem; margin: 0 0 10px; background: linear-gradient(135deg, #38bdf8, #818cf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-align: center; }
+    h2 { font-size: 1.5rem; margin: 0 0 20px; text-align: center; }
+    
+    /* Shop & Codex */
+    .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; overflow-y: auto; padding-bottom: 20px; }
+    .card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 15px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+    .card-icon { font-size: 2.5rem; margin: 0; }
+    .card-title { font-weight: bold; font-size: 1.1rem; margin: 0; }
+    .card-desc { font-size: 0.8rem; color: #94a3b8; margin: 0; }
+    .card-meta { font-size: 0.75rem; color: #cbd5e1; margin: 0; }
+    
+    /* Mini-game */
+    #minigameUI { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 60px; height: 300px; background: rgba(0,0,0,0.6); border: 2px solid var(--accent); border-radius: 30px; display: none; z-index: 8; overflow: hidden; }
+    #mgBar { position: absolute; left: 10%; width: 80%; background: rgba(56, 189, 248, 0.3); border-radius: 20px; transition: bottom 0.1s; }
+    #mgTarget { position: absolute; left: 10%; width: 80%; background: rgba(34, 197, 94, 0.5); border: 2px solid #4ade80; border-radius: 20px; }
+    #mgFish { position: absolute; left: 50%; transform: translateX(-50%); font-size: 30px; transition: bottom 0.1s; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+    #mgProgress { position: absolute; right: -20px; bottom: 0; width: 10px; background: #22c55e; border-radius: 5px; transition: height 0.1s; }
+    
+    .toast { position: absolute; top: 20%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); color: white; padding: 15px 30px; border-radius: 99px; font-weight: bold; opacity: 0; transition: all 0.3s; z-index: 20; border: 1px solid var(--accent); text-align: center; pointer-events: none; }
+    
+    /* Input overlay */
+    #touchOverlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 4; }
+  </style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+<div id="touchOverlay"></div>
+
+<div class="hud">
+  <div class="hud-left">
+    <div class="stat-badge">💰 <span id="coinCount">0</span></div>
+    <div class="stat-badge">📍 <span id="locName">Pond</span></div>
+    <div class="stat-badge" id="weatherTimeBadge">☀️ Day</div>
+  </div>
+  <div class="hud-right">
+    <button class="btn btn-icon" id="btnCodex">📖</button>
+    <button class="btn btn-icon" id="btnShop">🛒</button>
+  </div>
+</div>
+
+<div id="minigameUI">
+  <div id="mgTarget"></div>
+  <div id="mgBar"></div>
+  <div id="mgFish">🐟</div>
+  <div id="mgProgress"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Start Screen -->
+<div class="screen active" id="screenStart">
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+    <div style="font-size:5rem; margin-bottom:10px;">🎣</div>
+    <h1>Serene Fishing</h1>
+    <p style="text-align:center; color:#94a3b8; margin-bottom:40px; max-width:80%;">Cast your line, relax, and catch them all.</p>
+    <button class="btn primary" id="btnPlay" style="width:200px; padding:15px; font-size:18px;">Play</button>
+  </div>
+</div>
+
+<!-- Shop Screen -->
+<div class="screen" id="screenShop">
+  <h2>Tackle Shop</h2>
+  <div class="stat-badge" style="width:max-content; margin: 0 auto 20px;">💰 <span id="shopCoins">0</span></div>
+  <div class="grid" id="shopGrid"></div>
+  <button class="btn" id="btnCloseShop" style="margin-top:auto; width:100%;">Back to Fishing</button>
+</div>
+
+<!-- Codex Screen -->
+<div class="screen" id="screenCodex">
+  <h2>Fish Codex</h2>
+  <div class="stat-badge" style="width:max-content; margin: 0 auto 20px;">Caught: <span id="codexProgress">0/0</span></div>
+  <div class="grid" id="codexGrid"></div>
+  <button class="btn" id="btnCloseCodex" style="margin-top:auto; width:100%;">Back to Fishing</button>
+</div>
+
+<script>
+// Web Audio API setup
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
+const sfx = {
+  play: (type) => {
+    if(!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    
+    const now = audioCtx.currentTime;
+    if(type === 'cast') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(400, now);
+      osc.frequency.exponentialRampToValueAtTime(100, now + 0.3);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.3, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      osc.start(now); osc.stop(now + 0.3);
+    } else if(type === 'splash') {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(150, now);
+      osc.frequency.exponentialRampToValueAtTime(50, now + 0.2);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+      osc.start(now); osc.stop(now + 0.2);
+    } else if(type === 'bite') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(600, now);
+      osc.frequency.setValueAtTime(800, now + 0.1);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.4, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+      osc.start(now); osc.stop(now + 0.2);
+    } else if(type === 'reel') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(200, now);
+      osc.frequency.linearRampToValueAtTime(300, now + 0.1);
+      gain.gain.setValueAtTime(0.1, now);
+      gain.gain.linearRampToValueAtTime(0, now + 0.1);
+      osc.start(now); osc.stop(now + 0.1);
+    } else if(type === 'catch') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.setValueAtTime(554, now + 0.1);
+      osc.frequency.setValueAtTime(659, now + 0.2);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+      osc.start(now); osc.stop(now + 0.5);
+    } else if(type === 'buy') {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(800, now);
+      osc.frequency.setValueAtTime(1200, now + 0.1);
+      gain.gain.setValueAtTime(0.1, now);
+      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+      osc.start(now); osc.stop(now + 0.3);
+    }
+  }
+};
+
+const vibrate = (pattern) => {
+  if(navigator.vibrate) navigator.vibrate(pattern);
+};
+
+// Game Data
+const FISH_TYPES = [
+  { id: 'small', name: 'Small Fish', emoji: '🐟', rarity: 'common', depth: 0.2, minW: 0.5, maxW: 2, coins: 5, difficulty: 0.2 },
+  { id: 'shrimp', name: 'Shrimp', emoji: '🦐', rarity: 'common', depth: 0.9, minW: 0.1, maxW: 0.5, coins: 8, difficulty: 0.1 },
+  { id: 'tropical', name: 'Tropical Fish', emoji: '🐠', rarity: 'uncommon', depth: 0.4, minW: 1, maxW: 5, coins: 15, difficulty: 0.4 },
+  { id: 'blowfish', name: 'Blowfish', emoji: '🐡', rarity: 'uncommon', depth: 0.5, minW: 2, maxW: 8, coins: 20, difficulty: 0.5 },
+  { id: 'crab', name: 'Crab', emoji: '🦀', rarity: 'uncommon', depth: 0.95, minW: 1, maxW: 4, coins: 18, difficulty: 0.3 },
+  { id: 'turtle', name: 'Turtle', emoji: '🐢', rarity: 'rare', depth: 0.6, minW: 10, maxW: 50, coins: 50, difficulty: 0.6 },
+  { id: 'octopus', name: 'Octopus', emoji: '🐙', rarity: 'rare', depth: 0.8, minW: 5, maxW: 20, coins: 60, difficulty: 0.7 },
+  { id: 'shark', name: 'Shark', emoji: '🦈', rarity: 'rare', depth: 0.7, minW: 50, maxW: 200, coins: 100, difficulty: 0.85 },
+  { id: 'dolphin', name: 'Dolphin', emoji: '🐬', rarity: 'very_rare', depth: 0.3, minW: 40, maxW: 150, coins: 150, difficulty: 0.8 },
+  { id: 'whale', name: 'Whale', emoji: '🐋', rarity: 'legendary', depth: 0.85, minW: 500, maxW: 2000, coins: 500, difficulty: 0.95 },
+  { id: 'golden', name: 'Golden Fish', emoji: '⭐', rarity: 'legendary', depth: 0.5, minW: 1, maxW: 10, coins: 1000, difficulty: 0.9 }
+];
+
+const LOCATIONS = [
+  { id: 'pond', name: 'Pond', cost: 0, depth: 300, fish: ['small', 'shrimp', 'turtle'] },
+  { id: 'lake', name: 'Lake', cost: 100, depth: 600, fish: ['small', 'shrimp', 'tropical', 'crab'] },
+  { id: 'river', name: 'River', cost: 500, depth: 400, fish: ['small', 'tropical', 'blowfish', 'turtle', 'golden'] },
+  { id: 'ocean', name: 'Ocean', cost: 1500, depth: 1000, fish: ['tropical', 'blowfish', 'crab', 'octopus', 'shark', 'dolphin', 'golden'] },
+  { id: 'deepsea', name: 'Deep Sea', cost: 5000, depth: 2000, fish: ['octopus', 'shark', 'whale', 'golden'] }
+];
+
+const UPGRADES = [
+  { id: 'rod', name: 'Better Rod', emoji: '🎣', desc: 'Makes reeling easier', baseCost: 50, levels: 5, mult: 2 },
+  { id: 'line', name: 'Stronger Line', emoji: '🧵', desc: 'Can cast deeper', baseCost: 40, levels: 5, mult: 1.8 },
+  { id: 'bait', name: 'Premium Bait', emoji: '🪱', desc: 'Attracts rarer fish', baseCost: 100, levels: 3, mult: 3 },
+  { id: 'sonar', name: 'Depth Finder', emoji: '📡', desc: 'See fish underwater', baseCost: 500, levels: 1, mult: 1 }
+];
+
+// State
+let state = {
+  coins: 0,
+  location: 'pond',
+  upgrades: { rod: 0, line: 0, bait: 0, sonar: 0 },
+  codex: {}, // id -> { count, maxWeight }
+  unlockedLocs: ['pond']
+};
+
+// Load state
+const saved = localStorage.getItem('sereneFishing');
+if(saved) {
+  try { state = { ...state, ...JSON.parse(saved) }; } catch(e){}
+}
+const saveState = () => localStorage.setItem('sereneFishing', JSON.stringify(state));
+
+// Game Variables
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+const resize = () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; };
+window.addEventListener('resize', resize);
+resize();
+
+let gameState = 'idle'; // idle, casting, sinking, waiting, biting, minigame, caught
+let castPower = 0; // 0 to 1
+let castStartTime = 0;
+let hook = { x: 0, y: 0, targetY: 0, vY: 0 };
+let fishList = [];
+let activeFish = null;
+let particles = [];
+let bubbles = [];
+let timeOfDay = 0; // 0 to 24
+let weather = 'sunny';
+let timeReal = 0;
+
+// Env
+const getEnvColors = () => {
+  let isNight = timeOfDay < 6 || timeOfDay > 18;
+  if(weather === 'stormy') {
+    return { sky1: '#1e293b', sky2: '#0f172a', water1: '#334155', water2: '#020617' };
+  }
+  if(isNight) {
+    return { sky1: '#1e1b4b', sky2: '#020617', water1: '#172554', water2: '#000000' };
+  }
+  return { sky1: '#7dd3fc', sky2: '#bae6fd', water1: '#0ea5e9', water2: '#082f49' };
+};
+
+// Elements
+const locNameEl = document.getElementById('locName');
+const coinCountEl = document.getElementById('coinCount');
+const timeBadge = document.getElementById('weatherTimeBadge');
+const toastEl = document.getElementById('toast');
+const mgUI = document.getElementById('minigameUI');
+
+const updateHUD = () => {
+  coinCountEl.textContent = state.coins;
+  const loc = LOCATIONS.find(l => l.id === state.location);
+  locNameEl.textContent = loc.name;
+  let isNight = timeOfDay < 6 || timeOfDay > 18;
+  let tIcon = isNight ? '🌙' : '☀️';
+  let wIcon = weather === 'rain' ? '🌧️' : weather === 'stormy' ? '⛈️' : tIcon;
+  timeBadge.textContent = `${wIcon} ${isNight?'Night':'Day'}`;
+};
+
+let toastTimeout;
+const showToast = (msg, duration=2000) => {
+  toastEl.textContent = msg;
+  toastEl.style.opacity = 1;
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => toastEl.style.opacity = 0, duration);
+};
+
+// Minigame vars
+let mgTargetY = 50; // 0 to 100
+let mgBarY = 50;
+let mgFishY = 50;
+let mgFishVY = 0;
+let mgTargetVY = 0;
+let mgProgress = 20; // 0 to 100
+
+// Main Loop
+let lastTime = 0;
+const loop = (timestamp) => {
+  const dt = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
+  timeReal += dt;
+  
+  // Update time of day (1 minute real = 1 hour game)
+  timeOfDay = (timeReal * 60) % 24;
+  
+  // Random weather
+  if(Math.random() < 0.0001) {
+    let r = Math.random();
+    weather = r < 0.1 ? 'stormy' : r < 0.3 ? 'rain' : 'sunny';
+    updateHUD();
+  }
+  
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+};
+
+// Spawn Fish
+const spawnFish = () => {
+  const loc = LOCATIONS.find(l => l.id === state.location);
+  if(fishList.length < 10) {
+    const fId = loc.fish[Math.floor(Math.random() * loc.fish.length)];
+    const fData = FISH_TYPES.find(f => f.id === fId);
+    let rarityMult = fData.rarity === 'legendary' ? 0.05 : fData.rarity === 'very_rare' ? 0.1 : fData.rarity === 'rare' ? 0.3 : fData.rarity === 'uncommon' ? 0.6 : 1;
+    if(state.upgrades.bait > 0) rarityMult *= (1 + state.upgrades.bait * 0.5);
+    
+    if(Math.random() < rarityMult) {
+      fishList.push({
+        data: fData,
+        x: Math.random() > 0.5 ? -50 : W + 50,
+        y: H * 0.4 + (fData.depth + (Math.random()*0.2-0.1)) * (H * 0.6),
+        vx: (Math.random() * 20 + 10) * (Math.random() > 0.5 ? 1 : -1),
+        vy: 0,
+        t: Math.random() * 100
+      });
+    }
+  }
+};
+
+const update = (dt) => {
+  if(gameState === 'casting') {
+    castPower = Math.min(1, (Date.now() - castStartTime) / 1500);
+  }
+  
+  if(gameState === 'sinking') {
+    hook.y += 100 * dt;
+    if(hook.y >= hook.targetY) {
+      hook.y = hook.targetY;
+      gameState = 'waiting';
+    }
+  }
+  
+  if(gameState === 'waiting') {
+    hook.y = hook.targetY + Math.sin(timeReal * 2) * 5;
+    
+    // Check bite
+    let bestFish = null;
+    let minDist = 100;
+    fishList.forEach(f => {
+      let dx = f.x - hook.x;
+      let dy = f.y - hook.y;
+      let dist = Math.sqrt(dx*dx + dy*dy);
+      if(dist < minDist) { minDist = dist; bestFish = f; }
+    });
+    
+    if(bestFish && Math.random() < 0.01 * dt * (1 + state.upgrades.bait*0.2)) {
+      activeFish = bestFish;
+      gameState = 'biting';
+      vibrate([50, 50, 50]);
+      sfx.play('bite');
+      // Remove from list
+      fishList = fishList.filter(f => f !== activeFish);
+      setTimeout(() => {
+        if(gameState === 'biting') {
+          gameState = 'waiting';
+          activeFish = null;
+          showToast("It got away!", 1000);
+        }
+      }, 1500 + Math.random() * 1000);
+    }
+  }
+  
+  if(gameState === 'minigame') {
+    // Update fish movement
+    let diff = activeFish.data.difficulty * (weather === 'stormy' ? 1.2 : 1);
+    if(Math.random() < 0.05) mgFishVY = (Math.random() - 0.5) * diff * 200;
+    mgFishY += mgFishVY * dt;
+    if(mgFishY < 0) { mgFishY = 0; mgFishVY *= -1; }
+    if(mgFishY > 100) { mgFishY = 100; mgFishVY *= -1; }
+    
+    // Update target bar based on input (handled in input event, here just decay)
+    mgTargetVY -= 100 * dt;
+    mgTargetY += mgTargetVY * dt;
+    if(mgTargetY < 0) { mgTargetY = 0; mgTargetVY = 0; }
+    if(mgTargetY > 100) { mgTargetY = 100; mgTargetVY = 0; }
+    
+    // Progress
+    let barSize = 20 + state.upgrades.rod * 2;
+    if(Math.abs(mgFishY - mgTargetY) < barSize) {
+      mgProgress += 15 * dt;
+      document.getElementById('mgTarget').style.borderColor = '#4ade80';
+    } else {
+      mgProgress -= (10 + diff*10) * dt;
+      document.getElementById('mgTarget').style.borderColor = '#ef4444';
+    }
+    
+    document.getElementById('mgFish').style.bottom = `${mgFishY}%`;
+    document.getElementById('mgTarget').style.bottom = `${mgTargetY - barSize/2}%`;
+    document.getElementById('mgTarget').style.height = `${barSize}%`;
+    document.getElementById('mgProgress').style.height = `${Math.max(0, mgProgress)}%`;
+    
+    if(mgProgress >= 100) {
+      catchFish();
+    } else if (mgProgress <= 0) {
+      gameState = 'idle';
+      mgUI.style.display = 'none';
+      showToast("Fish escaped!", 1500);
+    }
+  }
+  
+  // Update ambient fish
+  if(Math.random() < 2 * dt) spawnFish();
+  fishList.forEach(f => {
+    f.x += f.vx * dt;
+    f.t += dt;
+    f.y += Math.sin(f.t) * 10 * dt;
+    if(f.x < -100 || f.x > W + 100) f.dead = true;
+  });
+  fishList = fishList.filter(f => !f.dead);
+  
+  // Bubbles
+  if(Math.random() < 10 * dt) {
+    bubbles.push({ x: Math.random() * W, y: H + 10, s: Math.random()*3+1, v: Math.random()*20+10 });
+  }
+  bubbles.forEach(b => { b.y -= b.v * dt; b.x += Math.sin(b.y*0.05)*0.5; });
+  bubbles = bubbles.filter(b => b.y > H*0.3);
+};
+
+const draw = () => {
+  const env = getEnvColors();
+  
+  // Sky
+  const grdSky = ctx.createLinearGradient(0,0,0,H*0.3);
+  grdSky.addColorStop(0, env.sky1);
+  grdSky.addColorStop(1, env.sky2);
+  ctx.fillStyle = grdSky;
+  ctx.fillRect(0,0,W,H*0.3);
+  
+  // Sun/Moon
+  ctx.fillStyle = (timeOfDay < 6 || timeOfDay > 18) ? '#fef08a' : '#fcd34d';
+  let t = (timeOfDay % 12) / 12; // 0 to 1 arch
+  let sx = W * t;
+  let sy = H*0.25 - Math.sin(t*Math.PI)*H*0.2;
+  ctx.beginPath(); ctx.arc(sx, sy, 20, 0, Math.PI*2); ctx.fill();
+  
+  // Water
+  const grdWater = ctx.createLinearGradient(0,H*0.3,0,H);
+  grdWater.addColorStop(0, env.water1);
+  grdWater.addColorStop(1, env.water2);
+  ctx.fillStyle = grdWater;
+  ctx.fillRect(0,H*0.3,W,H*0.7);
+  
+  // Wave line
+  ctx.beginPath();
+  ctx.moveTo(0, H*0.3);
+  for(let i=0; i<=W; i+=20) {
+    ctx.lineTo(i, H*0.3 + Math.sin(timeReal*2 + i*0.05)*5);
+  }
+  ctx.lineTo(W, H); ctx.lineTo(0, H);
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.fill();
+  
+  // Bubbles
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  bubbles.forEach(b => {
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.s, 0, Math.PI*2); ctx.fill();
+  });
+  
+  // Fish (ambient)
+  ctx.font = '24px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  fishList.forEach(f => {
+    if(state.upgrades.sonar > 0) {
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      if(f.vx < 0) ctx.scale(-1, 1);
+      ctx.fillText(f.data.emoji, 0, 0);
+      ctx.restore();
+    } else {
+      // Just shadows
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      ctx.beginPath(); ctx.ellipse(f.x, f.y, 15, 8, 0, 0, Math.PI*2); ctx.fill();
+    }
+  });
+  
+  // Rod & Player
+  ctx.fillStyle = '#1e293b';
+  ctx.fillRect(20, H*0.3 - 40, 20, 40); // simple character
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(30, H*0.3 - 30);
+  
+  if(gameState === 'idle') {
+    ctx.lineTo(60, H*0.3 - 60);
+    ctx.stroke();
+  } else if (gameState === 'casting') {
+    let angle = -Math.PI/4 + castPower * Math.PI/2;
+    let rx = 30 + Math.cos(angle) * 40;
+    let ry = H*0.3 - 30 + Math.sin(angle) * 40;
+    ctx.lineTo(rx, ry);
+    ctx.stroke();
+    // Power bar
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(20, H*0.3-60, 40, 5);
+    ctx.fillStyle = castPower > 0.8 ? '#ef4444' : '#38bdf8';
+    ctx.fillRect(20, H*0.3-60, 40 * castPower, 5);
+  } else {
+    // Line out
+    let rx = 70;
+    let ry = H*0.3 - 50;
+    ctx.lineTo(rx, ry);
+    ctx.stroke();
+    
+    // Line
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(rx, ry);
+    if(gameState === 'biting' || gameState === 'minigame') {
+      ctx.quadraticCurveTo(hook.x - 20, hook.y - 20, hook.x, hook.y + (Math.sin(timeReal*20)*10));
+    } else {
+      ctx.lineTo(hook.x, hook.y);
+    }
+    ctx.stroke();
+    
+    // Bobber
+    ctx.fillStyle = '#ef4444';
+    let bobberY = Math.min(hook.y, H*0.3);
+    if(gameState === 'biting' && timeReal % 0.2 < 0.1) bobberY += 5;
+    ctx.beginPath(); ctx.arc(hook.x, bobberY, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(hook.x, bobberY-4, 4, 0, Math.PI*2); ctx.fill();
+    
+    // Hook
+    if(hook.y > H*0.3) {
+      ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(hook.x, hook.y, 4, 0, Math.PI, false); ctx.stroke();
+    }
+  }
+};
+
+const castLine = () => {
+  if(gameState !== 'casting') return;
+  let dist = 100 + castPower * 200;
+  let maxDepth = LOCATIONS.find(l=>l.id === state.location).depth;
+  let depth = H*0.3 + castPower * (H*0.6) * (1 + state.upgrades.line*0.2);
+  depth = Math.min(depth, H-20);
+  
+  hook = { x: 30 + dist, y: H*0.3, targetY: depth };
+  gameState = 'sinking';
+  sfx.play('cast');
+  setTimeout(()=> sfx.play('splash'), 500);
+};
+
+const startMinigame = () => {
+  gameState = 'minigame';
+  mgUI.style.display = 'block';
+  mgProgress = 30;
+  mgTargetY = 50;
+  mgFishY = activeFish.y / H * 100;
+  document.getElementById('mgFish').textContent = activeFish.data.emoji;
+};
+
+const catchFish = () => {
+  gameState = 'idle';
+  mgUI.style.display = 'none';
+  sfx.play('catch');
+  vibrate([100, 50, 100]);
+  
+  let f = activeFish.data;
+  let weight = (f.minW + Math.random() * (f.maxW - f.minW)).toFixed(1);
+  
+  // Update state
+  state.coins += f.coins;
+  if(!state.codex[f.id]) state.codex[f.id] = { count: 0, maxWeight: 0 };
+  state.codex[f.id].count++;
+  if(weight > state.codex[f.id].maxWeight) state.codex[f.id].maxWeight = weight;
+  
+  saveState();
+  updateHUD();
+  
+  showToast(`Caught ${f.name}! ${weight}kg (+${f.coins} 💰)`, 3000);
+  activeFish = null;
+};
+
+// Inputs
+const tOverlay = document.getElementById('touchOverlay');
+tOverlay.addEventListener('pointerdown', (e) => {
+  if(audioCtx?.state === 'suspended') audioCtx.resume();
+  
+  if(gameState === 'idle') {
+    gameState = 'casting';
+    castStartTime = Date.now();
+    castPower = 0;
+  } else if (gameState === 'biting') {
+    startMinigame();
+  } else if (gameState === 'waiting') {
+    gameState = 'idle';
+    showToast("Reeled in.", 1000);
+  } else if (gameState === 'minigame') {
+    mgTargetVY = 50; // Boost bar up
+    sfx.play('reel');
+  }
+});
+tOverlay.addEventListener('pointerup', (e) => {
+  if(gameState === 'casting') {
+    castLine();
+  }
+});
+
+// UI Interactions
+document.getElementById('btnPlay').addEventListener('click', () => {
+  if(!audioCtx) audioCtx = new AudioContext();
+  audioCtx.resume();
+  document.getElementById('screenStart').classList.remove('active');
+  updateHUD();
+  requestAnimationFrame(loop);
+});
+
+// Shop
+document.getElementById('btnShop').addEventListener('click', () => {
+  document.getElementById('screenShop').classList.add('active');
+  renderShop();
+});
+document.getElementById('btnCloseShop').addEventListener('click', () => {
+  document.getElementById('screenShop').classList.remove('active');
+});
+
+const renderShop = () => {
+  document.getElementById('shopCoins').textContent = state.coins;
+  const grid = document.getElementById('shopGrid');
+  grid.innerHTML = '';
+  
+  // Upgrades
+  UPGRADES.forEach(u => {
+    let lvl = state.upgrades[u.id];
+    let cost = Math.floor(u.baseCost * Math.pow(1.5, lvl));
+    let isMax = lvl >= u.levels;
+    let card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-icon">${u.emoji}</div>
+      <div class="card-title">${u.name}</div>
+      <div class="card-desc">${u.desc}</div>
+      <div class="card-meta">Lvl ${lvl}/${u.levels}</div>
+      <button class="btn ${!isMax && state.coins >= cost ? 'primary' : ''}" style="width:100%; font-size:12px;" ${isMax || state.coins < cost ? 'disabled' : ''}>
+        ${isMax ? 'MAX' : `💰 ${cost}`}
+      </button>
+    `;
+    if(!isMax && state.coins >= cost) {
+      card.querySelector('button').onclick = () => {
+        state.coins -= cost;
+        state.upgrades[u.id]++;
+        saveState();
+        sfx.play('buy');
+        updateHUD();
+        renderShop();
+      };
+    }
+    grid.appendChild(card);
+  });
+  
+  // Locations
+  LOCATIONS.forEach(l => {
+    if(l.id === 'pond') return;
+    let unlocked = state.unlockedLocs.includes(l.id);
+    let card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-icon">📍</div>
+      <div class="card-title">${l.name}</div>
+      <div class="card-desc">Depth: ${l.depth}m</div>
+      ${unlocked ? 
+        `<button class="btn ${state.location === l.id ? '' : 'primary'}" style="width:100%; font-size:12px;">${state.location === l.id ? 'Equipped' : 'Travel'}</button>` :
+        `<button class="btn ${state.coins >= l.cost ? 'primary' : ''}" style="width:100%; font-size:12px;" ${state.coins < l.cost ? 'disabled' : ''}>Unlock 💰${l.cost}</button>`
+      }
+    `;
+    let btn = card.querySelector('button');
+    if(unlocked && state.location !== l.id) {
+      btn.onclick = () => { state.location = l.id; saveState(); updateHUD(); renderShop(); };
+    } else if (!unlocked && state.coins >= l.cost) {
+      btn.onclick = () => {
+        state.coins -= l.cost;
+        state.unlockedLocs.push(l.id);
+        state.location = l.id;
+        saveState();
+        sfx.play('buy');
+        updateHUD();
+        renderShop();
+      };
+    }
+    grid.appendChild(card);
+  });
+};
+
+// Codex
+document.getElementById('btnCodex').addEventListener('click', () => {
+  document.getElementById('screenCodex').classList.add('active');
+  renderCodex();
+});
+document.getElementById('btnCloseCodex').addEventListener('click', () => {
+  document.getElementById('screenCodex').classList.remove('active');
+});
+
+const renderCodex = () => {
+  const grid = document.getElementById('codexGrid');
+  grid.innerHTML = '';
+  let caught = 0;
+  
+  FISH_TYPES.forEach(f => {
+    let data = state.codex[f.id];
+    let isCaught = !!data;
+    if(isCaught) caught++;
+    
+    let card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `
+      <div class="card-icon" style="filter: ${isCaught ? 'none' : 'brightness(0) invert(0.2)'}">${f.emoji}</div>
+      <div class="card-title">${isCaught ? f.name : '???'}</div>
+      <div class="card-desc">${isCaught ? `Rarity: ${f.rarity}` : 'Undiscovered'}</div>
+      <div class="card-meta">${isCaught ? `Caught: ${data.count} | Max: ${data.maxWeight}kg` : ''}</div>
+    `;
+    grid.appendChild(card);
+  });
+  
+  document.getElementById('codexProgress').textContent = `${caught}/${FISH_TYPES.length}`;
+};
+
+</script>
+</body>
+</html>

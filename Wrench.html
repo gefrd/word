@@ -1,0 +1,2353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+  >
+  <title>Wrench Hit: Garage</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #090c14;
+      touch-action: none;
+      overscroll-behavior: none;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      background: #090c14;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const canvas = document.getElementById('game');
+      const ctx = canvas.getContext('2d', { alpha: false });
+
+      const TAU = Math.PI * 2;
+      const SAVE_KEY = 'wrench-hit-sto-save-v2';
+      const LEGACY_SAVE_KEY = 'wrench-hit-sto-save-v1';
+      const CRATE_COST = 100;
+      const MAX_PARTICLES = 180;
+
+      const TOOL_DATA = [
+        { id: 'wrench', name: 'Starter Wrench', kind: 'wrench', accent: '#f0b548', metal: '#d7dce5', lengthMul: 1, widthMul: 1, rarity: 'starter', weight: 0, trail: '#ffd068' },
+        { id: 'screwdriver', name: 'Master Screwdriver', kind: 'screwdriver', accent: '#f26d4f', metal: '#dde4ec', lengthMul: 1.03, widthMul: 0.88, rarity: 'common', weight: 44, trail: '#ff916a' },
+        { id: 'adjustable', name: 'Service Adjustable', kind: 'adjustable', accent: '#57c8db', metal: '#d0d9e3', lengthMul: 1.07, widthMul: 1.05, rarity: 'common', weight: 44, trail: '#76ebff' },
+        { id: 'prybar', name: 'Shift Prybar', kind: 'prybar', accent: '#bb8d52', metal: '#9ca7b7', lengthMul: 1.16, widthMul: 0.82, rarity: 'common', weight: 44, trail: '#e8b36a' },
+        { id: 'socket_blue', name: 'Blue Socket', kind: 'socket', accent: '#5c9dff', metal: '#cdd7e4', lengthMul: 1.02, widthMul: 0.96, rarity: 'common', weight: 44, trail: '#91c2ff' },
+        { id: 'wrench_red', name: 'Truck Bay Wrench', kind: 'wrench', accent: '#df5f54', metal: '#d8dee6', lengthMul: 1.05, widthMul: 1.04, rarity: 'uncommon', weight: 25, trail: '#ff8b7b' },
+        { id: 'screwdriver_green', name: 'Green Impact Driver', kind: 'screwdriver', accent: '#4fbf7a', metal: '#dee5ed', lengthMul: 1.06, widthMul: 0.9, rarity: 'uncommon', weight: 25, trail: '#7be6a3' },
+        { id: 'torque_black', name: 'Torque Wrench', kind: 'torque', accent: '#7dc0ff', metal: '#6b7585', lengthMul: 1.15, widthMul: 0.84, rarity: 'uncommon', weight: 25, trail: '#8dd7ff' },
+        { id: 'double_neon', name: 'Neon Double Wrench', kind: 'doublewrench', accent: '#3ed4c7', metal: '#d5dde7', lengthMul: 1.08, widthMul: 0.96, rarity: 'rare', weight: 14, trail: '#58fff0' },
+        { id: 'adjustable_orange', name: 'Foreman Adjustable', kind: 'adjustable', accent: '#f59d43', metal: '#d1d8df', lengthMul: 1.1, widthMul: 1.08, rarity: 'rare', weight: 14, trail: '#ffc768' },
+        { id: 'prybar_steel', name: 'Steel Prybar', kind: 'prybar', accent: '#b5c4d3', metal: '#8d9aab', lengthMul: 1.22, widthMul: 0.8, rarity: 'rare', weight: 14, trail: '#d7e4ef' },
+        { id: 'socket_crimson', name: 'Crimson Socket', kind: 'socket', accent: '#d55b68', metal: '#d7dfe8', lengthMul: 1.04, widthMul: 1.02, rarity: 'epic', weight: 7, trail: '#ff8490' },
+        { id: 'gold_wrench', name: 'Golden Open-End', kind: 'wrench', accent: '#f6d66a', metal: '#f3e0a6', lengthMul: 1.12, widthMul: 1.06, rarity: 'epic', weight: 7, trail: '#ffe67c' },
+        { id: 'gold_adjustable', name: 'Golden Adjustable', kind: 'adjustable', accent: '#e6c14f', metal: '#ffe7a3', lengthMul: 1.14, widthMul: 1.08, rarity: 'legendary', weight: 3, trail: '#fff09a' },
+        { id: 'gold_socket', name: 'Chrome Gold PRO', kind: 'socket', accent: '#ffd25e', metal: '#fff5ca', lengthMul: 1.18, widthMul: 1.12, rarity: 'legendary', weight: 3, trail: '#fff4a0' }
+      ];
+
+      const RARITY_META = {
+        starter: { name: 'Starter', color: '#6f7d91' },
+        common: { name: 'Standard', color: '#7ba9ff' },
+        uncommon: { name: 'Rare', color: '#6fd6a0' },
+        rare: { name: 'Master', color: '#f2a64a' },
+        epic: { name: 'Elite', color: '#ff7d6e' },
+        legendary: { name: 'Legendary', color: '#ffe077' }
+      };
+
+      const LEVEL_COLORS = ['#f0b548', '#62c2d8', '#ee775a', '#86cb68', '#d57853', '#59b9ff'];
+
+      const BOSS_THEMES = [
+        { name: 'Matatu Wheel', style: 'matatu', accent: '#23c689', detail: '#ffd15f' },
+        { name: 'Chinese Hauler Gear', style: 'gearRust', accent: '#b96537', detail: '#6d2f1f' },
+        { name: 'Mining Dump Shaft', style: 'chromeHub', accent: '#d9e3ef', detail: '#68beff' },
+        { name: 'Concrete Mixer Drum', style: 'drum', accent: '#ffaf47', detail: '#627287' },
+        { name: 'Port Tractor Hub', style: 'chromeWheel', accent: '#81d7ff', detail: '#ecf7ff' },
+        { name: 'Paver Gearbox', style: 'industrialGear', accent: '#db7e4b', detail: '#7a3b2b' }
+      ];
+
+      const view = {
+        w: 0,
+        h: 0,
+        dpr: 1,
+        topPad: 28,
+        sidePad: 18,
+        bottomPad: 28
+      };
+
+      const profile = loadProfile();
+
+      const game = {
+        scene: 'menu',
+        stageType: 'menu',
+        stageLabel: '',
+        level: 1,
+        score: 0,
+        target: null,
+        activeTool: null,
+        stuckTools: [],
+        wheelNuts: [],
+        fragments: [],
+        particles: [],
+        uiButtons: [],
+        popups: [],
+        reveal: null,
+        toolsRemaining: 0,
+        spawnY: 0,
+        baseToolLength: 96,
+        baseToolWidth: 18,
+        banner: 0,
+        bannerTitle: '',
+        bannerSub: '',
+        bannerAccent: '#f0b548',
+        shake: 0,
+        flash: 0,
+        breakClock: 0,
+        breakDuration: 1.08,
+        nutSpawnTimer: 2.4,
+        menuSpin: 0,
+        lastTime: 0,
+        elapsed: 0,
+        timeScale: 1,
+        combo: 0,
+        comboTimer: 0,
+        lastThrowAt: -9,
+        bonusTimer: 0,
+        bonusCollected: 0,
+        bonusTotal: 0,
+        bonusNextLevel: 0,
+        nextStage: null
+      };
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function lerp(a, b, t) {
+        return a + (b - a) * t;
+      }
+
+      function rand(min, max) {
+        return min + Math.random() * (max - min);
+      }
+
+      function normAngle(angle) {
+        angle %= TAU;
+        if (angle < 0) {
+          angle += TAU;
+        }
+        return angle;
+      }
+
+      function shortAngle(angle) {
+        angle = (angle + Math.PI) % TAU;
+        if (angle < 0) {
+          angle += TAU;
+        }
+        return angle - Math.PI;
+      }
+
+      function angleDiff(a, b) {
+        return Math.abs(shortAngle(a - b));
+      }
+
+      function roundRectPath(context, x, y, w, h, r) {
+        const radius = Math.min(r, w * 0.5, h * 0.5);
+        context.beginPath();
+        context.moveTo(x + radius, y);
+        context.arcTo(x + w, y, x + w, y + h, radius);
+        context.arcTo(x + w, y + h, x, y + h, radius);
+        context.arcTo(x, y + h, x, y, radius);
+        context.arcTo(x, y, x + w, y, radius);
+        context.closePath();
+      }
+
+      function getToolData(id) {
+        return TOOL_DATA.find((item) => item.id === id) || TOOL_DATA[0];
+      }
+
+      function currentToolData() {
+        return getToolData(profile.selected);
+      }
+
+      function pickFirstOwned() {
+        for (const tool of TOOL_DATA) {
+          if (profile.owned[tool.id]) {
+            return tool.id;
+          }
+        }
+        return 'wrench';
+      }
+
+      function loadProfile() {
+        const fallback = {
+          nuts: 0,
+          bestLevel: 1,
+          selected: 'wrench',
+          owned: { wrench: true },
+          cratesOpened: 0
+        };
+
+        try {
+          const raw = localStorage.getItem(SAVE_KEY) || localStorage.getItem(LEGACY_SAVE_KEY);
+          if (!raw) {
+            return fallback;
+          }
+          const parsed = JSON.parse(raw);
+          const owned = Object.assign({ wrench: true }, parsed.owned || {});
+          return {
+            nuts: Number.isFinite(parsed.nuts) ? parsed.nuts : 0,
+            bestLevel: Number.isFinite(parsed.bestLevel) ? parsed.bestLevel : 1,
+            selected: typeof parsed.selected === 'string' ? parsed.selected : 'wrench',
+            owned,
+            cratesOpened: Number.isFinite(parsed.cratesOpened) ? parsed.cratesOpened : 0
+          };
+        } catch (error) {
+          return fallback;
+        }
+      }
+
+      if (!profile.owned[profile.selected]) {
+        profile.selected = pickFirstOwned();
+      }
+
+      function saveProfile() {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(profile));
+      }
+
+      function resize() {
+        view.w = window.innerWidth;
+        view.h = window.innerHeight;
+        view.dpr = Math.min(window.devicePixelRatio || 1, 2);
+        view.topPad = Math.max(24, view.h * 0.045);
+        view.sidePad = Math.max(18, view.w * 0.045);
+        view.bottomPad = Math.max(24, view.h * 0.04);
+
+        canvas.width = Math.floor(view.w * view.dpr);
+        canvas.height = Math.floor(view.h * view.dpr);
+        canvas.style.width = `${view.w}px`;
+        canvas.style.height = `${view.h}px`;
+        ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+
+        layoutWorld();
+      }
+
+      function layoutWorld() {
+        const normalRadius = clamp(Math.min(view.w * 0.245, view.h * 0.145), 86, 142);
+        const bossRadius = clamp(Math.min(view.w * 0.262, view.h * 0.152), 94, 152);
+        const bonusRadius = clamp(Math.min(view.w * 0.252, view.h * 0.148), 92, 146);
+
+        game.spawnY = view.h * 0.87;
+        game.baseToolLength = clamp(normalRadius * 1.04, 84, 138);
+        game.baseToolWidth = clamp(normalRadius * 0.16, 14, 22);
+
+        if (game.target) {
+          const radius = game.target.type === 'boss'
+            ? bossRadius
+            : game.target.type === 'bonus'
+              ? bonusRadius
+              : normalRadius;
+          game.target.radius = radius;
+          game.target.rimRadius = radius * (game.target.type === 'bonus' ? 0.68 : 0.62);
+          game.target.baseX = view.w * 0.5;
+          game.target.x = game.target.baseX;
+          game.target.y = view.h * 0.285;
+        }
+
+        if (game.activeTool && !game.activeTool.flying && !game.activeTool.falling) {
+          setReadyToolPose(game.activeTool);
+        }
+      }
+
+      function getBossTheme(level) {
+        const index = Math.max(0, Math.floor(level / 5) - 1);
+        return BOSS_THEMES[index % BOSS_THEMES.length];
+      }
+
+      function resetStageState() {
+        game.stuckTools = [];
+        game.wheelNuts = [];
+        game.fragments = [];
+        game.particles = [];
+        game.popups = [];
+        game.activeTool = null;
+        game.shake = 0;
+        game.flash = 0.12;
+        game.breakClock = 0;
+        game.combo = 0;
+        game.comboTimer = 0;
+        game.timeScale = 1;
+        game.nutSpawnTimer = rand(1.9, 3.3);
+      }
+
+      function applyStageConfig(config) {
+        resetStageState();
+
+        game.scene = 'playing';
+        game.stageType = config.type;
+        game.stageLabel = config.stageLabel;
+        game.banner = 1.45;
+        game.bannerTitle = config.bannerTitle;
+        game.bannerSub = config.bannerSub;
+        game.bannerAccent = config.bannerAccent;
+        game.toolsRemaining = config.toolsRemaining;
+        game.bonusTimer = config.type === 'bonus' ? 10 : 0;
+        game.bonusCollected = 0;
+        game.bonusTotal = config.type === 'bonus' ? 15 : 0;
+        game.bonusNextLevel = config.nextLevel || 0;
+        game.nextStage = null;
+
+        game.target = {
+          type: config.type,
+          name: config.name || '',
+          visual: config.visual,
+          accent: config.accent,
+          detail: config.detail,
+          angle: rand(0, TAU),
+          speed: config.speed,
+          speedTarget: config.speed,
+          behaviorTimer: config.behaviorTimer,
+          pauseTimer: 0,
+          baseX: view.w * 0.5,
+          x: view.w * 0.5,
+          y: view.h * 0.285,
+          radius: 110,
+          rimRadius: 66,
+          motionAmp: config.motionAmp || 0,
+          motionSpeed: config.motionSpeed || 0,
+          motionPhase: rand(0, TAU),
+          nutCap: config.nutCap,
+          nutSpacing: config.nutSpacing,
+          desiredVisibleNuts: config.desiredVisibleNuts || 0,
+          nutRing: config.nutRing || 0.66
+        };
+
+        layoutWorld();
+
+        if (config.type === 'bonus') {
+          spawnBonusNuts(game.bonusTotal);
+        } else {
+          spawnInitialNuts(config.initialNuts);
+        }
+
+        spawnReadyTool();
+      }
+
+      function createLevel(level) {
+        game.level = level;
+
+        if (level % 5 === 0) {
+          const theme = getBossTheme(level);
+          const direction = Math.random() < 0.5 ? -1 : 1;
+          applyStageConfig({
+            type: 'boss',
+            stageLabel: `Level ${level}`,
+            bannerTitle: `Level ${level}`,
+            bannerSub: theme.name,
+            bannerAccent: theme.accent,
+            name: theme.name,
+            visual: theme.style,
+            accent: theme.accent,
+            detail: theme.detail,
+            speed: rand(1.55, 2.65) * direction,
+            behaviorTimer: rand(0.28, 0.8),
+            toolsRemaining: 7 + Math.min(3, Math.floor(level / 10)),
+            initialNuts: 2 + Math.floor(Math.random() * 2),
+            nutCap: 4,
+            nutSpacing: 0.34,
+            desiredVisibleNuts: 2,
+            motionAmp: level >= 20 ? clamp(view.w * 0.065, 12, 34) : 0,
+            motionSpeed: rand(0.85, 1.2),
+            nutRing: 0.68
+          });
+          return;
+        }
+
+        const direction = Math.random() < 0.5 ? -1 : 1;
+        applyStageConfig({
+          type: 'normal',
+          stageLabel: `Level ${level}`,
+          bannerTitle: 'Round',
+          bannerSub: `Level ${level}`,
+          bannerAccent: LEVEL_COLORS[(level - 1) % LEVEL_COLORS.length],
+          visual: 'wheel',
+          accent: LEVEL_COLORS[(level - 1) % LEVEL_COLORS.length],
+          detail: '#d8dce3',
+          speed: rand(0.95, 1.38) * direction * (1 + Math.min(0.5, level * 0.03)),
+          behaviorTimer: rand(1.2, 2.2),
+          toolsRemaining: 5 + ((level - 1) % 4),
+          initialNuts: 1 + Math.floor(Math.random() * 2),
+          nutCap: 3,
+          nutSpacing: 0.4,
+          desiredVisibleNuts: 1,
+          motionAmp: level >= 20 ? clamp(view.w * 0.085, 16, 44) : 0,
+          motionSpeed: rand(1.1, 1.6),
+          nutRing: 0.66
+        });
+      }
+
+      function createBonusStage(afterLevel, nextLevel) {
+        game.level = afterLevel;
+        applyStageConfig({
+          type: 'bonus',
+          stageLabel: 'Bonus: Assembly',
+          bannerTitle: 'Bonus Level',
+          bannerSub: 'Assembly: 15 nuts in 10 seconds',
+          bannerAccent: '#7fd8ff',
+          name: 'Assembly Service Wheel',
+          visual: 'serviceWheel',
+          accent: '#59c1e3',
+          detail: '#f2d671',
+          speed: rand(0.2, 0.32) * (Math.random() < 0.5 ? -1 : 1),
+          behaviorTimer: 999,
+          toolsRemaining: 18,
+          initialNuts: 0,
+          nutCap: 15,
+          nutSpacing: 0.18,
+          desiredVisibleNuts: 15,
+          nextLevel,
+          motionAmp: 0,
+          motionSpeed: 0,
+          nutRing: 0.72
+        });
+      }
+
+      function startRun() {
+        game.score = 0;
+        game.elapsed = 0;
+        game.lastThrowAt = -9;
+        createLevel(1);
+      }
+
+      function spawnReadyTool() {
+        const skin = currentToolData();
+        game.activeTool = {
+          x: view.w * 0.5,
+          y: game.spawnY,
+          vx: 0,
+          vy: 0,
+          rotation: 0,
+          length: game.baseToolLength * skin.lengthMul,
+          width: game.baseToolWidth * skin.widthMul,
+          flying: false,
+          falling: false,
+          dead: false,
+          alpha: 1,
+          spin: 0,
+          skin: skin.id,
+          trail: [],
+          trailActive: false,
+          quickThrow: false
+        };
+        setReadyToolPose(game.activeTool);
+      }
+
+      function setReadyToolPose(tool) {
+        tool.x = view.w * 0.5;
+        tool.y = game.spawnY;
+        tool.rotation = 0;
+      }
+
+      function fireTool() {
+        if (game.scene !== 'playing' || !game.activeTool || game.activeTool.flying || game.activeTool.falling) {
+          return;
+        }
+
+        const quickThrow = game.combo > 0 && game.elapsed - game.lastThrowAt < 0.5;
+        game.lastThrowAt = game.elapsed;
+        game.activeTool.flying = true;
+        game.activeTool.vy = -Math.max(980, view.h * 1.85);
+        game.activeTool.quickThrow = quickThrow;
+        game.activeTool.trailActive = quickThrow;
+        vibrate(12);
+      }
+
+      function spawnInitialNuts(count) {
+        for (let i = 0; i < count; i += 1) {
+          addWheelNut();
+        }
+      }
+
+      function spawnBonusNuts(count) {
+        const offset = rand(0, TAU);
+        for (let i = 0; i < count; i += 1) {
+          game.wheelNuts.push({
+            localAngle: normAngle(offset + (i / count) * TAU),
+            pulse: rand(0, TAU),
+            collected: false,
+            burst: 0
+          });
+        }
+      }
+
+      function addWheelNut() {
+        if (!game.target) {
+          return false;
+        }
+
+        const maxNuts = game.target.nutCap || 0;
+        if (game.wheelNuts.length >= maxNuts) {
+          return false;
+        }
+
+        const spacing = game.target.nutSpacing || 0.4;
+
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          const localAngle = rand(0, TAU);
+          let valid = true;
+
+          for (const tool of game.stuckTools) {
+            if (angleDiff(localAngle, tool.localAngle) < Math.max(spacing, tool.clearance + 0.08)) {
+              valid = false;
+              break;
+            }
+          }
+
+          if (!valid) {
+            continue;
+          }
+
+          for (const nut of game.wheelNuts) {
+            if (!nut.collected && angleDiff(localAngle, nut.localAngle) < spacing) {
+              valid = false;
+              break;
+            }
+          }
+
+          if (valid) {
+            game.wheelNuts.push({
+              localAngle,
+              pulse: rand(0, TAU),
+              collected: false,
+              burst: 0
+            });
+            return true;
+          }
+        }
+
+        return false;
+      }
+
+      function addPopup(text, x, y, color) {
+        game.popups.push({
+          text,
+          x,
+          y,
+          vy: -28,
+          life: 0.8,
+          color
+        });
+      }
+
+      function kickShake(amount) {
+        game.shake = Math.max(game.shake, amount);
+      }
+
+      function pushParticle(particle) {
+        game.particles.push(particle);
+        if (game.particles.length > MAX_PARTICLES) {
+          game.particles.splice(0, game.particles.length - MAX_PARTICLES);
+        }
+      }
+
+      function emitSparks(x, y, count, palette, speedMin, speedMax, sizeMin, sizeMax) {
+        for (let i = 0; i < count; i += 1) {
+          const angle = rand(-Math.PI * 0.92, Math.PI * 0.92);
+          const speed = rand(speedMin, speedMax);
+          pushParticle({
+            x,
+            y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed - rand(20, 70),
+            life: rand(0.18, 0.34),
+            maxLife: 0.34,
+            size: rand(sizeMin, sizeMax),
+            gravity: rand(520, 760),
+            drag: rand(3.2, 5.8),
+            color: palette[Math.floor(Math.random() * palette.length)]
+          });
+        }
+      }
+
+      function emitImpactSparks(x, y, heavy, accent) {
+        const palette = accent
+          ? ['#ffe08e', '#ffad49', '#ff6f21', accent]
+          : ['#ffe08e', '#ffad49', '#ff6f21'];
+        emitSparks(x, y, heavy ? 16 : 12, palette, 110, heavy ? 310 : 240, 2, 4.2);
+      }
+
+      function getToolTip(tool) {
+        return {
+          x: tool.x + Math.sin(tool.rotation) * (tool.length * 0.5),
+          y: tool.y - Math.cos(tool.rotation) * (tool.length * 0.5)
+        };
+      }
+
+      function getCollisionClearance(toolWidth) {
+        const radius = Math.max(60, game.target ? game.target.radius : 100);
+        return Math.max(0.16, Math.asin(Math.min(0.48, (toolWidth * 1.18) / radius)));
+      }
+
+      function updateComboOnSuccess(tool) {
+        if (tool.quickThrow) {
+          game.combo = Math.min(6, game.combo + 1);
+        } else {
+          game.combo = 1;
+        }
+
+        game.comboTimer = game.combo > 1 ? 1.2 : 0.35;
+        if (game.combo > 1) {
+          addPopup(`x${game.combo}`, view.w * 0.5, view.h * 0.48, getToolData(tool.skin).trail);
+        }
+
+        return game.combo;
+      }
+
+      function collectNut(index, hitX, hitY) {
+        const nut = game.wheelNuts[index];
+        if (!nut || nut.collected) {
+          return;
+        }
+
+        nut.collected = true;
+        nut.burst = 0;
+
+        const reward = game.stageType === 'bonus' ? 2 : game.target && game.target.type === 'boss' ? 2 : 1;
+        profile.nuts += reward;
+        game.score += reward * 25;
+        if (game.stageType === 'bonus') {
+          game.bonusCollected += 1;
+        }
+
+        emitSparks(hitX, hitY, 14, ['#fff2a5', '#ffd35e', '#ff9b3d'], 100, 260, 2, 4.5);
+        addPopup(`+${reward} nut${reward > 1 ? 's' : ''}`, hitX, hitY - 18, '#f8d56b');
+        kickShake(0.72);
+        game.flash = Math.max(game.flash, 0.12);
+        saveProfile();
+      }
+
+      function queueNextStage() {
+        if (game.stageType === 'bonus') {
+          return { kind: 'level', level: game.bonusNextLevel };
+        }
+        if (game.level % 10 === 0) {
+          return { kind: 'bonus', afterLevel: game.level, nextLevel: game.level + 1 };
+        }
+        return { kind: 'level', level: game.level + 1 };
+      }
+
+      function triggerWheelBreak() {
+        if (!game.target || game.scene === 'levelBreak') {
+          return;
+        }
+
+        game.nextStage = queueNextStage();
+        game.scene = 'levelBreak';
+        game.breakClock = 0;
+        game.breakDuration = 1.08;
+        game.timeScale = 0.24;
+        game.flash = 0.95;
+        kickShake(1.1);
+        game.activeTool = null;
+        game.score += game.target.type === 'boss' ? 150 : game.target.type === 'bonus' ? 90 : 55;
+
+        if (game.stageType === 'bonus' && game.bonusCollected >= game.bonusTotal) {
+          profile.nuts += 25;
+          game.score += 250;
+          addPopup('Jackpot! +25 nuts', game.target.x, game.target.y - game.target.radius - 30, '#ffe58a');
+          saveProfile();
+        } else {
+          addPopup(game.target.type === 'boss' ? 'Boss Shattered!' : 'Break!', game.target.x, game.target.y - game.target.radius - 30, '#ffddb0');
+        }
+
+        const directions = [-2.4, -0.82, 0.82, 2.4];
+        for (let i = 0; i < 4; i += 1) {
+          const dir = directions[i];
+          game.fragments.push({
+            x: game.target.x,
+            y: game.target.y,
+            start: i * (Math.PI * 0.5),
+            end: (i + 1) * (Math.PI * 0.5),
+            radius: game.target.radius,
+            angle: game.target.angle,
+            vx: Math.cos(dir) * rand(180, 360),
+            vy: Math.sin(dir) * rand(180, 360),
+            spin: rand(-3.8, 3.8),
+            type: game.target.type,
+            visual: game.target.visual,
+            accent: game.target.accent,
+            detail: game.target.detail
+          });
+        }
+
+        emitSparks(game.target.x, game.target.y, 24, ['#ffffff', '#ffe29e', '#ff9b4b'], 80, 360, 2.5, 5);
+
+        if (game.stageType === 'bonus') {
+          profile.bestLevel = Math.max(profile.bestLevel, game.bonusNextLevel);
+        } else {
+          profile.bestLevel = Math.max(profile.bestLevel, game.level + 1);
+        }
+        saveProfile();
+        vibrate([18, 24, 18, 42]);
+      }
+
+      function stickTool(tool, hitAngle, nutIndex) {
+        const localAngle = shortAngle(hitAngle - game.target.angle);
+        const hitX = game.target.x + Math.cos(hitAngle) * game.target.radius;
+        const hitY = game.target.y + Math.sin(hitAngle) * game.target.radius;
+        const comboMul = updateComboOnSuccess(tool);
+        const baseScore = game.stageType === 'bonus' ? 8 : game.target.type === 'boss' ? 20 : 10;
+
+        game.stuckTools.push({
+          localAngle,
+          length: tool.length,
+          width: tool.width,
+          skin: tool.skin,
+          clearance: getCollisionClearance(tool.width)
+        });
+
+        game.toolsRemaining -= 1;
+        game.score += baseScore * comboMul;
+
+        emitImpactSparks(hitX, hitY, nutIndex > -1, getToolData(tool.skin).accent);
+        kickShake(nutIndex > -1 ? 0.58 : 0.34);
+        game.flash = Math.max(game.flash, nutIndex > -1 ? 0.08 : 0.05);
+
+        if (nutIndex > -1) {
+          collectNut(nutIndex, hitX, hitY);
+        }
+
+        tool.flying = false;
+        game.activeTool = null;
+
+        if (game.stageType === 'bonus' && game.bonusCollected >= game.bonusTotal) {
+          triggerWheelBreak();
+          return;
+        }
+
+        if (game.toolsRemaining <= 0) {
+          triggerWheelBreak();
+          return;
+        }
+
+        spawnReadyTool();
+        vibrate(14);
+      }
+
+      function failTool(tool) {
+        const tip = getToolTip(tool);
+        emitImpactSparks(tip.x, tip.y, true, '#ff5f55');
+        kickShake(0.95);
+        game.flash = Math.max(game.flash, 0.16);
+        game.combo = 0;
+        game.comboTimer = 0;
+        tool.flying = false;
+        tool.falling = true;
+        tool.vx = rand(-190, 190);
+        tool.vy = -140;
+        tool.spin = rand(-10, 10);
+        game.scene = 'gameOver';
+        profile.bestLevel = Math.max(profile.bestLevel, game.level);
+        saveProfile();
+        addPopup('Wrench clash!', view.w * 0.5, view.h * 0.58, '#ff7c72');
+        vibrate([22, 34, 70]);
+      }
+
+      function tryImpact(tool) {
+        if (!game.target) {
+          return;
+        }
+
+        const tip = getToolTip(tool);
+        const dx = tip.x - game.target.x;
+        const dy = tip.y - game.target.y;
+        const hitRadius = game.target.radius + 3;
+
+        if (dx * dx + dy * dy > hitRadius * hitRadius) {
+          return;
+        }
+
+        const hitAngle = Math.atan2(dy, dx);
+        const clearance = getCollisionClearance(tool.width);
+
+        for (const stuck of game.stuckTools) {
+          const worldAngle = normAngle(game.target.angle + stuck.localAngle);
+          if (angleDiff(hitAngle, worldAngle) < Math.max(clearance, stuck.clearance)) {
+            failTool(tool);
+            return;
+          }
+        }
+
+        let nutIndex = -1;
+        for (let i = 0; i < game.wheelNuts.length; i += 1) {
+          const nut = game.wheelNuts[i];
+          if (nut.collected) {
+            continue;
+          }
+          const nutAngle = normAngle(game.target.angle + nut.localAngle);
+          if (angleDiff(hitAngle, nutAngle) < Math.max(clearance * 1.3, 0.16)) {
+            nutIndex = i;
+            break;
+          }
+        }
+
+        stickTool(tool, hitAngle, nutIndex);
+      }
+
+      function updateTrail(tool, dt) {
+        for (let i = tool.trail.length - 1; i >= 0; i -= 1) {
+          tool.trail[i].life -= dt;
+          if (tool.trail[i].life <= 0) {
+            tool.trail.splice(i, 1);
+          }
+        }
+
+        if (!tool.flying || !tool.trailActive) {
+          return;
+        }
+
+        tool.trail.push({
+          x: tool.x,
+          y: tool.y,
+          life: 0.24
+        });
+
+        if (tool.trail.length > 12) {
+          tool.trail.splice(0, tool.trail.length - 12);
+        }
+      }
+
+      function updateTool(dt) {
+        const tool = game.activeTool;
+        if (!tool) {
+          return;
+        }
+
+        updateTrail(tool, dt);
+
+        if (tool.flying) {
+          tool.y += tool.vy * dt;
+          tryImpact(tool);
+          if (tool.flying && tool.y + tool.length * 0.5 < -16) {
+            failTool(tool);
+          }
+          return;
+        }
+
+        if (tool.falling) {
+          tool.x += tool.vx * dt;
+          tool.y += tool.vy * dt;
+          tool.rotation += tool.spin * dt;
+          tool.vy += 1200 * dt;
+          tool.alpha = Math.max(0, tool.alpha - dt * 1.35);
+          if (tool.y - tool.length > view.h + 60) {
+            tool.dead = true;
+          }
+          if (tool.dead) {
+            game.activeTool = null;
+          }
+          return;
+        }
+
+        setReadyToolPose(tool);
+      }
+
+      function updateRegularTarget(dt, now) {
+        game.target.behaviorTimer -= dt;
+        if (game.target.behaviorTimer <= 0) {
+          const currentDir = Math.sign(game.target.speedTarget || 1);
+          const dir = game.level >= 4 && Math.random() < 0.22 ? -currentDir : currentDir;
+          const speed = rand(0.95, 1.55) * (1 + Math.min(0.34, game.level * 0.028));
+          game.target.speedTarget = speed * dir;
+          game.target.behaviorTimer = rand(1.2, 2.15);
+        }
+
+        game.target.speed += (game.target.speedTarget - game.target.speed) * Math.min(1, dt * 2.8);
+        const wave = Math.sin(now * 1.12 + game.level * 0.45) * Math.min(0.16, game.level * 0.012);
+        game.target.angle = normAngle(game.target.angle + (game.target.speed + wave) * dt);
+      }
+
+      function updateBossTarget(dt) {
+        if (game.target.pauseTimer > 0) {
+          game.target.pauseTimer -= dt;
+          if (game.target.pauseTimer <= 0) {
+            game.target.pauseTimer = 0;
+            game.target.speedTarget = (Math.random() < 0.55 ? -1 : 1) * rand(1.8, 3.6);
+          }
+          return;
+        }
+
+        game.target.behaviorTimer -= dt;
+        if (game.target.behaviorTimer <= 0) {
+          const roll = Math.random();
+          if (roll < 0.3) {
+            game.target.pauseTimer = rand(0.12, 0.4);
+          } else if (roll < 0.7) {
+            game.target.speedTarget = -Math.sign(game.target.speedTarget || 1) * rand(1.6, 3.5);
+          } else {
+            game.target.speedTarget = (Math.random() < 0.5 ? -1 : 1) * rand(1.4, 3.9);
+          }
+          game.target.behaviorTimer = rand(0.26, 0.82);
+        }
+
+        game.target.speed += (game.target.speedTarget - game.target.speed) * Math.min(1, dt * 4.25);
+        game.target.angle = normAngle(game.target.angle + game.target.speed * dt);
+      }
+
+      function updateBonusTarget(dt) {
+        game.target.angle = normAngle(game.target.angle + game.target.speed * dt);
+      }
+
+      function updateTarget(dt, now) {
+        if (!game.target) {
+          return;
+        }
+
+        if (game.target.type === 'boss') {
+          updateBossTarget(dt);
+        } else if (game.target.type === 'bonus') {
+          updateBonusTarget(dt);
+        } else {
+          updateRegularTarget(dt, now);
+        }
+
+        if (game.target.motionAmp > 0) {
+          game.target.x = game.target.baseX + Math.sin(now * game.target.motionSpeed + game.target.motionPhase) * game.target.motionAmp;
+        } else {
+          game.target.x = game.target.baseX;
+        }
+      }
+
+      function updateNuts(dt) {
+        const visibleNuts = game.wheelNuts.filter((nut) => !nut.collected).length;
+
+        if (game.target && game.target.type !== 'bonus' && visibleNuts < game.target.desiredVisibleNuts) {
+          game.nutSpawnTimer -= dt;
+          if (game.nutSpawnTimer <= 0) {
+            addWheelNut();
+            game.nutSpawnTimer = rand(2.3, 4.2);
+          }
+        }
+
+        for (let i = game.wheelNuts.length - 1; i >= 0; i -= 1) {
+          const nut = game.wheelNuts[i];
+          if (nut.collected) {
+            nut.burst += dt;
+            if (nut.burst >= 0.34) {
+              game.wheelNuts.splice(i, 1);
+            }
+          }
+        }
+      }
+
+      function updateParticles(dt) {
+        for (let i = game.particles.length - 1; i >= 0; i -= 1) {
+          const particle = game.particles[i];
+          particle.life -= dt;
+          particle.x += particle.vx * dt;
+          particle.y += particle.vy * dt;
+          particle.vy += particle.gravity * dt;
+          const drag = Math.max(0, 1 - particle.drag * dt);
+          particle.vx *= drag;
+          if (particle.life <= 0) {
+            game.particles.splice(i, 1);
+          }
+        }
+      }
+
+      function updateFragments(dt, realDt) {
+        game.breakClock += realDt;
+        const t = clamp(game.breakClock / game.breakDuration, 0, 1);
+        game.timeScale = t < 0.74 ? 0.24 : lerp(0.24, 1, (t - 0.74) / 0.26);
+
+        for (const fragment of game.fragments) {
+          fragment.x += fragment.vx * dt;
+          fragment.y += fragment.vy * dt;
+          fragment.vy += 560 * dt;
+          fragment.angle += fragment.spin * dt;
+        }
+
+        if (game.breakClock >= game.breakDuration) {
+          if (game.nextStage && game.nextStage.kind === 'bonus') {
+            createBonusStage(game.nextStage.afterLevel, game.nextStage.nextLevel);
+          } else if (game.nextStage) {
+            createLevel(game.nextStage.level);
+          }
+        }
+      }
+
+      function updatePopups(realDt) {
+        for (let i = game.popups.length - 1; i >= 0; i -= 1) {
+          const popup = game.popups[i];
+          popup.life -= realDt;
+          popup.y += popup.vy * realDt;
+          if (popup.life <= 0) {
+            game.popups.splice(i, 1);
+          }
+        }
+      }
+
+      function updateBonusStage(realDt) {
+        if (game.stageType !== 'bonus' || game.scene !== 'playing') {
+          return;
+        }
+
+        game.bonusTimer = Math.max(0, game.bonusTimer - realDt);
+        if (game.bonusTimer <= 0) {
+          addPopup('Time up', view.w * 0.5, view.h * 0.48, '#ffd582');
+          triggerWheelBreak();
+        }
+      }
+
+      function updateReveal(realDt) {
+        if (!game.reveal) {
+          return;
+        }
+        game.reveal.timer -= realDt;
+        if (game.reveal.timer <= 0) {
+          game.reveal = null;
+        }
+      }
+
+      function update(dt, realDt, now) {
+        game.elapsed += realDt;
+        game.menuSpin = normAngle(game.menuSpin + realDt * 0.65);
+        game.flash = Math.max(0, game.flash - realDt * 3.6);
+        game.shake = Math.max(0, game.shake - realDt * 1.95);
+        game.banner = Math.max(0, game.banner - realDt);
+        game.comboTimer = Math.max(0, game.comboTimer - realDt);
+
+        if (game.scene !== 'levelBreak' && game.timeScale < 1) {
+          game.timeScale = Math.min(1, game.timeScale + realDt * 4.5);
+        }
+
+        if (game.scene === 'playing' || game.scene === 'gameOver') {
+          updateTarget(dt, now);
+          updateNuts(dt);
+          updateTool(dt);
+          updateBonusStage(realDt);
+        } else if (game.scene === 'levelBreak') {
+          updateFragments(dt, realDt);
+        }
+
+        updateParticles(dt);
+        updatePopups(realDt);
+        updateReveal(realDt);
+      }
+
+      function registerButton(x, y, w, h, action) {
+        game.uiButtons.push({ x, y, w, h, action });
+      }
+
+      function drawButton(x, y, w, h, label, style) {
+        ctx.save();
+        roundRectPath(ctx, x, y, w, h, 18);
+
+        if (style === 'primary') {
+          ctx.fillStyle = '#f0b548';
+        } else if (style === 'disabled') {
+          ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        } else if (style === 'crate') {
+          ctx.fillStyle = 'rgba(96,194,230,0.18)';
+        } else {
+          ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        }
+
+        ctx.fill();
+        ctx.strokeStyle = style === 'primary'
+          ? 'rgba(255,255,255,0.18)'
+          : style === 'crate'
+            ? 'rgba(96,194,230,0.4)'
+            : 'rgba(255,255,255,0.09)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = style === 'primary' ? '#101318' : style === 'disabled' ? 'rgba(237,242,250,0.45)' : '#edf2fa';
+        ctx.font = `700 ${Math.max(14, h * 0.28)}px Trebuchet MS, Segoe UI, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, x + w * 0.5, y + h * 0.53);
+        ctx.restore();
+      }
+
+      function drawBackground() {
+        ctx.fillStyle = '#090c14';
+        ctx.fillRect(0, 0, view.w, view.h);
+
+        const gradient = ctx.createLinearGradient(0, 0, 0, view.h);
+        gradient.addColorStop(0, 'rgba(60,90,150,0.08)');
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, view.w, view.h);
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+        ctx.lineWidth = 1;
+        for (let y = 0; y < view.h; y += 56) {
+          ctx.beginPath();
+          ctx.moveTo(0, y + 0.5);
+          ctx.lineTo(view.w, y + 0.5);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawTopHud() {
+        ctx.save();
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#edf2fa';
+        ctx.font = game.stageType === 'bonus' ? '700 17px Trebuchet MS, Segoe UI, sans-serif' : '700 20px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(game.stageLabel || `Level ${game.level}`, view.sidePad, view.topPad);
+
+        ctx.textAlign = 'center';
+        ctx.font = game.stageType === 'bonus' ? '700 15px Trebuchet MS, Segoe UI, sans-serif' : '700 18px Trebuchet MS, Segoe UI, sans-serif';
+        let centerText = `Score ${game.score}`;
+        if (game.stageType === 'bonus') {
+          centerText += ` | ${game.bonusTimer.toFixed(1)}s | ${game.bonusCollected}/${game.bonusTotal}`;
+        }
+        ctx.fillText(centerText, view.w * 0.5, view.topPad + 2);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#f4cd61';
+        ctx.fillText(`Nuts ${profile.nuts}`, view.w - view.sidePad, view.topPad + 2);
+        ctx.restore();
+
+        if (game.combo > 1 && game.comboTimer > 0) {
+          drawComboHud();
+        }
+      }
+
+      function drawComboHud() {
+        const alpha = clamp(game.comboTimer / 1.2, 0, 1);
+        const y = view.topPad + 34;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = currentToolData().trail;
+        ctx.font = '700 24px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText(`COMBO x${game.combo}`, view.w * 0.5, y);
+        ctx.restore();
+      }
+
+      function drawRemainingIcons() {
+        const total = game.toolsRemaining;
+        const iconSize = clamp(view.w * 0.045, 16, 24);
+        const gap = iconSize * 0.35;
+        const baseX = view.sidePad + iconSize * 0.5;
+        const baseY = view.h - view.bottomPad - iconSize * 1.1;
+        const wrap = Math.max(3, Math.floor((view.w * 0.28) / (iconSize + gap)));
+        const skin = currentToolData();
+
+        ctx.save();
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = 'rgba(237,242,250,0.75)';
+        ctx.font = '700 14px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText(game.stageType === 'bonus' ? 'Throws' : 'Tools', view.sidePad, baseY - iconSize - 10);
+
+        for (let i = 0; i < total; i += 1) {
+          const row = Math.floor(i / wrap);
+          const col = i % wrap;
+          const x = baseX + col * (iconSize + gap);
+          const y = baseY - row * (iconSize + gap);
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.scale(0.38, 0.38);
+          drawToolLocal(skin, iconSize * 3.1, iconSize * 0.95);
+          ctx.restore();
+        }
+
+        ctx.restore();
+      }
+
+      function drawBanner() {
+        if (game.banner <= 0) {
+          return;
+        }
+
+        const t = clamp(game.banner / 1.45, 0, 1);
+        const alpha = t > 0.42 ? 1 : t / 0.42;
+        const y = lerp(view.h * 0.44, view.h * 0.385, 1 - t);
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '700 16px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillStyle = game.bannerAccent;
+        ctx.fillText(game.stageType === 'boss' ? 'BOSS' : game.stageType === 'bonus' ? 'BONUS' : 'ROUND', view.w * 0.5, y - 28);
+        ctx.font = `700 ${game.stageType === 'boss' ? 30 : 34}px Trebuchet MS, Segoe UI, sans-serif`;
+        ctx.fillStyle = '#edf2fa';
+        ctx.fillText(game.bannerTitle, view.w * 0.5, y + 4);
+        ctx.font = '700 18px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillStyle = 'rgba(237,242,250,0.88)';
+        ctx.fillText(game.bannerSub, view.w * 0.5, y + 36);
+        ctx.restore();
+      }
+
+      function drawTargetShadow() {
+        ctx.save();
+        ctx.translate(game.target.x, game.target.y + game.target.radius * 0.13);
+        ctx.scale(1, 0.36);
+        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.beginPath();
+        ctx.arc(0, 0, game.target.radius * 1.14, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawWheelLocal(radius, accent) {
+        ctx.fillStyle = '#121825';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius + 10, 0, TAU);
+        ctx.fill();
+
+        ctx.fillStyle = '#252b37';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, TAU);
+        ctx.fill();
+
+        for (let i = 0; i < 18; i += 1) {
+          ctx.save();
+          ctx.rotate((i / 18) * TAU);
+          ctx.fillStyle = i % 2 === 0 ? '#0f131c' : '#353d4c';
+          roundRectPath(ctx, -radius * 0.08, -radius - 8, radius * 0.16, radius * 0.21, radius * 0.03);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.lineWidth = Math.max(10, radius * 0.12);
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.83, 0, TAU);
+        ctx.stroke();
+
+        ctx.fillStyle = '#8e98a8';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.62, 0, TAU);
+        ctx.fill();
+
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.5, 0, TAU);
+        ctx.fill();
+
+        for (let i = 0; i < 6; i += 1) {
+          ctx.save();
+          ctx.rotate((i / 6) * TAU);
+          ctx.fillStyle = '#d6dce5';
+          ctx.beginPath();
+          ctx.moveTo(radius * 0.08, 0);
+          ctx.lineTo(radius * 0.36, -radius * 0.08);
+          ctx.lineTo(radius * 0.36, radius * 0.08);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        ctx.fillStyle = '#404754';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.2, 0, TAU);
+        ctx.fill();
+
+        for (let i = 0; i < 6; i += 1) {
+          const angle = (i / 6) * TAU;
+          ctx.fillStyle = '#1d2128';
+          ctx.beginPath();
+          ctx.arc(Math.cos(angle) * radius * 0.31, Math.sin(angle) * radius * 0.31, radius * 0.05, 0, TAU);
+          ctx.fill();
+        }
+      }
+
+      function drawServiceWheelLocal(radius, accent, detail) {
+        drawWheelLocal(radius, accent);
+        ctx.strokeStyle = detail;
+        ctx.lineWidth = radius * 0.06;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.9, 0, TAU);
+        ctx.stroke();
+
+        for (let i = 0; i < 6; i += 1) {
+          ctx.save();
+          ctx.rotate((i / 6) * TAU);
+          ctx.fillStyle = i % 2 === 0 ? detail : '#0b0f16';
+          roundRectPath(ctx, -radius * 0.08, -radius * 0.98, radius * 0.16, radius * 0.16, radius * 0.03);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      function drawMatatuBoss(radius, accent, detail) {
+        ctx.fillStyle = '#131820';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius + 10, 0, TAU);
+        ctx.fill();
+
+        ctx.fillStyle = '#232a34';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, 0, TAU);
+        ctx.fill();
+
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = radius * 0.11;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.78, 0, TAU);
+        ctx.stroke();
+
+        ctx.strokeStyle = detail;
+        ctx.lineWidth = radius * 0.04;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.92, Math.PI * 0.1, Math.PI * 0.9);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.92, Math.PI * 1.1, Math.PI * 1.9);
+        ctx.stroke();
+
+        ctx.fillStyle = '#cdd6e1';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.46, 0, TAU);
+        ctx.fill();
+
+        for (let i = 0; i < 8; i += 1) {
+          const angle = (i / 8) * TAU;
+          ctx.fillStyle = i % 2 === 0 ? accent : detail;
+          ctx.beginPath();
+          ctx.arc(Math.cos(angle) * radius * 0.6, Math.sin(angle) * radius * 0.6, radius * 0.05, 0, TAU);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = '#394252';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.17, 0, TAU);
+        ctx.fill();
+      }
+
+      function drawRustGearBoss(radius, accent, detail) {
+        ctx.fillStyle = '#171b24';
+        ctx.beginPath();
+        for (let i = 0; i < 30; i += 1) {
+          const outer = i % 2 === 0 ? radius + 12 : radius * 0.76;
+          const angle = (i / 30) * TAU;
+          const x = Math.cos(angle) * outer;
+          const y = Math.sin(angle) * outer;
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.76, 0, TAU);
+        ctx.fill();
+
+        ctx.strokeStyle = detail;
+        ctx.lineWidth = radius * 0.08;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.42, 0, TAU);
+        ctx.stroke();
+
+        for (let i = 0; i < 10; i += 1) {
+          const angle = (i / 10) * TAU;
+          ctx.strokeStyle = i % 2 === 0 ? '#f2b071' : '#5d231a';
+          ctx.lineWidth = radius * 0.035;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(angle) * radius * 0.24, Math.sin(angle) * radius * 0.24);
+          ctx.lineTo(Math.cos(angle) * radius * 0.68, Math.sin(angle) * radius * 0.68);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = '#1b2029';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.15, 0, TAU);
+        ctx.fill();
+      }
+
+      function drawChromeHubBoss(radius, accent, detail) {
+        ctx.fillStyle = '#151a23';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius + 8, 0, TAU);
+        ctx.fill();
+
+        const chrome = ctx.createRadialGradient(-radius * 0.22, -radius * 0.26, radius * 0.1, 0, 0, radius * 0.82);
+        chrome.addColorStop(0, '#ffffff');
+        chrome.addColorStop(0.35, accent);
+        chrome.addColorStop(0.75, '#8fa1b8');
+        chrome.addColorStop(1, '#2a3342');
+        ctx.fillStyle = chrome;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.82, 0, TAU);
+        ctx.fill();
+
+        ctx.strokeStyle = detail;
+        ctx.lineWidth = radius * 0.05;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.62, 0, TAU);
+        ctx.stroke();
+
+        for (let i = 0; i < 6; i += 1) {
+          ctx.save();
+          ctx.rotate((i / 6) * TAU);
+          ctx.fillStyle = '#f4f9ff';
+          roundRectPath(ctx, -radius * 0.06, -radius * 0.62, radius * 0.12, radius * 0.48, radius * 0.05);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        ctx.fillStyle = '#5a6575';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.22, 0, TAU);
+        ctx.fill();
+      }
+
+      function drawDrumBoss(radius, accent, detail) {
+        ctx.fillStyle = '#10151d';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius + 10, 0, TAU);
+        ctx.fill();
+
+        ctx.fillStyle = '#374255';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.94, 0, TAU);
+        ctx.fill();
+
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.82, 0, TAU);
+        ctx.fill();
+
+        for (let i = 0; i < 3; i += 1) {
+          ctx.strokeStyle = i % 2 === 0 ? detail : '#d1d7df';
+          ctx.lineWidth = radius * 0.08;
+          ctx.beginPath();
+          ctx.arc(0, 0, radius * (0.58 + i * 0.1), 0.2, Math.PI - 0.2);
+          ctx.stroke();
+        }
+
+        for (let i = 0; i < 8; i += 1) {
+          const angle = (i / 8) * TAU;
+          ctx.fillStyle = '#f2e0b0';
+          ctx.beginPath();
+          ctx.arc(Math.cos(angle) * radius * 0.68, Math.sin(angle) * radius * 0.68, radius * 0.05, 0, TAU);
+          ctx.fill();
+        }
+      }
+
+      function drawChromeWheelBoss(radius, accent, detail) {
+        ctx.fillStyle = '#121722';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius + 10, 0, TAU);
+        ctx.fill();
+
+        const chrome = ctx.createLinearGradient(-radius, -radius, radius, radius);
+        chrome.addColorStop(0, '#ffffff');
+        chrome.addColorStop(0.28, detail);
+        chrome.addColorStop(0.55, '#7b8da6');
+        chrome.addColorStop(1, '#1f2733');
+        ctx.fillStyle = chrome;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.9, 0, TAU);
+        ctx.fill();
+
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = radius * 0.045;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.72, 0, TAU);
+        ctx.stroke();
+
+        for (let i = 0; i < 10; i += 1) {
+          ctx.save();
+          ctx.rotate((i / 10) * TAU);
+          ctx.fillStyle = '#f5fbff';
+          ctx.beginPath();
+          ctx.moveTo(radius * 0.08, 0);
+          ctx.lineTo(radius * 0.58, -radius * 0.08);
+          ctx.lineTo(radius * 0.58, radius * 0.08);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+
+        ctx.fillStyle = '#667588';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.18, 0, TAU);
+        ctx.fill();
+      }
+
+      function drawIndustrialGearBoss(radius, accent, detail) {
+        ctx.fillStyle = '#171b24';
+        ctx.beginPath();
+        for (let i = 0; i < 24; i += 1) {
+          const outer = i % 2 === 0 ? radius + 9 : radius * 0.8;
+          const angle = (i / 24) * TAU;
+          const x = Math.cos(angle) * outer;
+          const y = Math.sin(angle) * outer;
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = accent;
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.78, 0, TAU);
+        ctx.fill();
+
+        ctx.strokeStyle = detail;
+        ctx.lineWidth = radius * 0.05;
+        for (let i = 0; i < 12; i += 1) {
+          const angle = (i / 12) * TAU;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(angle) * radius * 0.24, Math.sin(angle) * radius * 0.24);
+          ctx.lineTo(Math.cos(angle) * radius * 0.72, Math.sin(angle) * radius * 0.72);
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = '#202630';
+        ctx.beginPath();
+        ctx.arc(0, 0, radius * 0.16, 0, TAU);
+        ctx.fill();
+      }
+
+      function drawBossLocal(targetLike, radius) {
+        switch (targetLike.visual) {
+          case 'matatu':
+            drawMatatuBoss(radius, targetLike.accent, targetLike.detail);
+            break;
+          case 'gearRust':
+            drawRustGearBoss(radius, targetLike.accent, targetLike.detail);
+            break;
+          case 'chromeHub':
+            drawChromeHubBoss(radius, targetLike.accent, targetLike.detail);
+            break;
+          case 'drum':
+            drawDrumBoss(radius, targetLike.accent, targetLike.detail);
+            break;
+          case 'chromeWheel':
+            drawChromeWheelBoss(radius, targetLike.accent, targetLike.detail);
+            break;
+          default:
+            drawIndustrialGearBoss(radius, targetLike.accent, targetLike.detail);
+        }
+      }
+
+      function drawTarget() {
+        ctx.save();
+        ctx.translate(game.target.x, game.target.y);
+        ctx.rotate(game.target.angle);
+        if (game.target.type === 'boss') {
+          drawBossLocal(game.target, game.target.radius);
+        } else if (game.target.type === 'bonus') {
+          drawServiceWheelLocal(game.target.radius, game.target.accent, game.target.detail);
+        } else {
+          drawWheelLocal(game.target.radius, game.target.accent);
+        }
+        ctx.restore();
+      }
+
+      function drawHexNut(size) {
+        ctx.fillStyle = '#f1c958';
+        ctx.beginPath();
+        for (let i = 0; i < 6; i += 1) {
+          const angle = (i / 6) * TAU;
+          const x = Math.cos(angle) * size;
+          const y = Math.sin(angle) * size;
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = '#8e6512';
+        ctx.beginPath();
+        ctx.arc(0, 0, size * 0.38, 0, TAU);
+        ctx.fill();
+      }
+
+      function drawWheelNuts() {
+        for (const nut of game.wheelNuts) {
+          const angle = game.target.angle + nut.localAngle;
+          const radius = game.target.radius * game.target.nutRing;
+          const x = game.target.x + Math.cos(angle) * radius;
+          const y = game.target.y + Math.sin(angle) * radius;
+          const pulse = 1 + Math.sin(game.menuSpin * 4 + nut.pulse) * 0.08;
+
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(angle);
+          ctx.scale(pulse, pulse);
+          ctx.globalAlpha = nut.collected ? 1 - clamp(nut.burst / 0.34, 0, 1) : 1;
+          drawHexNut(game.target.radius * (game.stageType === 'bonus' ? 0.085 : 0.11));
+          ctx.restore();
+        }
+      }
+
+      function drawStuckTools() {
+        for (const tool of game.stuckTools) {
+          const angle = game.target.angle + tool.localAngle;
+          const radius = game.target.radius + tool.length * 0.46;
+          const x = game.target.x + Math.cos(angle) * radius;
+          const y = game.target.y + Math.sin(angle) * radius;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(angle - Math.PI * 0.5);
+          drawToolLocal(getToolData(tool.skin), tool.length, tool.width);
+          ctx.restore();
+        }
+      }
+
+      function drawTrail(tool) {
+        if (!tool.trail.length) {
+          return;
+        }
+
+        const color = getToolData(tool.skin).trail;
+        ctx.save();
+        for (let i = 0; i < tool.trail.length; i += 1) {
+          const point = tool.trail[i];
+          const alpha = point.life / 0.24;
+          const size = lerp(4, 10, i / Math.max(1, tool.trail.length - 1));
+          ctx.globalAlpha = alpha * 0.42;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, size * 0.36, 0, TAU);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function drawFlyingTool(tool) {
+        ctx.save();
+        drawTrail(tool);
+        ctx.globalAlpha = tool.alpha;
+        ctx.translate(tool.x, tool.y);
+        ctx.rotate(tool.rotation);
+        drawToolLocal(getToolData(tool.skin), tool.length, tool.width);
+        ctx.restore();
+      }
+
+      function drawOpenWrench(length, width, toolData) {
+        const shaftW = width * 0.5;
+        const headY = -length * 0.36;
+        const handleY = length * 0.32;
+
+        ctx.fillStyle = toolData.metal;
+        roundRectPath(ctx, -shaftW * 0.5, -length * 0.18, shaftW, length * 0.72, shaftW * 0.45);
+        ctx.fill();
+        ctx.lineWidth = Math.max(1.5, width * 0.08);
+        ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(0, handleY, width * 0.42, 0, TAU);
+        ctx.fillStyle = toolData.accent;
+        ctx.fill();
+
+        ctx.fillStyle = toolData.metal;
+        ctx.beginPath();
+        ctx.moveTo(-width * 0.72, headY + width * 0.4);
+        ctx.lineTo(-width * 0.18, headY - width * 0.68);
+        ctx.lineTo(width * 0.18, headY - width * 0.68);
+        ctx.lineTo(width * 0.72, headY + width * 0.4);
+        ctx.lineTo(width * 0.28, headY + width * 0.18);
+        ctx.lineTo(width * 0.12, headY - width * 0.06);
+        ctx.lineTo(-width * 0.12, headY - width * 0.06);
+        ctx.lineTo(-width * 0.28, headY + width * 0.18);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      function drawDoubleWrench(length, width, toolData) {
+        ctx.save();
+        drawOpenWrench(length, width, toolData);
+        ctx.scale(1, -1);
+        drawOpenWrench(length * 0.86, width * 0.86, toolData);
+        ctx.restore();
+      }
+
+      function drawScrewdriver(length, width, toolData) {
+        const shaftW = width * 0.25;
+        ctx.fillStyle = toolData.metal;
+        roundRectPath(ctx, -shaftW * 0.5, -length * 0.45, shaftW, length * 0.56, shaftW * 0.4);
+        ctx.fill();
+
+        ctx.fillStyle = '#8b95a5';
+        ctx.beginPath();
+        ctx.moveTo(0, -length * 0.52);
+        ctx.lineTo(width * 0.18, -length * 0.4);
+        ctx.lineTo(-width * 0.18, -length * 0.4);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = toolData.accent;
+        roundRectPath(ctx, -width * 0.36, -length * 0.03, width * 0.72, length * 0.48, width * 0.28);
+        ctx.fill();
+
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        roundRectPath(ctx, -width * 0.12, length * 0.02, width * 0.24, length * 0.34, width * 0.14);
+        ctx.fill();
+      }
+
+      function drawAdjustableWrench(length, width, toolData) {
+        const shaftW = width * 0.55;
+        ctx.fillStyle = toolData.metal;
+        roundRectPath(ctx, -shaftW * 0.5, -length * 0.14, shaftW, length * 0.72, shaftW * 0.45);
+        ctx.fill();
+
+        ctx.fillStyle = toolData.accent;
+        roundRectPath(ctx, -shaftW * 0.46, length * 0.1, shaftW * 0.92, length * 0.18, width * 0.16);
+        ctx.fill();
+
+        ctx.fillStyle = toolData.metal;
+        ctx.beginPath();
+        ctx.moveTo(-width * 0.72, -length * 0.18);
+        ctx.lineTo(-width * 0.12, -length * 0.44);
+        ctx.lineTo(width * 0.52, -length * 0.34);
+        ctx.lineTo(width * 0.28, -length * 0.04);
+        ctx.lineTo(width * 0.74, length * 0.02);
+        ctx.lineTo(width * 0.72, -length * 0.24);
+        ctx.lineTo(width * 0.92, -length * 0.4);
+        ctx.lineTo(width * 0.34, -length * 0.52);
+        ctx.lineTo(-width * 0.38, -length * 0.32);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      function drawPrybar(length, width, toolData) {
+        ctx.fillStyle = toolData.metal;
+        roundRectPath(ctx, -width * 0.22, -length * 0.48, width * 0.44, length * 0.94, width * 0.2);
+        ctx.fill();
+
+        ctx.fillStyle = toolData.accent;
+        roundRectPath(ctx, -width * 0.18, length * 0.06, width * 0.36, length * 0.22, width * 0.16);
+        ctx.fill();
+
+        ctx.save();
+        ctx.translate(0, -length * 0.42);
+        ctx.rotate(-0.48);
+        roundRectPath(ctx, -width * 0.18, -width * 0.22, width * 0.7, width * 0.34, width * 0.16);
+        ctx.fillStyle = toolData.metal;
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function drawSocketTool(length, width, toolData) {
+        ctx.fillStyle = toolData.metal;
+        roundRectPath(ctx, -width * 0.18, -length * 0.46, width * 0.36, length * 0.72, width * 0.16);
+        ctx.fill();
+
+        ctx.fillStyle = toolData.accent;
+        roundRectPath(ctx, -width * 0.32, length * 0.06, width * 0.64, length * 0.24, width * 0.18);
+        ctx.fill();
+
+        ctx.fillStyle = '#a4b0be';
+        roundRectPath(ctx, -width * 0.42, -length * 0.54, width * 0.84, width * 0.48, width * 0.18);
+        ctx.fill();
+
+        ctx.fillStyle = '#2f3847';
+        ctx.beginPath();
+        for (let i = 0; i < 6; i += 1) {
+          const angle = (i / 6) * TAU + Math.PI / 6;
+          const x = Math.cos(angle) * width * 0.18;
+          const y = -length * 0.31 + Math.sin(angle) * width * 0.18;
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      function drawTorqueTool(length, width, toolData) {
+        ctx.fillStyle = toolData.metal;
+        roundRectPath(ctx, -width * 0.16, -length * 0.5, width * 0.32, length * 0.62, width * 0.14);
+        ctx.fill();
+
+        ctx.fillStyle = '#272f3b';
+        roundRectPath(ctx, -width * 0.32, length * 0.02, width * 0.64, length * 0.32, width * 0.18);
+        ctx.fill();
+
+        ctx.fillStyle = toolData.accent;
+        roundRectPath(ctx, -width * 0.12, length * 0.08, width * 0.24, length * 0.22, width * 0.1);
+        ctx.fill();
+
+        ctx.fillStyle = '#b8c2cf';
+        roundRectPath(ctx, -width * 0.5, -length * 0.52, width, width * 0.22, width * 0.08);
+        ctx.fill();
+
+        ctx.fillStyle = '#49576a';
+        roundRectPath(ctx, width * 0.28, -length * 0.56, width * 0.18, width * 0.36, width * 0.08);
+        ctx.fill();
+      }
+
+      function drawToolLocal(toolData, length, width) {
+        switch (toolData.kind) {
+          case 'screwdriver':
+            drawScrewdriver(length, width, toolData);
+            break;
+          case 'adjustable':
+            drawAdjustableWrench(length, width, toolData);
+            break;
+          case 'prybar':
+            drawPrybar(length, width, toolData);
+            break;
+          case 'socket':
+            drawSocketTool(length, width, toolData);
+            break;
+          case 'torque':
+            drawTorqueTool(length, width, toolData);
+            break;
+          case 'doublewrench':
+            drawDoubleWrench(length, width, toolData);
+            break;
+          default:
+            drawOpenWrench(length, width, toolData);
+        }
+      }
+
+      function drawParticles() {
+        ctx.save();
+        for (const particle of game.particles) {
+          ctx.globalAlpha = clamp(particle.life / particle.maxLife, 0, 1);
+          ctx.fillStyle = particle.color;
+          ctx.fillRect(particle.x, particle.y, particle.size, particle.size);
+        }
+        ctx.restore();
+      }
+
+      function drawFragment(fragment) {
+        ctx.save();
+        ctx.translate(fragment.x, fragment.y);
+        ctx.rotate(fragment.angle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, fragment.radius + 18, fragment.start, fragment.end);
+        ctx.closePath();
+        ctx.clip();
+
+        if (fragment.type === 'boss') {
+          drawBossLocal(fragment, fragment.radius);
+        } else if (fragment.type === 'bonus') {
+          drawServiceWheelLocal(fragment.radius, fragment.accent, fragment.detail);
+        } else {
+          drawWheelLocal(fragment.radius, fragment.accent);
+        }
+        ctx.restore();
+      }
+
+      function drawWorld() {
+        if (game.scene === 'menu') {
+          drawMenuPreview();
+          drawParticles();
+          return;
+        }
+
+        if (game.scene === 'levelBreak') {
+          for (const fragment of game.fragments) {
+            drawFragment(fragment);
+          }
+        } else if (game.target) {
+          drawTargetShadow();
+          drawTarget();
+          drawWheelNuts();
+          drawStuckTools();
+        }
+
+        drawParticles();
+
+        if (game.activeTool) {
+          drawFlyingTool(game.activeTool);
+        }
+      }
+
+      function drawMenuPreview() {
+        const layout = getMenuLayout();
+        const radius = clamp(Math.min(view.w * 0.15, layout.startY * 0.18), 46, 90);
+        const centerX = view.w * 0.5;
+        const centerY = Math.min(view.h * 0.15, layout.startY * 0.42);
+        const selected = currentToolData();
+        const rarity = RARITY_META[selected.rarity];
+
+        ctx.save();
+        ctx.translate(centerX, centerY);
+        ctx.rotate(game.menuSpin);
+        drawWheelLocal(radius, LEVEL_COLORS[0]);
+        ctx.restore();
+
+        ctx.save();
+        ctx.translate(centerX, centerY + radius + 42);
+        drawToolLocal(selected, radius * 1.02, radius * 0.18);
+        ctx.restore();
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#edf2fa';
+        ctx.font = '700 16px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText(selected.name, centerX, centerY + radius + 56);
+        ctx.fillStyle = rarity.color;
+        ctx.font = '700 13px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText(rarity.name, centerX, centerY + radius + 76);
+        ctx.restore();
+      }
+
+      function getMenuLayout() {
+        const cols = 3;
+        const gap = 10;
+        const cellW = Math.floor((view.w - view.sidePad * 2 - gap * (cols - 1)) / cols);
+        const cellH = clamp(Math.floor((view.h * 0.29 - gap * 4) / 5), 40, 52);
+        const gridH = cellH * 5 + gap * 4;
+        const gridY = view.h - view.bottomPad - gridH;
+        const crateH = clamp(view.h * 0.125, 92, 112);
+        const crateY = clamp(gridY - crateH - 18, view.h * 0.43, view.h * 0.56);
+        const startW = Math.min(view.w * 0.58, 280);
+        const startH = 56;
+        const startX = (view.w - startW) * 0.5;
+        const startY = clamp(crateY - 72, view.h * 0.32, view.h * 0.4);
+        return { cols, gap, cellW, cellH, gridY, crateY, crateH, startW, startH, startX, startY };
+      }
+
+      function drawCratePanel(layout) {
+        const locked = TOOL_DATA.filter((tool) => !profile.owned[tool.id]).length;
+        const x = view.sidePad;
+        const y = layout.crateY;
+        const w = view.w - view.sidePad * 2;
+        const h = layout.crateH;
+        const canOpen = locked > 0 && profile.nuts >= CRATE_COST && !game.reveal;
+
+        ctx.save();
+        roundRectPath(ctx, x, y, w, h, 24);
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#edf2fa';
+        ctx.font = '700 18px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText('Tool Crate', x + 18, y + 14);
+        ctx.fillStyle = '#8f9aaa';
+        ctx.font = '700 14px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText(`Cost ${CRATE_COST} nuts`, x + 18, y + 40);
+        ctx.fillText(`Collected ${TOOL_DATA.length - locked}/${TOOL_DATA.length}`, x + 18, y + 58);
+        ctx.restore();
+
+        const buttonW = Math.min(142, w * 0.36);
+        const buttonH = 44;
+        const buttonX = x + w - buttonW - 14;
+        const buttonY = y + h - buttonH - 14;
+
+        let label = 'Open';
+        let action = 'crate';
+        let style = 'crate';
+
+        if (!locked) {
+          label = 'Collection Full';
+          action = '';
+          style = 'disabled';
+        } else if (!canOpen) {
+          label = profile.nuts >= CRATE_COST ? 'Wait' : 'Need 100';
+          action = '';
+          style = 'disabled';
+        }
+
+        drawButton(buttonX, buttonY, buttonW, buttonH, label, style);
+        if (action) {
+          registerButton(buttonX, buttonY, buttonW, buttonH, action);
+        }
+      }
+
+      function drawCollectionGrid(layout) {
+        ctx.save();
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillStyle = '#edf2fa';
+        ctx.font = '700 16px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText('Collection', view.sidePad, layout.gridY - 10);
+        ctx.restore();
+
+        TOOL_DATA.forEach((tool, index) => {
+          const col = index % layout.cols;
+          const row = Math.floor(index / layout.cols);
+          const x = view.sidePad + col * (layout.cellW + layout.gap);
+          const y = layout.gridY + row * (layout.cellH + layout.gap);
+          const owned = !!profile.owned[tool.id];
+          const selected = profile.selected === tool.id;
+          const rarity = RARITY_META[tool.rarity];
+
+          ctx.save();
+          roundRectPath(ctx, x, y, layout.cellW, layout.cellH, 16);
+          ctx.fillStyle = owned ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.03)';
+          ctx.fill();
+          ctx.strokeStyle = selected ? '#f0b548' : owned ? rarity.color : 'rgba(255,255,255,0.08)';
+          ctx.lineWidth = selected ? 2.6 : 1.5;
+          ctx.stroke();
+
+          ctx.translate(x + 16, y + layout.cellH * 0.55);
+          ctx.scale(0.26, 0.26);
+          ctx.globalAlpha = owned ? 1 : 0.25;
+          drawToolLocal(tool, 88 * tool.lengthMul, 18 * tool.widthMul);
+          ctx.restore();
+
+          ctx.save();
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = owned ? '#edf2fa' : 'rgba(237,242,250,0.4)';
+          ctx.font = '700 12px Trebuchet MS, Segoe UI, sans-serif';
+          ctx.fillText(owned ? tool.name : 'Locked', x + 54, y + layout.cellH * 0.44);
+          ctx.fillStyle = selected ? '#f0b548' : rarity.color;
+          ctx.font = '700 11px Trebuchet MS, Segoe UI, sans-serif';
+          ctx.fillText(rarity.name, x + 54, y + layout.cellH * 0.7);
+          ctx.restore();
+
+          if (owned) {
+            registerButton(x, y, layout.cellW, layout.cellH, `select:${tool.id}`);
+          }
+        });
+      }
+
+      function drawMenuUi() {
+        const layout = getMenuLayout();
+        const titleY = view.h * 0.045;
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#edf2fa';
+        ctx.font = '700 34px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText('Wrench Hit', view.w * 0.5, titleY);
+        ctx.font = '700 15px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillStyle = '#8f9aaa';
+        ctx.fillText('Garage / logistics / heavy machinery', view.w * 0.5, titleY + 40);
+
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#f4cd61';
+        ctx.font = '700 18px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText(`Nuts: ${profile.nuts}`, view.sidePad, titleY + 8);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#c2cad7';
+        ctx.fillText(`Best: ${profile.bestLevel}`, view.w - view.sidePad, titleY + 8);
+        ctx.restore();
+
+        drawButton(layout.startX, layout.startY, layout.startW, layout.startH, 'Start', 'primary');
+        registerButton(layout.startX, layout.startY, layout.startW, layout.startH, 'start');
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = 'rgba(237,242,250,0.78)';
+        ctx.font = '700 13px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText('Tap during play to throw upward', view.w * 0.5, layout.startY + layout.startH + 10);
+        ctx.restore();
+
+        drawCratePanel(layout);
+        drawCollectionGrid(layout);
+
+        if (game.reveal) {
+          drawRevealOverlay();
+        }
+      }
+
+      function drawRevealOverlay() {
+        const tool = getToolData(game.reveal.toolId);
+        const rarity = RARITY_META[tool.rarity];
+        const w = Math.min(view.w * 0.8, 320);
+        const h = Math.min(view.h * 0.34, 250);
+        const x = (view.w - w) * 0.5;
+        const y = view.h * 0.26;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(5,8,14,0.72)';
+        ctx.fillRect(0, 0, view.w, view.h);
+
+        roundRectPath(ctx, x, y, w, h, 28);
+        ctx.fillStyle = 'rgba(18,25,38,0.96)';
+        ctx.fill();
+        ctx.strokeStyle = rarity.color;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#edf2fa';
+        ctx.font = '700 18px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText('New Tool!', x + w * 0.5, y + 18);
+
+        ctx.save();
+        ctx.translate(x + w * 0.5, y + h * 0.5);
+        ctx.scale(1.1, 1.1);
+        drawToolLocal(tool, 118 * tool.lengthMul, 22 * tool.widthMul);
+        ctx.restore();
+
+        ctx.fillStyle = '#edf2fa';
+        ctx.font = '700 22px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText(tool.name, x + w * 0.5, y + h - 74);
+        ctx.fillStyle = rarity.color;
+        ctx.font = '700 15px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText(rarity.name, x + w * 0.5, y + h - 44);
+        ctx.fillStyle = 'rgba(237,242,250,0.7)';
+        ctx.font = '700 12px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText('Tap to close', x + w * 0.5, y + h - 22);
+        ctx.restore();
+      }
+
+      function drawGameOverUi() {
+        ctx.save();
+        ctx.fillStyle = 'rgba(6,8,12,0.62)';
+        ctx.fillRect(0, 0, view.w, view.h);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#edf2fa';
+        ctx.font = '700 34px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillText('Shift failed', view.w * 0.5, view.h * 0.38);
+        ctx.font = '700 16px Trebuchet MS, Segoe UI, sans-serif';
+        ctx.fillStyle = '#a9b2c0';
+        ctx.fillText(`Ended on level ${game.level}`, view.w * 0.5, view.h * 0.43);
+        ctx.restore();
+
+        const w = Math.min(view.w * 0.56, 260);
+        const h = 54;
+        const x = (view.w - w) * 0.5;
+        const y = view.h * 0.5;
+
+        drawButton(x, y, w, h, 'New Game', 'primary');
+        registerButton(x, y, w, h, 'retry');
+
+        drawButton(x, y + 66, w, h, 'Menu', 'secondary');
+        registerButton(x, y + 66, w, h, 'menu');
+      }
+
+      function drawPopups() {
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '700 16px Trebuchet MS, Segoe UI, sans-serif';
+        for (const popup of game.popups) {
+          ctx.globalAlpha = clamp(popup.life / 0.8, 0, 1);
+          ctx.fillStyle = popup.color;
+          ctx.fillText(popup.text, popup.x, popup.y);
+        }
+        ctx.restore();
+      }
+
+      function drawFlash() {
+        if (game.flash <= 0) {
+          return;
+        }
+        ctx.save();
+        ctx.fillStyle = `rgba(255,248,235,${game.flash})`;
+        ctx.fillRect(0, 0, view.w, view.h);
+        ctx.restore();
+      }
+
+      function render() {
+        game.uiButtons = [];
+        drawBackground();
+
+        const shakeX = game.shake > 0 ? (Math.random() - 0.5) * 18 * game.shake : 0;
+        const shakeY = game.shake > 0 ? (Math.random() - 0.5) * 14 * game.shake : 0;
+
+        ctx.save();
+        ctx.translate(shakeX, shakeY);
+        drawWorld();
+        drawPopups();
+        ctx.restore();
+
+        if (game.scene !== 'menu') {
+          drawTopHud();
+        }
+
+        if (game.scene === 'playing') {
+          drawRemainingIcons();
+          drawBanner();
+        } else if (game.scene === 'menu') {
+          drawMenuUi();
+        } else if (game.scene === 'gameOver') {
+          drawRemainingIcons();
+          drawGameOverUi();
+        }
+
+        drawFlash();
+      }
+
+      function weightedPick(tools) {
+        const total = tools.reduce((sum, tool) => sum + tool.weight, 0);
+        let roll = Math.random() * total;
+        for (const tool of tools) {
+          roll -= tool.weight;
+          if (roll <= 0) {
+            return tool;
+          }
+        }
+        return tools[tools.length - 1];
+      }
+
+      function openCrate() {
+        const locked = TOOL_DATA.filter((tool) => !profile.owned[tool.id]);
+        if (!locked.length || profile.nuts < CRATE_COST) {
+          return;
+        }
+
+        profile.nuts -= CRATE_COST;
+        const reward = weightedPick(locked);
+        profile.owned[reward.id] = true;
+        profile.selected = reward.id;
+        profile.cratesOpened += 1;
+        saveProfile();
+
+        game.reveal = {
+          toolId: reward.id,
+          timer: 2.1
+        };
+        emitSparks(view.w * 0.5, view.h * 0.44, 24, ['#ffffff', reward.trail, reward.accent], 80, 280, 2, 5);
+        kickShake(0.46);
+        game.flash = Math.max(game.flash, 0.24);
+      }
+
+      function handleAction(action) {
+        if (!action) {
+          return;
+        }
+
+        if (action === 'start' || action === 'retry') {
+          startRun();
+          return;
+        }
+
+        if (action === 'menu') {
+          game.scene = 'menu';
+          game.stageType = 'menu';
+          game.stageLabel = '';
+          game.target = null;
+          game.activeTool = null;
+          game.stuckTools = [];
+          game.wheelNuts = [];
+          game.fragments = [];
+          game.particles = [];
+          game.popups = [];
+          game.reveal = null;
+          game.combo = 0;
+          game.comboTimer = 0;
+          return;
+        }
+
+        if (action === 'crate') {
+          openCrate();
+          return;
+        }
+
+        if (action.startsWith('select:')) {
+          const id = action.slice(7);
+          if (profile.owned[id]) {
+            profile.selected = id;
+            saveProfile();
+          }
+        }
+      }
+
+      function onPointerDown(event) {
+        event.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const x = ((event.clientX - rect.left) / rect.width) * view.w;
+        const y = ((event.clientY - rect.top) / rect.height) * view.h;
+
+        if (game.reveal) {
+          game.reveal = null;
+          return;
+        }
+
+        if (game.scene === 'playing') {
+          fireTool();
+          return;
+        }
+
+        for (let i = game.uiButtons.length - 1; i >= 0; i -= 1) {
+          const button = game.uiButtons[i];
+          if (
+            x >= button.x &&
+            x <= button.x + button.w &&
+            y >= button.y &&
+            y <= button.y + button.h
+          ) {
+            handleAction(button.action);
+            return;
+          }
+        }
+      }
+
+      function vibrate(pattern) {
+        if (navigator.vibrate) {
+          navigator.vibrate(pattern);
+        }
+      }
+
+      function loop(time) {
+        const now = time * 0.001;
+        const realDt = Math.min(0.033, now - (game.lastTime || now));
+        game.lastTime = now;
+        const dt = realDt * game.timeScale;
+        update(dt, realDt, now);
+        render();
+        requestAnimationFrame(loop);
+      }
+
+      canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+      canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+      document.addEventListener('gesturestart', (event) => event.preventDefault(), { passive: false });
+      document.addEventListener('touchmove', (event) => event.preventDefault(), { passive: false });
+      window.addEventListener('resize', resize, { passive: true });
+
+      resize();
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>

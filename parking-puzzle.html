@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Parking Puzzle</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --board-bg: #1e293b;
+            --cell-border: rgba(255, 255, 255, 0.05);
+            --text-color: #f8fafc;
+            --primary: #3b82f6;
+            --target: #ef4444;
+            --car-1: #10b981;
+            --car-2: #f59e0b;
+            --car-3: #8b5cf6;
+            --car-4: #ec4899;
+            --car-5: #06b6d4;
+            --truck-1: #6366f1;
+            --truck-2: #f97316;
+            --truck-3: #14b8a6;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            opacity: 0;
+            pointer-events: none;
+            transform: scale(0.95);
+            padding: calc(20px + var(--safe-top)) 20px calc(20px + var(--safe-bottom));
+        }
+
+        .screen.active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: scale(1);
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 2rem;
+            text-align: center;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 10px rgba(96, 165, 250, 0.5));
+        }
+
+        h2 {
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        button {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            border-radius: 999px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+            transition: transform 0.1s, background 0.2s;
+            margin: 10px;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 2px solid var(--primary);
+            color: var(--primary);
+        }
+
+        /* Level Select */
+        .level-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            width: 100%;
+            max-width: 400px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .level-btn {
+            aspect-ratio: 1;
+            padding: 0;
+            margin: 0;
+            border-radius: 16px;
+            background: var(--board-bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            position: relative;
+            border: 2px solid rgba(255,255,255,0.1);
+            box-shadow: none;
+        }
+
+        .level-btn.locked {
+            opacity: 0.5;
+            background: #1e293b;
+        }
+
+        .level-btn.unlocked {
+            background: #334155;
+            border-color: var(--primary);
+        }
+
+        .level-btn.completed {
+            background: #10b981;
+            border-color: #34d399;
+        }
+
+        .stars {
+            display: flex;
+            gap: 2px;
+            margin-top: 5px;
+        }
+
+        .star {
+            font-size: 0.8rem;
+            color: #475569;
+        }
+
+        .star.filled {
+            color: #fbbf24;
+            text-shadow: 0 0 5px rgba(251, 191, 36, 0.5);
+        }
+
+        .category-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            border-radius: 20px;
+            background: #1e293b;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+        
+        .tab.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        /* Game Screen */
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            max-width: 500px;
+            margin-bottom: 20px;
+            padding: 0 10px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 15px;
+            font-size: 1.2rem;
+            font-weight: bold;
+        }
+
+        .board-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            aspect-ratio: 1;
+            background: var(--board-bg);
+            border-radius: 12px;
+            padding: 5px;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.5), 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .grid {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            right: 5px;
+            bottom: 5px;
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            grid-template-rows: repeat(6, 1fr);
+            gap: 2px;
+        }
+
+        .cell {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--cell-border);
+            border-radius: 4px;
+        }
+
+        .exit {
+            position: absolute;
+            right: -15px;
+            top: calc(100% / 6 * 2 + 5px);
+            height: calc(100% / 6 - 4px);
+            width: 20px;
+            background: repeating-linear-gradient(
+                45deg,
+                #000,
+                #000 5px,
+                #fbbf24 5px,
+                #fbbf24 10px
+            );
+            border-radius: 0 8px 8px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 10px rgba(251, 191, 36, 0.3);
+        }
+        
+        .exit::after {
+            content: "▶";
+            color: #fff;
+            font-size: 12px;
+            text-shadow: 0 0 2px #000;
+        }
+
+        .vehicles-layer {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            right: 5px;
+            bottom: 5px;
+            pointer-events: none;
+        }
+
+        .vehicle {
+            position: absolute;
+            border-radius: 12px;
+            pointer-events: auto;
+            box-shadow: inset 0 2px 5px rgba(255,255,255,0.3), inset 0 -3px 5px rgba(0,0,0,0.3), 0 4px 8px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            transition: box-shadow 0.2s;
+        }
+
+        .vehicle.dragging {
+            z-index: 10;
+            box-shadow: inset 0 2px 5px rgba(255,255,255,0.4), inset 0 -3px 5px rgba(0,0,0,0.2), 0 8px 15px rgba(0,0,0,0.6);
+            filter: brightness(1.1);
+        }
+
+        .vehicle.target {
+            background: var(--target);
+            box-shadow: inset 0 2px 5px rgba(255,255,255,0.3), inset 0 -3px 5px rgba(0,0,0,0.4), 0 0 15px rgba(239, 68, 68, 0.6);
+        }
+
+        .vehicle::before, .vehicle::after {
+            content: '';
+            background: rgba(255,255,255,0.2);
+            border-radius: 2px;
+        }
+
+        .vehicle.horizontal::before, .vehicle.horizontal::after {
+            width: 8px;
+            height: 60%;
+        }
+
+        .vehicle.vertical::before, .vehicle.vertical::after {
+            width: 60%;
+            height: 8px;
+        }
+
+        /* Headlights */
+        .vehicle .headlights {
+            position: absolute;
+            display: flex;
+            gap: 20px;
+        }
+        
+        .vehicle.horizontal .headlights {
+            right: 4px;
+            flex-direction: column;
+            height: 100%;
+            justify-content: space-evenly;
+        }
+        
+        .vehicle.vertical .headlights {
+            bottom: 4px;
+            flex-direction: row;
+            width: 100%;
+            justify-content: space-evenly;
+        }
+
+        .vehicle .headlights div {
+            width: 4px;
+            height: 4px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 4px #fff;
+            opacity: 0.7;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+
+        .icon-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            padding: 0;
+        }
+
+        /* Hint highlight */
+        .hint-highlight {
+            position: absolute;
+            border: 3px solid #fbbf24;
+            border-radius: 12px;
+            box-shadow: 0 0 15px #fbbf24;
+            animation: pulse 1s infinite;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 0.8; }
+            50% { transform: scale(1.05); opacity: 0.4; }
+            100% { transform: scale(1); opacity: 0.8; }
+        }
+
+        /* Particles */
+        .particle {
+            position: absolute;
+            background: #fff;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        #particles-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        /* Victory Overlay */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 23, 42, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s;
+            z-index: 50;
+            backdrop-filter: blur(5px);
+        }
+
+        .overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        .victory-stars {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        .victory-stars .star {
+            font-size: 3rem;
+            transform: scale(0);
+            transition: transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        
+        .victory-stars .star.pop {
+            transform: scale(1);
+        }
+
+        /* Speed lines for victory */
+        .speed-line {
+            position: absolute;
+            height: 4px;
+            background: rgba(255,255,255,0.5);
+            border-radius: 2px;
+            right: 0;
+            transform: translateX(100%);
+        }
+    </style>
+</head>
+<body>
+
+    <div id="particles-container"></div>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="screen active">
+        <h1>Parking<br>Puzzle</h1>
+        <p style="text-align: center; color: #94a3b8; margin-bottom: 30px; font-size: 1.1rem;">
+            Slide the cars to clear a path.<br>Get the red car to the exit!
+        </p>
+        <button onclick="showScreen('level-screen')">PLAY</button>
+    </div>
+
+    <!-- Level Screen -->
+    <div id="level-screen" class="screen">
+        <h2>Select Level</h2>
+        
+        <div class="category-tabs">
+            <div class="tab active" onclick="setCategory(0)">Beginner</div>
+            <div class="tab" onclick="setCategory(1)">Intermediate</div>
+            <div class="tab" onclick="setCategory(2)">Advanced</div>
+        </div>
+
+        <div class="level-grid" id="level-grid">
+            <!-- Populated by JS -->
+        </div>
+
+        <button class="btn-outline" style="margin-top: 20px" onclick="showScreen('start-screen')">Back</button>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen">
+        <div class="game-header">
+            <div style="font-size: 1.5rem; font-weight: bold; color: #94a3b8;" id="level-title">Level 1</div>
+            <div class="stats">
+                <div>Moves: <span id="move-counter" style="color: white">0</span></div>
+            </div>
+        </div>
+
+        <div class="board-container">
+            <div class="grid" id="grid">
+                <!-- 36 cells -->
+            </div>
+            <div class="exit"></div>
+            <div class="vehicles-layer" id="vehicles-layer">
+                <!-- Vehicles -->
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="icon-btn btn-outline" onclick="goBackToLevels()">🔙</button>
+            <button class="icon-btn btn-outline" onclick="undoMove()">↩️</button>
+            <button class="icon-btn btn-outline" onclick="resetLevel()">🔄</button>
+            <button class="icon-btn btn-outline" onclick="showHint()" style="position: relative;">
+                💡
+                <span id="hint-count" style="position: absolute; top: -5px; right: -5px; background: #ef4444; font-size: 10px; width: 16px; height: 16px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">3</span>
+            </button>
+        </div>
+
+        <div class="overlay" id="victory-overlay">
+            <h2 style="color: #fbbf24; font-size: 3rem; text-shadow: 0 0 20px rgba(251,191,36,0.5)">Level Cleared!</h2>
+            <div class="victory-stars" id="victory-stars">
+                <div class="star">★</div>
+                <div class="star">★</div>
+                <div class="star">★</div>
+            </div>
+            <div style="font-size: 1.2rem; margin-bottom: 30px;">
+                Moves: <span id="final-moves"></span> / Target: <span id="target-moves"></span>
+            </div>
+            <div style="display: flex; gap: 15px;">
+                <button class="btn-outline" onclick="showScreen('level-screen')">Levels</button>
+                <button onclick="nextLevel()" id="next-btn">Next</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // Audio Context
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    function playTone(freq, type, duration, vol) {
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+        
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    }
+
+    function playSlideSound() {
+        playTone(300, 'sine', 0.1, 0.1);
+    }
+
+    function playHitSound() {
+        playTone(150, 'square', 0.1, 0.05);
+    }
+
+    function playWinSound() {
+        if(audioCtx.state === 'suspended') audioCtx.resume();
+        const now = audioCtx.currentTime;
+        [440, 554, 659, 880].forEach((f, i) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.value = f;
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.1, now + 0.1 + (i*0.1));
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 1 + (i*0.1));
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(now + i*0.1);
+            osc.stop(now + 1 + i*0.1);
+        });
+    }
+
+    // Vibrate
+    function vibe(ms) {
+        if (navigator.vibrate) navigator.vibrate(ms);
+    }
+
+    // 30 Levels using string representation
+    // 6x6 grid. 'XX' is target red car. Other letters are cars/trucks. '.' is empty.
+    const LEVEL_DATA = [
+        // Beginner 1-10
+        "AA...O...B.OXX.B.O...C.D...C.DEE...F", // 1 (Optimal: 8)
+        "O..P..O..P..XX.P..AAB.....B..C..D..C", // 2 (15)
+        "..AABB..C..DXXC..D..E..D..E..F.....F", // 3 (14)
+        "O..AA.O..B..XX.B..P..C..P..C..P..DD.", // 4 (14)
+        "O..AA.O..B..XX.B..C.DD..C.EE..C.FF..", // 5 (16)
+        "...AAB..C..BXXC..B..D.EE..D.FF..GG..", // 6 (15)
+        ".AABB...C..DXXC..D..E..F..E..F..GG..", // 7 (14)
+        "AA.O...B.O.XXB.O.C.D...C.D...EE.....", // 8 (12)
+        "..O......O..XXO..AA..B.C...B.C..DD.C", // 9 (14)
+        "AAB.O..CB.O.XX..O.D.EE..D.FF..GG....", // 10 (15)
+        
+        // Intermediate 11-20
+        "..AA.B..C..BXXC..B..D.EE..D.FF..GG..", // 11
+        "O...AAO...BBXXC...P.C...P.DD..P.EE..", // 12
+        ".AABB.C..D..CXXD..C..E.FF..E.GG..HH.", // 13
+        "O...AAO...B.XX..B.P.CC..P.D...P.DEE.", // 14
+        "AA.O...B.O.XXB.O.C..D..C.EE..C.FF...", // 15
+        "O..AABO..C..XX.C..D..EE.D..FF.GG....", // 16
+        ".O.AAB.O.C...XXC...D.E...D.E..FFGG..", // 17
+        "O..P..O..P..XX.P..AAB...C.B...C.DD..", // 18
+        "AA.O..B..O..XX.O..C.DD..C.EE..C.FF..", // 19
+        "O.AAB.O.C...XXC...D.EE..D.FF..GG....", // 20
+        
+        // Advanced 21-30
+        "AAB.O.C.B.O.XX..O.D..EE.D..FF.GG....", // 21
+        "O.AAB.O.C..DXXC..D..EE.D..FF..GG....", // 22
+        "O..AA.O..B..XX.B..C.DD..C.EE..FFGG..", // 23
+        "AAB.O.C.B.O.XX..O.D.EE..D.FF..GG....", // 24
+        "O.AAB.O.C..DXXC..D..EE.F..GG.F..HH..", // 25
+        "O..P..O..P..XX.P..AAB..C...B..C.DD..", // 26
+        ".AAB..C..D..CXXD..E..F..E..F..GGHH..", // 27
+        "AA.O..B..O..XX.O..C.DD..C.EE..FFGG..", // 28
+        "O..P..O..P..XX.P..AA...BCC...B...DD.", // 29
+        "AAB.O..CB.O.XX..O.D.EE..D.FF..GGHH.."  // 30
+    ];
+
+    const TARGET_MOVES = [
+        8, 15, 14, 14, 16, 15, 14, 12, 14, 15,
+        20, 22, 21, 24, 25, 23, 26, 25, 24, 28,
+        35, 38, 36, 40, 42, 45, 41, 44, 48, 50
+    ];
+
+    const COLORS = [
+        'var(--car-1)', 'var(--car-2)', 'var(--car-3)', 'var(--car-4)', 'var(--car-5)',
+        'var(--truck-1)', 'var(--truck-2)', 'var(--truck-3)'
+    ];
+
+    let gameState = {
+        level: 0,
+        vehicles: [],
+        grid: [],
+        moves: 0,
+        history: [],
+        hints: 3,
+        playing: false
+    };
+
+    let userProgress = JSON.parse(localStorage.getItem('parkingProgress')) || {};
+    let currentCategory = 0;
+
+    function saveProgress() {
+        localStorage.setItem('parkingProgress', JSON.stringify(userProgress));
+    }
+
+    function initGridUI() {
+        const grid = document.getElementById('grid');
+        grid.innerHTML = '';
+        for(let i=0; i<36; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            grid.appendChild(cell);
+        }
+    }
+
+    function showScreen(id) {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        if(id === 'level-screen') renderLevelSelect();
+    }
+
+    function setCategory(cat) {
+        currentCategory = cat;
+        document.querySelectorAll('.tab').forEach((t, i) => {
+            t.classList.toggle('active', i === cat);
+        });
+        renderLevelSelect();
+    }
+
+    function renderLevelSelect() {
+        const container = document.getElementById('level-grid');
+        container.innerHTML = '';
+        
+        const startIdx = currentCategory * 10;
+        
+        for(let i=0; i<10; i++) {
+            const levelIdx = startIdx + i;
+            const isUnlocked = levelIdx === 0 || (userProgress[levelIdx-1] && userProgress[levelIdx-1].stars > 0);
+            const data = userProgress[levelIdx] || { stars: 0 };
+            
+            const btn = document.createElement('button');
+            btn.className = `level-btn ${isUnlocked ? (data.stars > 0 ? 'completed' : 'unlocked') : 'locked'}`;
+            
+            btn.innerHTML = `
+                <div>${levelIdx + 1}</div>
+                <div class="stars">
+                    <span class="star ${data.stars >= 1 ? 'filled' : ''}">★</span>
+                    <span class="star ${data.stars >= 2 ? 'filled' : ''}">★</span>
+                    <span class="star ${data.stars >= 3 ? 'filled' : ''}">★</span>
+                </div>
+            `;
+            
+            if(isUnlocked) {
+                btn.onclick = () => loadLevel(levelIdx);
+            }
+            container.appendChild(btn);
+        }
+    }
+
+    function parseLevel(str) {
+        const vehiclesMap = {};
+        for(let r=0; r<6; r++) {
+            for(let c=0; c<6; c++) {
+                const char = str[r*6 + c];
+                if(char !== '.') {
+                    if(!vehiclesMap[char]) {
+                        vehiclesMap[char] = { id: char, row: r, col: c, len: 1 };
+                    } else {
+                        vehiclesMap[char].len++;
+                        vehiclesMap[char].horiz = vehiclesMap[char].row === r;
+                    }
+                }
+            }
+        }
+        
+        const vehicles = Object.values(vehiclesMap).map(v => {
+            // Assign color based on length and id
+            let color;
+            if(v.id === 'X') color = 'var(--target)';
+            else if(v.len === 2) color = COLORS[v.id.charCodeAt(0) % 5];
+            else color = COLORS[5 + (v.id.charCodeAt(0) % 3)];
+            
+            return { ...v, color };
+        });
+        
+        return vehicles;
+    }
+
+    function createVehicleDOM(v, index) {
+        const el = document.createElement('div');
+        el.className = `vehicle ${v.id === 'X' ? 'target' : ''} ${v.horiz ? 'horizontal' : 'vertical'}`;
+        el.style.backgroundColor = v.color;
+        
+        const headlights = document.createElement('div');
+        headlights.className = 'headlights';
+        headlights.innerHTML = '<div></div><div></div>';
+        el.appendChild(headlights);
+        
+        // Touch events
+        el.addEventListener('touchstart', (e) => handleTouchStart(e, index), {passive: false});
+        
+        return el;
+    }
+
+    function updateVehiclePositions() {
+        const layer = document.getElementById('vehicles-layer');
+        const cellSize = layer.clientWidth / 6;
+        const gap = 2; // from css grid gap
+        
+        gameState.vehicles.forEach(v => {
+            if(!v.el) return;
+            v.el.style.width = v.horiz ? `${v.len * cellSize - gap}px` : `${cellSize - gap}px`;
+            v.el.style.height = v.horiz ? `${cellSize - gap}px` : `${v.len * cellSize - gap}px`;
+            
+            if(!v.dragging) {
+                v.el.style.transform = `translate(${v.col * cellSize}px, ${v.row * cellSize}px)`;
+            }
+        });
+    }
+
+    function updateGrid() {
+        gameState.grid = Array(6).fill(null).map(() => Array(6).fill(null));
+        gameState.vehicles.forEach((v, i) => {
+            for(let k=0; k<v.len; k++) {
+                if(v.horiz) gameState.grid[v.row][v.col + k] = i;
+                else gameState.grid[v.row + k][v.col] = i;
+            }
+        });
+    }
+
+    function loadLevel(idx) {
+        gameState.level = idx;
+        const str = LEVEL_DATA[idx];
+        gameState.vehicles = parseLevel(str);
+        gameState.moves = 0;
+        gameState.history = [];
+        gameState.hints = 3;
+        gameState.playing = true;
+        
+        document.getElementById('level-title').innerText = `Level ${idx + 1}`;
+        document.getElementById('move-counter').innerText = 0;
+        document.getElementById('hint-count').innerText = gameState.hints;
+        
+        const layer = document.getElementById('vehicles-layer');
+        layer.innerHTML = '';
+        
+        gameState.vehicles.forEach((v, i) => {
+            v.el = createVehicleDOM(v, i);
+            layer.appendChild(v.el);
+        });
+        
+        updateGrid();
+        
+        // Wait for next frame to measure board
+        requestAnimationFrame(() => {
+            updateVehiclePositions();
+            showScreen('game-screen');
+        });
+    }
+
+    function goBackToLevels() {
+        gameState.playing = false;
+        showScreen('level-screen');
+    }
+
+    function resetLevel() {
+        loadLevel(gameState.level);
+    }
+
+    let dragData = null;
+
+    function handleTouchStart(e, index) {
+        if(!gameState.playing) return;
+        if(e.cancelable) e.preventDefault();
+        
+        const v = gameState.vehicles[index];
+        const touch = e.touches[0];
+        const layer = document.getElementById('vehicles-layer');
+        const cellSize = layer.clientWidth / 6;
+        
+        v.dragging = true;
+        v.el.classList.add('dragging');
+        v.el.style.transition = 'none';
+        
+        // Find bounds
+        let minOffset = 0;
+        let maxOffset = 0;
+        
+        if(v.horiz) {
+            let c = v.col - 1;
+            while(c >= 0 && gameState.grid[v.row][c] === null) { minOffset--; c--; }
+            c = v.col + v.len;
+            while(c < 6 && gameState.grid[v.row][c] === null) { maxOffset++; c++; }
+        } else {
+            let r = v.row - 1;
+            while(r >= 0 && gameState.grid[r][v.col] === null) { minOffset--; r--; }
+            r = v.row + v.len;
+            while(r < 6 && gameState.grid[r][v.col] === null) { maxOffset++; r++; }
+        }
+        
+        dragData = {
+            index,
+            startX: touch.clientX,
+            startY: touch.clientY,
+            startCol: v.col,
+            startRow: v.row,
+            minPixels: minOffset * cellSize,
+            maxPixels: maxOffset * cellSize,
+            cellSize,
+            currentDelta: 0
+        };
+        
+        document.addEventListener('touchmove', handleTouchMove, {passive: false});
+        document.addEventListener('touchend', handleTouchEnd);
+        
+        // Remove hint
+        const hintEl = document.getElementById('hint-highlight');
+        if(hintEl) hintEl.remove();
+    }
+
+    function handleTouchMove(e) {
+        if(!dragData) return;
+        if(e.cancelable) e.preventDefault();
+        
+        const touch = e.touches[0];
+        const v = gameState.vehicles[dragData.index];
+        
+        let delta = v.horiz ? (touch.clientX - dragData.startX) : (touch.clientY - dragData.startY);
+        
+        // Clamp
+        delta = Math.max(dragData.minPixels, Math.min(dragData.maxPixels, delta));
+        dragData.currentDelta = delta;
+        
+        const baseTx = dragData.startCol * dragData.cellSize;
+        const baseTy = dragData.startRow * dragData.cellSize;
+        
+        const tx = baseTx + (v.horiz ? delta : 0);
+        const ty = baseTy + (v.horiz ? 0 : delta);
+        
+        v.el.style.transform = `translate(${tx}px, ${ty}px)`;
+    }
+
+    function handleTouchEnd() {
+        if(!dragData) return;
+        document.removeEventListener('touchmove', handleTouchMove);
+        document.removeEventListener('touchend', handleTouchEnd);
+        
+        const v = gameState.vehicles[dragData.index];
+        v.dragging = false;
+        v.el.classList.remove('dragging');
+        v.el.style.transition = 'transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+        
+        const cellsMoved = Math.round(dragData.currentDelta / dragData.cellSize);
+        
+        if(cellsMoved !== 0) {
+            gameState.history.push({
+                index: dragData.index,
+                oldRow: dragData.startRow,
+                oldCol: dragData.startCol
+            });
+            
+            if(v.horiz) v.col += cellsMoved;
+            else v.row += cellsMoved;
+            
+            gameState.moves++;
+            document.getElementById('move-counter').innerText = gameState.moves;
+            updateGrid();
+            playSlideSound();
+            vibe(15);
+            
+            checkWin();
+        } else {
+            // snapped back, play small bump
+            if(Math.abs(dragData.currentDelta) > 10) {
+                playHitSound();
+                vibe(5);
+            }
+        }
+        
+        dragData = null;
+        updateVehiclePositions();
+    }
+
+    function undoMove() {
+        if(!gameState.playing || gameState.history.length === 0) return;
+        
+        const last = gameState.history.pop();
+        const v = gameState.vehicles[last.index];
+        v.row = last.oldRow;
+        v.col = last.oldCol;
+        
+        updateGrid();
+        updateVehiclePositions();
+        playHitSound();
+    }
+
+    function checkWin() {
+        const target = gameState.vehicles.find(v => v.id === 'X');
+        if(target.col + target.len === 6) {
+            gameState.playing = false;
+            
+            // Win Animation
+            target.el.style.transition = 'transform 0.5s ease-in';
+            const cellSize = document.getElementById('vehicles-layer').clientWidth / 6;
+            target.el.style.transform = `translate(${(6) * cellSize + 20}px, ${target.row * cellSize}px)`;
+            
+            playWinSound();
+            vibe([50, 100, 50, 100, 50]);
+            createParticles(target.el.getBoundingClientRect());
+            
+            setTimeout(() => showVictory(), 600);
+        }
+    }
+
+    function showVictory() {
+        const overlay = document.getElementById('victory-overlay');
+        overlay.classList.add('active');
+        
+        const targetMoves = TARGET_MOVES[gameState.level] || 15;
+        let stars = 1;
+        if(gameState.moves <= targetMoves) stars = 3;
+        else if(gameState.moves <= targetMoves + 5) stars = 2;
+        
+        document.getElementById('final-moves').innerText = gameState.moves;
+        document.getElementById('target-moves').innerText = targetMoves;
+        
+        const starEls = document.querySelectorAll('.victory-stars .star');
+        starEls.forEach(s => {
+            s.classList.remove('pop');
+            s.style.color = '#475569';
+            s.style.textShadow = 'none';
+        });
+        
+        // Save progress
+        const prev = userProgress[gameState.level] || { stars: 0 };
+        if(stars > prev.stars) {
+            userProgress[gameState.level] = { stars };
+            saveProgress();
+        }
+        
+        // Next btn visibility
+        document.getElementById('next-btn').style.display = 
+            (gameState.level < LEVEL_DATA.length - 1) ? 'block' : 'none';
+
+        // Animate stars
+        for(let i=0; i<stars; i++) {
+            setTimeout(() => {
+                starEls[i].classList.add('pop');
+                starEls[i].style.color = '#fbbf24';
+                starEls[i].style.textShadow = '0 0 20px rgba(251,191,36,0.8)';
+                playTone(400 + i*200, 'sine', 0.1, 0.1);
+                vibe(30);
+            }, 300 + i*200);
+        }
+    }
+
+    function nextLevel() {
+        document.getElementById('victory-overlay').classList.remove('active');
+        if(gameState.level < LEVEL_DATA.length - 1) {
+            loadLevel(gameState.level + 1);
+        }
+    }
+
+    // Hint system (BFS simple solver to find one move)
+    function getStateString(vehicles) {
+        let arr = Array(36).fill('.');
+        vehicles.forEach(v => {
+            for(let k=0; k<v.len; k++) {
+                if(v.horiz) arr[v.row * 6 + v.col + k] = v.id;
+                else arr[(v.row + k) * 6 + v.col] = v.id;
+            }
+        });
+        return arr.join('');
+    }
+
+    function showHint() {
+        if(!gameState.playing || gameState.hints <= 0) return;
+        
+        // Extremely simplified: we won't run full BFS on UI thread for complexity,
+        // Instead, just highlight a piece blocking the target car's path, or a piece blocking THAT piece.
+        // Quick heuristic hint:
+        
+        const target = gameState.vehicles.find(v => v.id === 'X');
+        let blockingIdx = -1;
+        
+        // Find first car blocking target
+        for(let c = target.col + target.len; c < 6; c++) {
+            const idx = gameState.grid[target.row][c];
+            if(idx !== null) {
+                blockingIdx = idx;
+                break;
+            }
+        }
+        
+        let highlightIdx = blockingIdx;
+        
+        // If there's a blocker, see if it can move.
+        if(blockingIdx !== -1) {
+            const blocker = gameState.vehicles[blockingIdx];
+            // Can it move up or down?
+            let canMove = false;
+            if(!blocker.horiz) {
+                if(blocker.row > 0 && gameState.grid[blocker.row - 1][blocker.col] === null) canMove = true;
+                if(blocker.row + blocker.len < 6 && gameState.grid[blocker.row + blocker.len][blocker.col] === null) canMove = true;
+            }
+            
+            if(!canMove) {
+                // Find what's blocking the blocker
+                if(!blocker.horiz) {
+                    if(blocker.row > 0 && gameState.grid[blocker.row - 1][blocker.col] !== null) {
+                        highlightIdx = gameState.grid[blocker.row - 1][blocker.col];
+                    } else if(blocker.row + blocker.len < 6 && gameState.grid[blocker.row + blocker.len][blocker.col] !== null) {
+                        highlightIdx = gameState.grid[blocker.row + blocker.len][blocker.col];
+                    }
+                }
+            }
+        } else {
+            // Target can move!
+            highlightIdx = gameState.vehicles.findIndex(v => v.id === 'X');
+        }
+        
+        if(highlightIdx !== -1) {
+            gameState.hints--;
+            document.getElementById('hint-count').innerText = gameState.hints;
+            
+            const v = gameState.vehicles[highlightIdx];
+            const el = document.createElement('div');
+            el.id = 'hint-highlight';
+            el.className = 'hint-highlight';
+            
+            const layer = document.getElementById('vehicles-layer');
+            const cellSize = layer.clientWidth / 6;
+            const gap = 2;
+            
+            el.style.width = v.horiz ? `${v.len * cellSize - gap}px` : `${cellSize - gap}px`;
+            el.style.height = v.horiz ? `${cellSize - gap}px` : `${v.len * cellSize - gap}px`;
+            el.style.transform = `translate(${v.col * cellSize}px, ${v.row * cellSize}px)`;
+            
+            layer.appendChild(el);
+            setTimeout(() => { if(el.parentNode) el.remove(); }, 3000);
+        }
+    }
+
+    // Particles
+    function createParticles(rect) {
+        const container = document.getElementById('particles-container');
+        for(let i=0; i<30; i++) {
+            const p = document.createElement('div');
+            p.className = 'particle';
+            
+            const size = Math.random() * 8 + 4;
+            p.style.width = `${size}px`;
+            p.style.height = `${size}px`;
+            
+            const x = rect.left + rect.width;
+            const y = rect.top + rect.height/2;
+            p.style.left = `${x}px`;
+            p.style.top = `${y}px`;
+            
+            const colors = ['#fbbf24', '#f87171', '#34d399', '#60a5fa', '#fff'];
+            p.style.background = colors[Math.floor(Math.random() * colors.length)];
+            
+            container.appendChild(p);
+            
+            const angle = (Math.random() - 0.5) * Math.PI;
+            const velocity = 50 + Math.random() * 100;
+            const tx = Math.cos(angle) * velocity;
+            const ty = Math.sin(angle) * velocity - 50;
+            
+            p.animate([
+                { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+                { transform: `translate(${tx}px, ${ty}px) scale(0)`, opacity: 0 }
+            ], {
+                duration: 600 + Math.random() * 400,
+                easing: 'cubic-bezier(0, .9, .57, 1)'
+            }).onfinish = () => p.remove();
+        }
+    }
+
+    // Resize handler
+    window.addEventListener('resize', () => {
+        if(gameState.playing) updateVehiclePositions();
+    });
+
+    // Init
+    initGridUI();
+
+</script>
+</body>
+</html>
