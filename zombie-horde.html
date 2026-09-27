@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Voxel Zombie Horde · Auto-Shooter</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #87ceeb;
+      font-family: 'Courier New', monospace;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+
+    #ui {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: #fff;
+      text-shadow: 2px 2px 0 #000;
+      font-size: 17px;
+      z-index: 10;
+      pointer-events: none;
+      line-height: 1.5;
+      background: rgba(0,0,0,0.6);
+      padding: 12px 18px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+
+    .hp-bar-container {
+      width: 180px;
+      height: 14px;
+      background: #3b1111;
+      border: 2px solid #fff;
+      margin-top: 4px;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    #hp-bar {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, #ff4d4d, #ff0000);
+      transition: width 0.15s;
+    }
+
+    #weapon-pop {
+      position: absolute;
+      bottom: 20%;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #ffe484;
+      font-size: 26px;
+      font-weight: bold;
+      text-shadow: 3px 3px 0 #000;
+      z-index: 15;
+      display: none;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(0, 255, 136, 0.7);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 8;
+      pointer-events: none;
+      transition: all 0.1s;
+    }
+    #crosshair.active {
+      transform: translate(-50%, -50%) scale(1.5);
+      border-color: #ff3333;
+      box-shadow: 0 0 10px #ff3333;
+    }
+    #crosshair::after { content: ''; position: absolute; top: 50%; left: -8px; width: 6px; height: 2px; background: inherit; }
+    #crosshair::before { content: ''; position: absolute; top: -8px; left: 50%; width: 2px; height: 6px; background: inherit; }
+
+    #game-over {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9);
+      color: #ff4444;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 38px;
+      font-weight: bold;
+      z-index: 100;
+      display: none;
+      text-shadow: 3px 3px 0 #000;
+    }
+    #restart-btn {
+      margin-top: 25px;
+      padding: 14px 30px;
+      background: #dc2626;
+      color: white;
+      border: none;
+      font-size: 22px;
+      font-weight: bold;
+      cursor: pointer;
+      font-family: inherit;
+      border-radius: 6px;
+      box-shadow: 0 6px 0 #7f1d1d;
+      transition: 0.1s;
+      text-transform: uppercase;
+    }
+    #restart-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #7f1d1d; }
+
+    #lock-overlay {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6);
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 28px;
+      text-align: center;
+      cursor: pointer;
+      flex-direction: column;
+    }
+
+    .touch-zone {
+      position: absolute;
+      bottom: 0;
+      height: 100%;
+      z-index: 4;
+      opacity: 0.12;
+      color: #ccc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      font-weight: bold;
+      pointer-events: auto;
+      letter-spacing: 3px;
+    }
+    #left-zone { left: 0; width: 50%; border-right: 1px dashed rgba(255,255,255,0.2); }
+    #right-zone { right: 0; width: 50%; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+
+  <div id="ui">
+    <div>🧟 УБИТО: <span id="score">0</span></div>
+    <div>🔫 ОРУЖИЕ: <span id="weapon-name" style="color:#ffe484;">Glock</span></div>
+    <div>❤️ ЗДОРОВЬЕ</div>
+    <div class="hp-bar-container"><div id="hp-bar"></div></div>
+    <div style="font-size: 11px; margin-top: 10px; color: #aaa;">
+      <span style="color:#fff;">WASD</span> ходьба · <span style="color:#fff;">МЫШЬ</span> обзор<br>
+      Стрельба <span style="color:#00ff88;">АВТО</span> по наведению
+    </div>
+  </div>
+
+  <div id="weapon-pop"></div>
+  <div id="crosshair"></div>
+
+  <div id="left-zone" class="touch-zone">ХОДЬБА</div>
+  <div id="right-zone" class="touch-zone">ОБЗОР</div>
+
+  <div id="lock-overlay">
+    <div>🔫 НАЖМИТЕ, ЧТОБЫ ИГРАТЬ</div>
+    <div style="font-size:16px; margin-top:12px; color:#aaa;">Управление мышью и WASD</div>
+  </div>
+
+  <div id="game-over">
+    <div>☠️ ВЫ ПОГИБЛИ</div>
+    <button id="restart-btn">ИГРАТЬ СНОВА</button>
+  </div>
+
+  <script>
+    // ==================== НАСТРОЙКИ ОРУЖИЯ И СНАРЯДОВ ====================
+    // Добавлены скорости снарядов (projSpeed)
+    const WEAPONS = {
+      glock:        { name: "Glock 18",       damage: 22,  delay: 320, range: 40, color: 0x4b5563, projSpeed: 60, projSize: 0.1, isAoE: false },
+      ak47:         { name: "AK-47",          damage: 18,  delay: 100, range: 60, color: 0xb45309, projSpeed: 80, projSize: 0.15, isAoE: false },
+      minigun:      { name: "M134 Minigun",   damage: 13,  delay: 55,  range: 55, color: 0x1f2937, projSpeed: 90, projSize: 0.12, isAoE: false },
+      grenadelaunch:{ name: "Гранатомёт M79", damage: 130, delay: 950, range: 45, color: 0x166534, projSpeed: 25, projSize: 0.3, isAoE: true, aoeRad: 6 },
+      flamethrower: { name: "Огнемёт",        damage: 8,   delay: 45,  range: 18, color: 0xea580c, projSpeed: 15, projSize: 0.5, isAoE: false, isFire: true },
+      rpg:          { name: "RPG-7",          damage: 320, delay: 1600,range: 80, color: 0x475569, projSpeed: 20, projSize: 0.4, isAoE: true, aoeRad: 12 }
+    };
+
+    // ==================== СЦЕНА ====================
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb);
+    scene.fog = new THREE.FogExp2(0x87ceeb, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.rotation.order = 'YXZ';
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambient);
+    const dirLight = new THREE.DirectionalLight(0xfffaed, 1.2);
+    dirLight.position.set(30, 50, 20);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 1024;
+    dirLight.shadow.mapSize.height = 1024;
+    dirLight.shadow.camera.near = 1;
+    dirLight.shadow.camera.far = 120;
+    dirLight.shadow.camera.left = -50;
+    dirLight.shadow.camera.right = 50;
+    dirLight.shadow.camera.top = 50;
+    dirLight.shadow.camera.bottom = -50;
+    scene.add(dirLight);
+
+    // Пол
+    const floorGeo = new THREE.PlaneGeometry(140, 140);
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x3d8c40, roughness: 0.9 }); 
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    // Декорации
+    const fenceMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.7 });
+    const postGeo = new THREE.BoxGeometry(1.2, 4, 1.2);
+    for(let i = -68; i <= 68; i += 6) {
+      let p1 = new THREE.Mesh(postGeo, fenceMat); p1.position.set(i, 2, -69); p1.castShadow = true; scene.add(p1);
+      let p2 = new THREE.Mesh(postGeo, fenceMat); p2.position.set(i, 2, 69); p2.castShadow = true; scene.add(p2);
+      let p3 = new THREE.Mesh(postGeo, fenceMat); p3.position.set(-69, 2, i); p3.castShadow = true; scene.add(p3);
+      let p4 = new THREE.Mesh(postGeo, fenceMat); p4.position.set(69, 2, i); p4.castShadow = true; scene.add(p4);
+    }
+
+    const crateGeo = new THREE.BoxGeometry(2.5, 2.5, 2.5);
+    const crateMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.8 });
+    const coverPositions = [ [-18, 1.25, 15], [22, 1.25, 12], [-30, 1.25, -10], [28, 1.25, -8], [5, 1.25, 0], [10, 1.25, -20], [-15, 1.25, -25] ];
+    coverPositions.forEach(pos => {
+      let crate = new THREE.Mesh(crateGeo, crateMat);
+      crate.position.set(pos[0], pos[1], pos[2]);
+      crate.castShadow = true; crate.receiveShadow = true;
+      scene.add(crate);
+    });
+
+    // ==================== ОРУЖИЕ НА КАМЕРЕ ====================
+    const handGroup = new THREE.Group();
+    camera.add(handGroup);
+    scene.add(camera);
+    handGroup.position.set(0.2, -0.35, -0.55);
+
+    const weaponMeshGroup = new THREE.Group();
+    handGroup.add(weaponMeshGroup);
+
+    // Вспышка выстрела (Muzzle Flash)
+    const muzzleLight = new THREE.PointLight(0xffaa00, 0, 10);
+    muzzleLight.position.set(0, 0, -1);
+    handGroup.add(muzzleLight);
+
+    const handMat = new THREE.MeshStandardMaterial({ color: 0x5a8f50, roughness: 0.8 });
+    const leftHand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.14), handMat);
+    leftHand.position.set(-0.35, 0.02, 0.12);
+    const rightHand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 0.14), handMat);
+    rightHand.position.set(0.0, -0.05, 0.15);
+    handGroup.add(leftHand, rightHand);
+
+    // УЛУЧШЕННАЯ СИСТЕМА МОДЕЛЕЙ ОРУЖИЯ
+    function buildWeaponVisual(type) {
+      while(weaponMeshGroup.children.length > 0) weaponMeshGroup.remove(weaponMeshGroup.children[0]);
+      const col = WEAPONS[type].color;
+      const mainMat = new THREE.MeshStandardMaterial({ color: col, roughness: 0.4, metalness: 0.3 });
+      const darkMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5, metalness: 0.8 });
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.9 });
+      const silverMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.2, metalness: 0.9 });
+
+      const addPart = (geom, mat, x, y, z) => {
+        let mesh = new THREE.Mesh(geom, mat);
+        mesh.position.set(x, y, z);
+        weaponMeshGroup.add(mesh);
+        return mesh;
+      };
+
+      if(type === 'glock') {
+        addPart(new THREE.BoxGeometry(0.04, 0.06, 0.22), mainMat, 0, 0, -0.05); // Затвор
+        addPart(new THREE.BoxGeometry(0.035, 0.12, 0.06), darkMat, 0, -0.06, 0.02).rotation.x = 0.2; // Рукоять
+        addPart(new THREE.CylinderGeometry(0.01, 0.01, 0.05), darkMat, 0, -0.01, -0.15).rotation.x = Math.PI/2; // Ствол
+      } 
+      else if(type === 'ak47') {
+        addPart(new THREE.BoxGeometry(0.04, 0.06, 0.35), darkMat, 0, 0, 0); // Ствольная коробка
+        addPart(new THREE.CylinderGeometry(0.012, 0.012, 0.3), darkMat, 0, 0.01, -0.3).rotation.x = Math.PI/2; // Ствол
+        addPart(new THREE.CylinderGeometry(0.01, 0.01, 0.15), darkMat, 0, -0.01, -0.25).rotation.x = Math.PI/2; // Газоотвод
+        addPart(new THREE.BoxGeometry(0.03, 0.05, 0.15), woodMat, 0, -0.01, -0.2); // Цевье
+        addPart(new THREE.BoxGeometry(0.03, 0.12, 0.15), woodMat, 0, -0.04, 0.25); // Приклад
+        addPart(new THREE.BoxGeometry(0.03, 0.12, 0.05), darkMat, 0, -0.08, 0.05).rotation.x = 0.2; // Рукоять
+        let mag = addPart(new THREE.BoxGeometry(0.03, 0.15, 0.06), mainMat, 0, -0.08, -0.08); // Магазин
+        mag.rotation.x = -0.2;
+      } 
+      else if(type === 'minigun') {
+        addPart(new THREE.BoxGeometry(0.12, 0.12, 0.25), darkMat, 0, 0, 0); // Корпус
+        addPart(new THREE.BoxGeometry(0.04, 0.15, 0.04), darkMat, 0, -0.1, 0.08); // Задняя ручка
+        addPart(new THREE.CylinderGeometry(0.02, 0.02, 0.15), darkMat, -0.15, 0, -0.05).rotation.z = Math.PI/2; // Боковая ручка
+        // Вращающийся блок стволов
+        window.minigunBarrels = new THREE.Group();
+        for(let i=0; i<6; i++) {
+          let angle = (i / 6) * Math.PI * 2;
+          let b = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.5), silverMat);
+          b.rotation.x = Math.PI/2;
+          b.position.set(Math.cos(angle)*0.04, Math.sin(angle)*0.04, -0.25);
+          window.minigunBarrels.add(b);
+        }
+        window.minigunBarrels.position.set(0, 0, -0.1);
+        weaponMeshGroup.add(window.minigunBarrels);
+      } 
+      else if(type === 'grenadelaunch') {
+        addPart(new THREE.CylinderGeometry(0.035, 0.035, 0.3), darkMat, 0, 0, -0.15).rotation.x = Math.PI/2; // Толстый ствол
+        addPart(new THREE.BoxGeometry(0.04, 0.06, 0.15), mainMat, 0, -0.02, 0); // Механизм
+        addPart(new THREE.BoxGeometry(0.04, 0.1, 0.15), woodMat, 0, -0.05, 0.15); // Приклад
+        addPart(new THREE.BoxGeometry(0.04, 0.04, 0.12), woodMat, 0, -0.04, -0.1); // Цевье под стволом
+      } 
+      else if(type === 'flamethrower') {
+        addPart(new THREE.BoxGeometry(0.06, 0.08, 0.35), darkMat, 0, 0, -0.1); // Основа
+        addPart(new THREE.CylinderGeometry(0.02, 0.02, 0.2), mainMat, 0, 0, -0.3).rotation.x = Math.PI/2; // Сопло
+        addPart(new THREE.CylinderGeometry(0.04, 0.04, 0.2), mainMat, 0, -0.06, 0).rotation.x = Math.PI/2; // Баллон под стволом
+        addPart(new THREE.BoxGeometry(0.03, 0.12, 0.04), darkMat, 0, -0.08, 0.05); // Рукоять
+        // Горелка
+        addPart(new THREE.CylinderGeometry(0.005, 0.005, 0.05), silverMat, 0, 0.03, -0.4).rotation.x = Math.PI/2;
+      } 
+      else if(type === 'rpg') {
+        addPart(new THREE.CylinderGeometry(0.03, 0.03, 0.8), mainMat, 0, 0, -0.1).rotation.x = Math.PI/2; // Труба
+        addPart(new THREE.CylinderGeometry(0.04, 0.04, 0.1), woodMat, 0, 0, 0.3).rotation.x = Math.PI/2; // Задний щиток
+        addPart(new THREE.BoxGeometry(0.02, 0.1, 0.04), woodMat, 0, -0.06, 0.05); // Рукоять 1
+        addPart(new THREE.BoxGeometry(0.02, 0.1, 0.04), woodMat, 0, -0.06, -0.1); // Рукоять 2
+        // Боеголовка (видна, если не выстрелили - для простоты всегда рисуем)
+        addPart(new THREE.ConeGeometry(0.06, 0.15, 8), darkMat, 0, 0, -0.55).rotation.x = -Math.PI/2;
+      }
+    }
+
+    // ==================== СИСТЕМА ЧАСТИЦ (VFX) ====================
+    let particles = [];
+    const particleGeo = new THREE.BoxGeometry(0.1, 0.1, 0.1);
+    
+    function spawnParticles(pos, color, count, speedScale = 1, sizeScale = 1) {
+      const mat = new THREE.MeshBasicMaterial({ color: color });
+      for(let i=0; i<count; i++) {
+        const mesh = new THREE.Mesh(particleGeo, mat);
+        mesh.position.copy(pos);
+        mesh.scale.setScalar(sizeScale * (0.5 + Math.random()));
+        scene.add(mesh);
+        particles.push({
+          mesh: mesh,
+          velocity: new THREE.Vector3(
+            (Math.random() - 0.5) * 10 * speedScale,
+            (Math.random()) * 10 * speedScale,
+            (Math.random() - 0.5) * 10 * speedScale
+          ),
+          life: 1.0 + Math.random() * 0.5
+        });
+      }
+    }
+
+    // ==================== СИСТЕМА СНАРЯДОВ ====================
+    let projectiles = [];
+    const bulletGeo = new THREE.BoxGeometry(0.05, 0.05, 0.4);
+    const rocketGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.4);
+    const rocketMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+    const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+    const flameMat = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.8 });
+
+    function fireProjectile(startPos, targetPos, wepData, hitTargetMesh) {
+      const dir = new THREE.Vector3().subVectors(targetPos, startPos).normalize();
+      let mesh;
+
+      if (wepData.isFire) {
+        mesh = new THREE.Mesh(new THREE.SphereGeometry(wepData.projSize), flameMat);
+      } else if (wepData.isAoE) {
+        mesh = new THREE.Mesh(rocketGeo, rocketMat);
+        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+        mesh.rotation.x += Math.PI/2;
+      } else {
+        mesh = new THREE.Mesh(bulletGeo, bulletMat);
+        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), dir);
+      }
+
+      mesh.position.copy(startPos);
+      scene.add(mesh);
+
+      projectiles.push({
+        mesh: mesh,
+        dir: dir,
+        speed: wepData.projSpeed,
+        damage: wepData.damage,
+        isAoE: wepData.isAoE,
+        aoeRad: wepData.aoeRad,
+        isFire: wepData.isFire,
+        targetMesh: hitTargetMesh,
+        distanceTraveled: 0,
+        maxDistance: wepData.range
+      });
+
+      // Muzzle Flash Effect
+      muzzleLight.intensity = 2;
+      setTimeout(() => { muzzleLight.intensity = 0; }, 50);
+    }
+
+    // ==================== ТОЧКИ ПОДБОРА ====================
+    const pickups = [];
+    const pickupData = [
+      { type: 'ak47', x: -20, z: 25, col: 0xb45309 },
+      { type: 'minigun', x: 20, z: 25, col: 0x374151 },
+      { type: 'grenadelaunch', x: -30, z: 8, col: 0x166534 },
+      { type: 'flamethrower', x: 30, z: 8, col: 0xea580c },
+      { type: 'rpg', x: 0, z: -8, col: 0x475569 }
+    ];
+
+    pickupData.forEach(p => {
+      const group = new THREE.Group();
+      group.position.set(p.x, 0.1, p.z);
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.3, 2.8), new THREE.MeshStandardMaterial({ color: p.col, roughness: 0.3, emissive: p.col, emissiveIntensity: 0.4 }));
+      group.add(pad);
+      const marker = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true }));
+      marker.position.y = 1.4;
+      group.add(marker);
+      scene.add(group);
+      pickups.push({ mesh: group, marker: marker, type: p.type });
+    });
+
+    // ==================== ЗОМБИ ====================
+    let zombies = [];
+    const zombieTypes = {
+      green:  { color: 0x2e7d32, hp: 45,  speed: 0.035, score: 10, scale: 1.0 },
+      orange: { color: 0xd84315, hp: 110, speed: 0.055, score: 25, scale: 1.2 },
+      red:    { color: 0xc62828, hp: 280, speed: 0.075, score: 50, scale: 1.5 }
+    };
+
+    function createZombie() {
+      const rand = Math.random();
+      let tKey = 'green';
+      if (rand > 0.88) tKey = 'red';
+      else if (rand > 0.6) tKey = 'orange';
+
+      const cfg = zombieTypes[tKey];
+      const s = cfg.scale;
+      const group = new THREE.Group();
+
+      const zMat = new THREE.MeshStandardMaterial({ color: cfg.color, roughness: 0.7 });
+      const clothMat = new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.9 });
+      
+      const body = new THREE.Mesh(new THREE.BoxGeometry(1.1*s, 1.7*s, 0.7*s), clothMat);
+      body.position.y = 0.85*s;
+      body.castShadow = true;
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.75*s, 0.75*s, 0.75*s), zMat);
+      head.position.y = 2.1*s;
+      head.castShadow = true;
+      const lArm = new THREE.Mesh(new THREE.BoxGeometry(0.35*s, 0.35*s, 1.3*s), zMat);
+      lArm.position.set(-0.55*s, 1.35*s, -0.55*s);
+      lArm.castShadow = true;
+      const rArm = new THREE.Mesh(new THREE.BoxGeometry(0.35*s, 0.35*s, 1.3*s), zMat);
+      rArm.position.set(0.55*s, 1.35*s, -0.55*s);
+      rArm.castShadow = true;
+
+      group.add(body, head, lArm, rArm);
+      
+      // Спавн зомби по кругу за ареной
+      const angle = Math.random() * Math.PI * 2;
+      const spawnRadius = 65;
+      group.position.set(Math.cos(angle) * spawnRadius, 0, Math.sin(angle) * spawnRadius);
+      
+      group.userData = {
+        hp: cfg.hp,
+        speed: cfg.speed,
+        scoreValue: cfg.score,
+        type: tKey,
+        maxHp: cfg.hp,
+        matOriginal: zMat.color.getHex(),
+        materials: [zMat, clothMat],
+        knockback: new THREE.Vector3()
+      };
+      scene.add(group);
+      zombies.push(group);
+    }
+
+    // ==================== ИГРОК И УПРАВЛЕНИЕ ====================
+    let player = { pos: new THREE.Vector3(0, 1.6, 0), hp: 100, maxHp: 100, speed: 0.15, rotY: 0, rotX: 0 };
+    let score = 0, currentWepKey = 'glock', lastShotTime = 0, recoilTime = 0, isGameOver = false;
+    let zombieSpawnTimer = 0, spawnDelay = 2.0, clock = new THREE.Clock();
+    const keys = { w:0, a:0, s:0, d:0 };
+    let moveJoystick = { x: 0, y: 0 }, lookTouchId = null, moveTouchId = null;
+
+    camera.position.copy(player.pos);
+    buildWeaponVisual(currentWepKey);
+
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    document.getElementById('left-zone').style.display = isMobile ? 'flex' : 'none';
+    document.getElementById('right-zone').style.display = isMobile ? 'flex' : 'none';
+    
+    const lockOverlay = document.getElementById('lock-overlay');
+    if (!isMobile) {
+      lockOverlay.style.display = 'flex';
+      lockOverlay.addEventListener('click', () => renderer.domElement.requestPointerLock());
+      document.addEventListener('pointerlockchange', () => {
+        lockOverlay.style.display = document.pointerLockElement === renderer.domElement ? 'none' : 'flex';
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (document.pointerLockElement === renderer.domElement) {
+          player.rotY -= e.movementX * 0.0022;
+          player.rotX -= e.movementY * 0.0022;
+          player.rotX = Math.max(-Math.PI/2.3, Math.min(Math.PI/2.3, player.rotX));
+        }
+      });
+    } else { lockOverlay.style.display = 'none'; }
+
+    const updateKeys = (e, val) => {
+      const k = e.key.toLowerCase();
+      if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) {
+        e.preventDefault();
+        if (k==='arrowup'||k==='w') keys.w = val;
+        if (k==='arrowdown'||k==='s') keys.s = val;
+        if (k==='arrowleft'||k==='a') keys.a = val;
+        if (k==='arrowright'||k==='d') keys.d = val;
+      }
+    };
+    window.addEventListener('keydown', (e) => updateKeys(e, 1));
+    window.addEventListener('keyup', (e) => updateKeys(e, 0));
+
+    window.addEventListener('touchstart', (e) => {
+      for(let t of e.changedTouches) {
+        if (t.clientX < window.innerWidth/2) { moveTouchId = t.identifier; t.target.touchStart = { x: t.clientX, y: t.clientY }; }
+        else { lookTouchId = t.identifier; }
+      }
+    });
+    window.addEventListener('touchmove', (e) => {
+      for(let t of e.changedTouches) {
+        if (t.identifier === moveTouchId) {
+          let dx = t.clientX - t.target.touchStart.x, dy = t.clientY - t.target.touchStart.y;
+          let d = Math.sqrt(dx*dx+dy*dy);
+          if(d > 40) { dx /= d; dy /= d; } else { dx /= 40; dy /= 40; }
+          moveJoystick.x = dx; moveJoystick.y = -dy;
+        }
+        if (t.identifier === lookTouchId) {
+          player.rotY -= (t.clientX - (t.target.lastX || t.clientX)) * 0.007;
+          player.rotX -= (t.clientY - (t.target.lastY || t.clientY)) * 0.007;
+          player.rotX = Math.max(-Math.PI/2.3, Math.min(Math.PI/2.3, player.rotX));
+        }
+        t.target.lastX = t.clientX; t.target.lastY = t.clientY;
+      }
+    });
+    window.addEventListener('touchend', (e) => {
+      for(let t of e.changedTouches) {
+        if(t.identifier === moveTouchId) { moveTouchId = null; moveJoystick = {x:0, y:0}; }
+        if(t.identifier === lookTouchId) { lookTouchId = null; }
+      }
+    });
+
+    // ==================== ЛОГИКА СТРЕЛЬБЫ ====================
+    const raycaster = new THREE.Raycaster();
+    const centerVec = new THREE.Vector2(0, 0);
+
+    function checkAutoFire() {
+      if (isGameOver) return;
+      const wep = WEAPONS[currentWepKey];
+      const now = performance.now();
+      
+      // Вращение стволов минигана перед выстрелом
+      if (currentWepKey === 'minigun' && window.minigunBarrels) {
+        window.minigunBarrels.rotation.z -= 0.5;
+      }
+
+      if (now - lastShotTime < wep.delay) return;
+
+      raycaster.setFromCamera(centerVec, camera);
+      raycaster.far = wep.range;
+      
+      let zombieMeshes = [];
+      zombies.forEach(z => { zombieMeshes.push(...z.children); });
+      const intersects = raycaster.intersectObjects(zombieMeshes);
+      
+      const crosshair = document.getElementById('crosshair');
+
+      if (intersects.length > 0) {
+        crosshair.classList.add('active'); // Прицел краснеет
+        let hitPoint = intersects[0].point;
+        let hitMesh = intersects[0].object;
+        while (hitMesh.parent && !zombies.includes(hitMesh)) hitMesh = hitMesh.parent;
+        if (!zombies.includes(hitMesh)) return;
+
+        lastShotTime = now;
+        recoilTime = 5; // Отдача визуал
+        
+        // Точка вылета снаряда (чуть ниже и правее камеры)
+        const gunMuzzlePos = new THREE.Vector3(0.2, -0.3, -0.6).applyMatrix4(camera.matrixWorld);
+        fireProjectile(gunMuzzlePos, hitPoint, wep, hitMesh);
+      } else {
+        crosshair.classList.remove('active');
+      }
+    }
+
+    function applyDamage(zombie, damage, hitDir) {
+      if(!zombie || zombie.userData.hp <= 0) return;
+      zombie.userData.hp -= damage;
+      
+      // Эффект попадания (мигание красным)
+      zombie.userData.materials.forEach(m => m.emissive.setHex(0x550000));
+      setTimeout(() => { if(zombie) zombie.userData.materials.forEach(m => m.emissive.setHex(0x000000)); }, 100);
+
+      // Кровь/ошметки
+      spawnParticles(zombie.position.clone().add(new THREE.Vector3(0,1.5,0)), 0x880000, 5, 0.5, 0.5);
+
+      // Отталкивание (Knockback)
+      if (hitDir) {
+        zombie.userData.knockback.add(hitDir.multiplyScalar(damage * 0.015));
+      }
+
+      if (zombie.userData.hp <= 0) {
+        score += zombie.userData.scoreValue;
+        document.getElementById('score').innerText = score;
+        spawnParticles(zombie.position.clone().add(new THREE.Vector3(0,1,0)), zombie.userData.materials[0].color.getHex(), 15, 1.5, 1.5); // Большой взрыв при смерти
+        scene.remove(zombie);
+        zombies.splice(zombies.indexOf(zombie), 1);
+      }
+    }
+
+    // ==================== ИГРОВОЙ ЦИКЛ ====================
+    function animate() {
+      if (isGameOver) return;
+      requestAnimationFrame(animate);
+
+      const dt = Math.min(clock.getDelta(), 0.1);
+      const time = performance.now() / 1000;
+
+      // Спавн
+      zombieSpawnTimer += dt;
+      if (zombieSpawnTimer >= spawnDelay && zombies.length < 50) {
+        createZombie();
+        zombieSpawnTimer = 0;
+        if (spawnDelay > 0.6) spawnDelay -= 0.01;
+      }
+
+      // Обновление частиц
+      for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.life -= dt;
+        if (p.life <= 0) {
+          scene.remove(p.mesh);
+          particles.splice(i, 1);
+          continue;
+        }
+        p.velocity.y -= 25 * dt; // Гравитация частиц
+        p.mesh.position.addScaledVector(p.velocity, dt);
+        p.mesh.scale.multiplyScalar(0.95); // Уменьшение
+      }
+
+      // Обновление снарядов
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        let p = projectiles[i];
+        let moveDist = p.speed * dt;
+        p.mesh.position.addScaledVector(p.dir, moveDist);
+        p.distanceTraveled += moveDist;
+
+        if (p.isFire) {
+          p.mesh.scale.multiplyScalar(1.08); // Огонь расширяется
+          p.mesh.material.opacity -= 1.5 * dt;
+        }
+
+        // Проверка попадания или дальности
+        let hitDist = p.isFire ? 1.5 : 0.8;
+        let hit = false;
+        
+        if (p.targetMesh && zombies.includes(p.targetMesh)) {
+          if (p.mesh.position.distanceTo(p.targetMesh.position.clone().add(new THREE.Vector3(0, 1.5, 0))) < hitDist) hit = true;
+        }
+
+        if (hit || p.distanceTraveled >= p.maxDistance || p.mesh.position.y < 0) {
+          if (p.isAoE) {
+            // Взрыв RPG или гранатомета
+            spawnParticles(p.mesh.position, 0xffaa00, 20, 2, 2);
+            spawnParticles(p.mesh.position, 0x333333, 10, 1, 3);
+            for (let z of zombies) {
+              if (z.position.distanceTo(p.mesh.position) <= p.aoeRad) {
+                let forceDir = new THREE.Vector3().subVectors(z.position, p.mesh.position).normalize();
+                applyDamage(z, p.damage, forceDir);
+              }
+            }
+          } else if (hit) {
+            applyDamage(p.targetMesh, p.damage, p.dir.clone());
+          }
+
+          scene.remove(p.mesh);
+          projectiles.splice(i, 1);
+        }
+      }
+
+      // Камера и движение
+      camera.rotation.y = player.rotY;
+      camera.rotation.x = player.rotX;
+
+      const changeX = keys.d - keys.a + moveJoystick.x;
+      const changeZ = keys.s - keys.w - moveJoystick.y;
+      const isMoving = Math.abs(changeX) > 0.1 || Math.abs(changeZ) > 0.1;
+
+      if (isMoving) {
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        forward.y = 0; forward.normalize();
+        const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+        right.y = 0; right.normalize();
+        player.pos.addScaledVector(right, changeX * player.speed);
+        player.pos.addScaledVector(forward, -changeZ * player.speed);
+        player.pos.x = Math.max(-68, Math.min(68, player.pos.x));
+        player.pos.z = Math.max(-68, Math.min(68, player.pos.z));
+      }
+      
+      // Боббинг (покачивание) камеры при ходьбе
+      if (isMoving) {
+        player.pos.y = 1.6 + Math.sin(time * 12) * 0.08;
+      } else {
+        player.pos.y += (1.6 - player.pos.y) * 0.1;
+      }
+      camera.position.copy(player.pos);
+
+      // Анимация оружия (дыхание и отдача)
+      let targetWepZ = -0.55;
+      if (recoilTime > 0) {
+        targetWepZ = -0.45; // Оружие дергается назад
+        handGroup.rotation.x = 0.05; // Ствол задирается
+        recoilTime--;
+      } else {
+        handGroup.rotation.x += (0 - handGroup.rotation.x) * 0.1;
+      }
+      
+      handGroup.position.z += (targetWepZ - handGroup.position.z) * 0.2;
+      handGroup.position.y = -0.35 + Math.sin(time * 2) * 0.01 + (isMoving ? Math.sin(time * 12) * 0.02 : 0);
+      handGroup.position.x = 0.2 + (isMoving ? Math.cos(time * 6) * 0.02 : 0);
+
+      checkAutoFire();
+
+      // Обновление зомби
+      for (let i = zombies.length - 1; i >= 0; i--) {
+        let z = zombies[i];
+        let dir = new THREE.Vector3().subVectors(player.pos, z.position);
+        dir.y = 0; dir.normalize();
+        
+        // Применение knockback
+        z.userData.knockback.multiplyScalar(0.85); // Трение
+        z.position.add(z.userData.knockback);
+
+        // Движение к игроку
+        z.position.addScaledVector(dir, z.userData.speed);
+        z.rotation.y = Math.atan2(dir.x, dir.z);
+        z.rotation.z = Math.sin(time * 5 + i) * 0.09;
+        z.position.y = Math.abs(Math.sin(time * 7 + i)) * 0.06;
+
+        let dist = z.position.distanceTo(player.pos);
+        if (dist < 1.9) {
+          player.hp -= 0.4;
+          document.getElementById('hp-bar').style.width = Math.max(0, player.hp) + '%';
+          document.getElementById('hp-bar').style.background = 'white'; // Мигание хп
+          setTimeout(() => document.getElementById('hp-bar').style.background = 'linear-gradient(90deg, #ff4d4d, #ff0000)', 50);
+          if (player.hp <= 0) endGame();
+        }
+      }
+
+      // Подбор оружия
+      pickups.forEach(p => {
+        p.marker.rotation.y += 0.025;
+        p.marker.rotation.x += 0.012;
+        if (player.pos.distanceTo(p.mesh.position) < 2.5 && currentWepKey !== p.type) {
+          currentWepKey = p.type;
+          buildWeaponVisual(currentWepKey);
+          document.getElementById('weapon-name').innerText = WEAPONS[p.type].name;
+          const pop = document.getElementById('weapon-pop');
+          pop.innerText = "✅ " + WEAPONS[p.type].name.toUpperCase();
+          pop.style.display = 'block';
+          setTimeout(() => pop.style.display = 'none', 1400);
+        }
+      });
+
+      renderer.render(scene, camera);
+    }
+
+    function endGame() {
+      isGameOver = true;
+      document.getElementById('game-over').style.display = 'flex';
+      if (!isMobile && document.pointerLockElement) document.exitPointerLock();
+    }
+
+    function resetGame() {
+      zombies.forEach(z => scene.remove(z));
+      projectiles.forEach(p => scene.remove(p.mesh));
+      particles.forEach(p => scene.remove(p.mesh));
+      zombies = []; projectiles = []; particles = [];
+      player.hp = 100; player.pos.set(0, 1.6, 0);
+      player.rotX = 0; player.rotY = 0; score = 0;
+      currentWepKey = 'glock'; spawnDelay = 2.0; zombieSpawnTimer = 0;
+      buildWeaponVisual(currentWepKey);
+      document.getElementById('score').innerText = '0';
+      document.getElementById('weapon-name').innerText = WEAPONS['glock'].name;
+      document.getElementById('hp-bar').style.width = '100%';
+      document.getElementById('game-over').style.display = 'none';
+      isGameOver = false; clock.getDelta();
+      if (!isMobile) renderer.domElement.requestPointerLock();
+      animate();
+    }
+
+    document.getElementById('restart-btn').addEventListener('click', resetGame);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>

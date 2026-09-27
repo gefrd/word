@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Tower of Hanoi</title>
+<style>
+  :root {
+    --bg-top: #0f172a;
+    --bg-bottom: #0a0a1a;
+    --primary: #38bdf8;
+    --accent: #f472b6;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --text: #f8fafc;
+  }
+  * { 
+    box-sizing: border-box; 
+    margin: 0; 
+    padding: 0; 
+    user-select: none; 
+    -webkit-user-select: none; 
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    background: linear-gradient(135deg, var(--bg-top), var(--bg-bottom));
+    color: var(--text);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overflow: hidden;
+    touch-action: manipulation;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  #canvas-container {
+    flex: 1;
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+  canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+  }
+  .ui-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    padding: calc(env(safe-area-inset-top) + 20px) 20px calc(env(safe-area-inset-bottom) + 20px);
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: auto;
+  }
+  .stats {
+    display: flex;
+    gap: 15px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+  }
+  .controls {
+    display: flex;
+    gap: 10px;
+  }
+  button {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: var(--text);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    backdrop-filter: blur(5px);
+    cursor: pointer;
+    pointer-events: auto;
+    transition: all 0.2s ease;
+  }
+  button:active {
+    transform: scale(0.95);
+    background: rgba(255,255,255,0.2);
+  }
+  #screens {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 20;
+    pointer-events: none;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  .screen {
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 40px;
+    border-radius: 24px;
+    text-align: center;
+    pointer-events: auto;
+    display: none;
+    flex-direction: column;
+    gap: 20px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+    max-width: 90%;
+    transform: scale(0.9);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .screen.active {
+    display: flex;
+    transform: scale(1);
+    opacity: 1;
+  }
+  h1 { font-size: 2.5rem; margin-bottom: 10px; background: linear-gradient(to right, var(--primary), var(--accent)); -webkit-background-clip: text; color: transparent; }
+  h2 { font-size: 2rem; }
+  .btn-primary {
+    background: linear-gradient(to right, #38bdf8, #818cf8);
+    border: none;
+    padding: 15px 40px;
+    font-size: 1.2rem;
+    border-radius: 30px;
+    box-shadow: 0 4px 15px rgba(56, 189, 248, 0.4);
+    margin-top: 10px;
+  }
+  .difficulty-selector {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .diff-btn {
+    padding: 10px 20px;
+    border-radius: 15px;
+    background: rgba(255,255,255,0.05);
+  }
+  .diff-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #000;
+  }
+  .stars {
+    font-size: 2.5rem;
+    color: #fbbf24;
+    letter-spacing: 5px;
+    margin: 10px 0;
+  }
+  #optimal-moves { font-size: 0.9rem; opacity: 0.7; }
+</style>
+</head>
+<body>
+
+<div id="canvas-container">
+  <canvas id="gameCanvas"></canvas>
+  
+  <div class="ui-layer">
+    <div class="header">
+      <div class="stats">
+        <div>Moves: <span id="moveCount">0</span></div>
+        <div>Time: <span id="timer">0:00</span></div>
+      </div>
+      <div class="controls">
+        <button id="btn-undo">Undo</button>
+        <button id="btn-solve">Solve</button>
+        <button id="btn-menu">Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="screens">
+    <!-- Start Screen -->
+    <div class="screen active" id="screen-start">
+      <h1>Tower of Hanoi</h1>
+      <p>Move all disks to the rightmost peg.<br>Larger disks cannot be placed on smaller ones.</p>
+      
+      <div class="difficulty-selector">
+        <button class="diff-btn active" data-disks="3">Easy (3)</button>
+        <button class="diff-btn" data-disks="5">Medium (5)</button>
+        <button class="diff-btn" data-disks="7">Hard (7)</button>
+        <button class="diff-btn" data-disks="9">Expert (9)</button>
+      </div>
+      
+      <button class="btn-primary" id="btn-play">PLAY</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div class="screen" id="screen-over">
+      <h2>Puzzle Solved!</h2>
+      <div class="stars" id="result-stars">★★★</div>
+      <p>Moves: <span id="result-moves">0</span> (Optimal: <span id="result-optimal">0</span>)</p>
+      <p>Time: <span id="result-time">0:00</span></p>
+      <button class="btn-primary" id="btn-restart">PLAY AGAIN</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- AUDIO SYSTEM ---
+let audioCtx;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTone(freq, type, duration, vol=0.1) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+const sfx = {
+  pickup: () => playTone(500, 'sine', 0.1, 0.1),
+  place: () => playTone(300, 'triangle', 0.1, 0.1),
+  error: () => {
+    playTone(150, 'sawtooth', 0.2, 0.2);
+    if(navigator.vibrate) navigator.vibrate(50);
+  },
+  win: () => {
+    [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+      setTimeout(() => playTone(freq, 'sine', 0.2, 0.2), i * 150);
+    });
+    if(navigator.vibrate) navigator.vibrate([100, 50, 100, 50, 200]);
+  }
+};
+
+// --- GAME STATE ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let width, height;
+
+let numDisks = 3;
+let pegs = [[], [], []];
+let moves = 0;
+let startTime = 0;
+let timerInterval = null;
+let gameState = 'menu'; // menu, playing, solved, auto
+let selectedPeg = null;
+
+let undoStack = [];
+let animQueue = [];
+let currentAnim = null; // { disk, startPeg, endPeg, progress, sx, sy, tx, ty, startHeight, targetHeight, type }
+let shakeAnim = { active: false, progress: 0, peg: 0 };
+let fireworks = [];
+
+// --- COLOR PALETTES ---
+const pegColor = '#475569';
+const baseColor = '#334155';
+
+function getDiskColor(index, total) {
+  const hue = (index / total) * 300; // Rainbow from red to magenta
+  return `hsl(${hue}, 80%, 60%)`;
+}
+
+// --- RENDER LOGIC ---
+function resize() {
+  width = canvas.clientWidth;
+  height = canvas.clientHeight;
+  canvas.width = width * window.devicePixelRatio;
+  canvas.height = height * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+}
+window.addEventListener('resize', resize);
+
+const PEG_WIDTH = 12;
+const BASE_HEIGHT = 20;
+
+function getPegX(index) {
+  return (width / 4) * (index + 1);
+}
+
+function getPegY() {
+  return height * 0.75;
+}
+
+function getPegHeight() {
+  return Math.min(height * 0.4, 300);
+}
+
+function getDiskWidth(sizeIndex, total) {
+  const minW = width * 0.1;
+  const maxW = width * 0.28;
+  return minW + (maxW - minW) * (sizeIndex / (total - 1 || 1));
+}
+
+function getDiskHeight() {
+  const maxH = 24;
+  const minH = 12;
+  return Math.max(minH, Math.min(maxH, getPegHeight() / (numDisks + 2)));
+}
+
+function getDiskY(pegIndex, positionInPeg) {
+  const py = getPegY();
+  return py - BASE_HEIGHT/2 - (positionInPeg + 0.5) * getDiskHeight();
+}
+
+function drawDisk(x, y, w, h, color, selected = false) {
+  ctx.save();
+  ctx.translate(x, y);
+  
+  if (selected) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 20;
+  }
+  
+  // 3D effect / glossy
+  const grad = ctx.createLinearGradient(-w/2, -h/2, w/2, h/2);
+  grad.addColorStop(0, '#fff');
+  grad.addColorStop(0.2, color);
+  grad.addColorStop(0.8, color);
+  grad.addColorStop(1, '#000');
+  
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.roundRect(-w/2, -h/2, w, h, h/2);
+  ctx.fill();
+  
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, width, height);
+  
+  const py = getPegY();
+  const ph = getPegHeight();
+  const bw = width * 0.9;
+  
+  // Draw Base
+  ctx.fillStyle = baseColor;
+  ctx.beginPath();
+  ctx.roundRect((width-bw)/2, py, bw, BASE_HEIGHT, 10);
+  ctx.fill();
+  
+  // Draw Pegs
+  for (let i = 0; i < 3; i++) {
+    let px = getPegX(i);
+    
+    if (shakeAnim.active && shakeAnim.peg === i) {
+      px += Math.sin(shakeAnim.progress * Math.PI * 8) * 5;
+    }
+    
+    ctx.fillStyle = pegColor;
+    ctx.beginPath();
+    ctx.roundRect(px - PEG_WIDTH/2, py - ph, PEG_WIDTH, ph, PEG_WIDTH/2);
+    ctx.fill();
+    
+    if (selectedPeg === i && !currentAnim) {
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
+      ctx.beginPath();
+      ctx.roundRect(px - PEG_WIDTH*2, py - ph, PEG_WIDTH*4, ph, PEG_WIDTH/2);
+      ctx.fill();
+    }
+  }
+  
+  // Draw Disks
+  for (let p = 0; p < 3; p++) {
+    let px = getPegX(p);
+    
+    if (shakeAnim.active && shakeAnim.peg === p) {
+      px += Math.sin(shakeAnim.progress * Math.PI * 8) * 5;
+    }
+    
+    for (let d = 0; d < pegs[p].length; d++) {
+      const disk = pegs[p][d];
+      // Skip drawing if this disk is currently animating
+      if (currentAnim && currentAnim.disk === disk) continue;
+      
+      const dx = px;
+      const dy = getDiskY(p, d);
+      const dw = getDiskWidth(disk.size, numDisks);
+      const dh = getDiskHeight();
+      const isSelected = (selectedPeg === p && d === pegs[p].length - 1);
+      
+      let floatOffset = 0;
+      if (isSelected) {
+        floatOffset = -20 + Math.sin(Date.now() / 200) * 5; // hover effect
+      }
+      
+      drawDisk(dx, dy + floatOffset, dw, dh, disk.color, isSelected);
+    }
+  }
+  
+  // Draw Animating Disk
+  if (currentAnim) {
+    const { disk, sx, sy, tx, ty, progress, type } = currentAnim;
+    let cx, cy;
+    
+    // Easing
+    const ease = t => t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    const p = ease(progress);
+    
+    const floatY = py - ph - 40; // Height above pegs
+    
+    if (type === 'move') {
+      if (progress < 0.3) {
+        // Up
+        const upP = p / 0.3;
+        cx = sx;
+        cy = sy + (floatY - sy) * (progress/0.3);
+      } else if (progress < 0.7) {
+        // Across
+        const acrossP = (progress - 0.3) / 0.4;
+        cx = sx + (tx - sx) * acrossP;
+        cy = floatY;
+      } else {
+        // Down
+        const downP = (progress - 0.7) / 0.3;
+        cx = tx;
+        cy = floatY + (ty - floatY) * downP;
+      }
+    }
+    
+    const dw = getDiskWidth(disk.size, numDisks);
+    const dh = getDiskHeight();
+    drawDisk(cx, cy, dw, dh, disk.color, true);
+  }
+  
+  // Draw Fireworks
+  for (let i = fireworks.length - 1; i >= 0; i--) {
+    const f = fireworks[i];
+    f.x += f.vx;
+    f.y += f.vy;
+    f.vy += 0.1; // gravity
+    f.life -= 0.02;
+    
+    if (f.life <= 0) {
+      fireworks.splice(i, 1);
+      continue;
+    }
+    
+    ctx.globalAlpha = f.life;
+    ctx.fillStyle = f.color;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.size, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+let lastTime = 0;
+function loop(timestamp) {
+  const dt = timestamp - lastTime;
+  lastTime = timestamp;
+  
+  if (currentAnim) {
+    currentAnim.progress += dt / 500; // 500ms animation
+    if (currentAnim.progress >= 1) {
+      pegs[currentAnim.endPeg].push(currentAnim.disk);
+      currentAnim = null;
+      checkWin();
+      processAnimQueue();
+    }
+  }
+  
+  if (shakeAnim.active) {
+    shakeAnim.progress += dt / 300; // 300ms shake
+    if (shakeAnim.progress >= 1) {
+      shakeAnim.active = false;
+    }
+  }
+  
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// --- LOGIC ---
+function initGame(disks) {
+  numDisks = disks;
+  pegs = [[], [], []];
+  for (let i = numDisks - 1; i >= 0; i--) {
+    pegs[0].push({
+      size: i,
+      color: getDiskColor(i, numDisks)
+    });
+  }
+  moves = 0;
+  startTime = Date.now();
+  updateUI();
+  gameState = 'playing';
+  selectedPeg = null;
+  undoStack = [];
+  animQueue = [];
+  currentAnim = null;
+  fireworks = [];
+  
+  if (timerInterval) clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    if (gameState === 'playing') updateUI();
+  }, 1000);
+}
+
+function updateUI() {
+  document.getElementById('moveCount').textContent = moves;
+  if (gameState === 'playing') {
+    const s = Math.floor((Date.now() - startTime) / 1000);
+    const m = Math.floor(s / 60);
+    const sec = (s % 60).toString().padStart(2, '0');
+    document.getElementById('timer').textContent = `${m}:${sec}`;
+  }
+}
+
+function handleTap(x, y) {
+  initAudio();
+  if (gameState !== 'playing' || currentAnim) return;
+  
+  // Determine peg clicked based on x coordinate
+  const third = width / 3;
+  let clickedPeg = 0;
+  if (x > third && x < third * 2) clickedPeg = 1;
+  else if (x >= third * 2) clickedPeg = 2;
+  
+  if (selectedPeg === null) {
+    // Select peg
+    if (pegs[clickedPeg].length > 0) {
+      selectedPeg = clickedPeg;
+      sfx.pickup();
+    }
+  } else {
+    // Move to peg
+    if (selectedPeg === clickedPeg) {
+      selectedPeg = null; // Deselect
+    } else {
+      const topDisk = pegs[selectedPeg][pegs[selectedPeg].length - 1];
+      const targetTop = pegs[clickedPeg][pegs[clickedPeg].length - 1];
+      
+      if (!targetTop || targetTop.size > topDisk.size) {
+        // Valid move
+        moveDisk(selectedPeg, clickedPeg, true);
+        selectedPeg = null;
+      } else {
+        // Invalid move
+        sfx.error();
+        shakeAnim = { active: true, progress: 0, peg: clickedPeg };
+        selectedPeg = null;
+      }
+    }
+  }
+}
+
+function moveDisk(from, to, isPlayerMove=false) {
+  const disk = pegs[from].pop();
+  
+  if (isPlayerMove) {
+    undoStack.push({from, to});
+    moves++;
+    updateUI();
+  }
+  
+  sfx.place();
+  
+  const sx = getPegX(from);
+  const sy = getDiskY(from, pegs[from].length);
+  const tx = getPegX(to);
+  const ty = getDiskY(to, pegs[to].length);
+  
+  currentAnim = {
+    disk, startPeg: from, endPeg: to,
+    sx, sy, tx, ty,
+    progress: 0, type: 'move'
+  };
+}
+
+function checkWin() {
+  if (pegs[2].length === numDisks) {
+    gameState = 'solved';
+    clearInterval(timerInterval);
+    sfx.win();
+    createFireworks();
+    
+    setTimeout(() => {
+      showScreen('screen-over');
+      document.getElementById('result-moves').textContent = moves;
+      const optimal = Math.pow(2, numDisks) - 1;
+      document.getElementById('result-optimal').textContent = optimal;
+      document.getElementById('result-time').textContent = document.getElementById('timer').textContent;
+      
+      let stars = '★';
+      if (moves <= optimal * 1.1) stars = '★★★';
+      else if (moves <= optimal * 1.5) stars = '★★';
+      document.getElementById('result-stars').textContent = stars;
+    }, 1500);
+  }
+}
+
+function createFireworks() {
+  for(let i=0; i<100; i++) {
+    fireworks.push({
+      x: width/2 + (Math.random()-0.5)*200,
+      y: height/2 + (Math.random()-0.5)*200,
+      vx: (Math.random()-0.5)*10,
+      vy: (Math.random()-0.5)*10 - 5,
+      size: Math.random()*4+2,
+      color: `hsl(${Math.random()*360}, 100%, 60%)`,
+      life: 1
+    });
+  }
+}
+
+// --- AUTO SOLVE ---
+function solveHanoi(n, source, target, aux) {
+  if (n > 0) {
+    solveHanoi(n - 1, source, aux, target);
+    animQueue.push({ from: source, to: target });
+    solveHanoi(n - 1, aux, target, source);
+  }
+}
+
+function processAnimQueue() {
+  if (animQueue.length > 0 && gameState === 'auto') {
+    const m = animQueue.shift();
+    moveDisk(m.from, m.to);
+    moves++;
+    updateUI();
+  } else if (animQueue.length === 0 && gameState === 'auto') {
+    // Done
+  }
+}
+
+// --- INPUT & EVENTS ---
+canvas.addEventListener('pointerdown', (e) => {
+  handleTap(e.clientX, e.clientY);
+});
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  if (id) document.getElementById(id).classList.add('active');
+}
+
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+    e.target.classList.add('active');
+  });
+});
+
+document.getElementById('btn-play').addEventListener('click', () => {
+  initAudio();
+  const d = parseInt(document.querySelector('.diff-btn.active').dataset.disks);
+  showScreen(null);
+  initGame(d);
+});
+
+document.getElementById('btn-restart').addEventListener('click', () => {
+  showScreen('screen-start');
+});
+
+document.getElementById('btn-menu').addEventListener('click', () => {
+  gameState = 'menu';
+  showScreen('screen-start');
+});
+
+document.getElementById('btn-undo').addEventListener('click', () => {
+  if (gameState !== 'playing' || currentAnim || undoStack.length === 0) return;
+  const m = undoStack.pop();
+  moves++;
+  updateUI();
+  moveDisk(m.to, m.from, false); // reverse
+});
+
+document.getElementById('btn-solve').addEventListener('click', () => {
+  if (gameState !== 'playing' || currentAnim) return;
+  
+  // To avoid complex partial state solving, we reset and solve from scratch
+  if (confirm("Reset puzzle and show automatic solution?")) {
+    initGame(numDisks);
+    gameState = 'auto';
+    solveHanoi(numDisks, 0, 2, 1);
+    processAnimQueue();
+  }
+});
+
+// Init
+resize();
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>

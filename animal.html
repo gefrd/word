@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Animal Quiz!</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;800&family=Nunito:wght@700;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{min-height:100vh;background:#FFF9F0;font-family:'Baloo 2',cursive;overflow:hidden;}
+  
+  #bg{position:fixed;inset:0;z-index:0;}
+  .bg-blob{position:absolute;border-radius:50%;filter:blur(60px);opacity:0.15;}
+  
+  #wrapper{position:relative;z-index:1;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:16px;}
+  
+  header{width:100%;max-width:400px;display:flex;justify-content:space-between;align-items:center;padding:8px 0;margin-bottom:10px;}
+  .score-pill{background:white;border-radius:20px;padding:8px 16px;font-size:1rem;font-weight:800;color:#FF6B35;box-shadow:0 3px 12px rgba(255,107,53,0.2);}
+  .hearts{font-size:1.3rem;letter-spacing:2px;}
+  
+  #progress-bar{width:100%;max-width:400px;height:8px;background:#E8E8E8;border-radius:10px;margin-bottom:20px;overflow:hidden;}
+  #progress-fill{height:100%;background:linear-gradient(90deg,#FF6B35,#FFB347);border-radius:10px;transition:width 0.5s ease;}
+  
+  #question-card{width:100%;max-width:400px;background:white;border-radius:28px;padding:28px 24px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,0.08);margin-bottom:20px;}
+  #animal-display{font-size:7rem;margin-bottom:10px;display:block;animation:wobble 1s ease-in-out infinite;}
+  #question-text{font-size:1.2rem;font-weight:600;color:#444;line-height:1.4;}
+  
+  #options{width:100%;max-width:400px;display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .option-btn{background:white;border:3px solid #E8E8E8;border-radius:20px;padding:16px 12px;font-family:'Baloo 2';font-size:1rem;font-weight:600;color:#333;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:0 4px 12px rgba(0,0,0,0.05);}
+  .option-btn:active{transform:scale(0.96);}
+  .option-btn .opt-emoji{font-size:1.8rem;}
+  .option-btn.correct{background:#4CAF50;border-color:#4CAF50;color:white;transform:scale(1.05);}
+  .option-btn.wrong{background:#FF5252;border-color:#FF5252;color:white;animation:shake 0.4s ease;}
+  .option-btn.reveal{background:#4CAF50;border-color:#4CAF50;color:white;}
+  
+  #feedback{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'Nunito';font-size:3rem;font-weight:900;pointer-events:none;z-index:500;opacity:0;}
+  
+  #end-screen,#start-screen{position:fixed;inset:0;z-index:400;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px;background:linear-gradient(160deg,#FFF3E0,#FFF9F0);}
+  .big-emoji{font-size:6rem;animation:wobble 1.2s ease-in-out infinite;}
+  h1{font-family:'Nunito';font-size:2.8rem;font-weight:900;color:#FF6B35;text-align:center;margin:10px 0 5px;}
+  .tagline{font-size:1rem;color:#888;margin-bottom:25px;text-align:center;}
+  .play-btn{background:linear-gradient(135deg,#FF6B35,#FFB347);color:white;border:none;border-radius:50px;padding:16px 50px;font-family:'Nunito';font-size:1.4rem;font-weight:900;cursor:pointer;box-shadow:0 6px 20px rgba(255,107,53,0.4);transition:all 0.2s;}
+  .play-btn:active{transform:scale(0.96);}
+  .result-score{font-family:'Nunito';font-size:5rem;font-weight:900;color:#FF6B35;margin:5px 0;}
+  .result-msg{font-size:1.1rem;color:#666;margin-bottom:20px;text-align:center;}
+  .stars-row{font-size:2.5rem;margin-bottom:10px;}
+  
+  @keyframes wobble{0%,100%{transform:rotate(-5deg);}50%{transform:rotate(5deg);}}
+  @keyframes shake{0%,100%{transform:translateX(0);}25%{transform:translateX(-8px);}75%{transform:translateX(8px);}}
+  @keyframes feedbackPop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.3);}30%{opacity:1;transform:translate(-50%,-50%) scale(1.2);}70%{opacity:1;transform:translate(-50%,-50%) scale(1);}100%{opacity:0;transform:translate(-50%,-50%) scale(0.8);}}
+</style>
+</head>
+<body>
+
+<div id="bg">
+  <div class="bg-blob" style="width:300px;height:300px;background:#FF6B35;top:-50px;left:-80px;"></div>
+  <div class="bg-blob" style="width:250px;height:250px;background:#4CAF50;bottom:0;right:-60px;"></div>
+  <div class="bg-blob" style="width:200px;height:200px;background:#2196F3;top:40%;left:60%;"></div>
+</div>
+
+<div id="wrapper">
+  <header>
+    <div class="score-pill">⭐ <span id="score">0</span></div>
+    <div class="score-pill">Q <span id="qnum">1</span>/10</div>
+    <div class="hearts" id="hearts">❤️❤️❤️</div>
+  </header>
+  <div id="progress-bar"><div id="progress-fill" style="width:0%"></div></div>
+  <div id="question-card">
+    <span id="animal-display">🐘</span>
+    <p id="question-text">Loading...</p>
+  </div>
+  <div id="options"></div>
+</div>
+
+<div id="feedback"></div>
+
+<div id="start-screen" style="display:none;">
+  <div class="big-emoji">🦁</div>
+  <h1>Animal Quiz!</h1>
+  <p class="tagline">How well do you know your animals? 🐾</p>
+  <div style="font-size:2rem;margin-bottom:20px;">🐘🦋🐬🦜</div>
+  <button class="play-btn" onclick="startGame()">Start Quiz! 🚀</button>
+</div>
+
+<div id="end-screen" style="display:none;">
+  <div class="stars-row" id="end-stars">⭐⭐⭐</div>
+  <div class="big-emoji" id="end-emoji">🎉</div>
+  <div class="result-score" id="end-score">0/10</div>
+  <p class="result-msg" id="end-msg">Amazing!</p>
+  <button class="play-btn" onclick="startGame()">Play Again! 🔄</button>
+</div>
+
+<script>
+const questions = [
+  {animal:'🐘',question:"What sound does an elephant make?",correct:"Trumpet 🎺",options:["Roar 🦁","Trumpet 🎺","Moo 🐄","Quack 🦆"]},
+  {animal:'🐸',question:"Where do frogs like to live?",correct:"In ponds 🏞️",options:["In deserts 🏜️","In ponds 🏞️","On mountains 🏔️","In the sky ☁️"]},
+  {animal:'🦋',question:"What was a butterfly before?",correct:"A caterpillar 🐛",options:["A bee 🐝","A worm 🪱","A caterpillar 🐛","A fly 🪰"]},
+  {animal:'🐬',question:"Are dolphins fish?",correct:"No, mammals! 🐾",options:["Yes, big fish 🐟","No, mammals! 🐾","Yes, sea fish 🌊","No, reptiles 🦎"]},
+  {animal:'🦜',question:"What can parrots do that amazes people?",correct:"Talk & mimic speech 🗣️",options:["Breathe fire 🔥","Talk & mimic speech 🗣️","Swim fast 🏊","Glow in the dark ✨"]},
+  {animal:'🐼',question:"What do giant pandas love to eat?",correct:"Bamboo 🎋",options:["Fish 🐟","Bamboo 🎋","Honey 🍯","Leaves 🍃"]},
+  {animal:'🦁',question:"What is a group of lions called?",correct:"A pride 🦁",options:["A pack 🐺","A herd 🐄","A pride 🦁","A flock 🐦"]},
+  {animal:'🐙',question:"How many arms does an octopus have?",correct:"Eight 8️⃣",options:["Four 4️⃣","Six 6️⃣","Eight 8️⃣","Ten 🔟"]},
+  {animal:'🦒',question:"What is special about a giraffe?",correct:"Longest neck! 🦒",options:["Fastest animal 💨","Longest neck! 🦒","Biggest eyes 👁️","Loudest roar 📢"]},
+  {animal:'🐧',question:"Where do penguins live?",correct:"Antarctica 🧊",options:["Africa 🌍","Antarctica 🧊","Amazon 🌿","Arctic ocean 🌊"]},
+  {animal:'🐝',question:"What do bees make?",correct:"Honey 🍯",options:["Milk 🥛","Honey 🍯","Sugar 🍬","Wax candles 🕯️"]},
+  {animal:'🦈',question:"How many rows of teeth can sharks have?",correct:"Up to 15 rows! 😱",options:["Just 1 row","2-3 rows","Up to 15 rows! 😱","Exactly 5 rows"]},
+  {animal:'🐌',question:"What do snails carry on their back?",correct:"Their shell 🐚",options:["A backpack 🎒","Their shell 🐚","Eggs 🥚","A rock 🪨"]},
+  {animal:'🦊',question:"What are baby foxes called?",correct:"Kits / cubs 🦊",options:["Pups 🐶","Kits / cubs 🦊","Foals 🐴","Chicks 🐥"]},
+  {animal:'🐢',question:"How long can giant tortoises live?",correct:"Over 150 years! 🎂",options:["About 20 years","About 50 years","Over 150 years! 🎂","Over 500 years"]},
+];
+
+let qIndex=0, score=0, lives=3, currentQs=[], answered=false;
+
+function shuffle(a){return a.sort(()=>Math.random()-0.5);}
+
+function startGame(){
+  document.getElementById('start-screen').style.display='none';
+  document.getElementById('end-screen').style.display='none';
+  score=0; lives=3; qIndex=0; answered=false;
+  currentQs=shuffle([...questions]).slice(0,10);
+  document.getElementById('score').textContent='0';
+  document.getElementById('hearts').textContent='❤️❤️❤️';
+  loadQuestion();
+}
+
+function loadQuestion(){
+  if(qIndex>=10){endGame();return;}
+  answered=false;
+  const q=currentQs[qIndex];
+  document.getElementById('animal-display').textContent=q.animal;
+  document.getElementById('question-text').textContent=q.question;
+  document.getElementById('qnum').textContent=qIndex+1;
+  document.getElementById('progress-fill').style.width=((qIndex/10)*100)+'%';
+  
+  const opts=document.getElementById('options');
+  opts.innerHTML='';
+  shuffle([...q.options]).forEach(opt=>{
+    const btn=document.createElement('button');
+    btn.className='option-btn';
+    const parts=opt.split(' ');
+    const emoji=parts[parts.length-1];
+    const text=parts.slice(0,-1).join(' ');
+    btn.innerHTML=`<span class="opt-emoji">${emoji}</span><span>${text}</span>`;
+    btn.addEventListener('click',()=>selectAnswer(btn,opt,q.correct));
+    btn.addEventListener('touchstart',(e)=>{e.preventDefault();selectAnswer(btn,opt,q.correct);},{passive:false});
+    opts.appendChild(btn);
+  });
+}
+
+function selectAnswer(btn, selected, correct){
+  if(answered) return;
+  answered=true;
+  const allBtns=document.querySelectorAll('.option-btn');
+  
+  if(selected===correct){
+    btn.classList.add('correct');
+    score+=10;
+    document.getElementById('score').textContent=score;
+    showFeedback('✅ Correct! 🎉', '#4CAF50');
+  } else {
+    btn.classList.add('wrong');
+    lives--;
+    updateHearts();
+    showFeedback('❌ Oops!', '#FF5252');
+    allBtns.forEach(b=>{
+      const txt=b.querySelector('span:last-child').textContent;
+      if(correct.startsWith(txt)) b.classList.add('reveal');
+    });
+  }
+  
+  setTimeout(()=>{
+    if(lives<=0){endGame();return;}
+    qIndex++;
+    loadQuestion();
+  },1400);
+}
+
+function updateHearts(){
+  const h=['❤️❤️❤️','❤️❤️🖤','❤️🖤🖤','🖤🖤🖤'];
+  document.getElementById('hearts').textContent=h[3-lives]||h[3];
+}
+
+function showFeedback(text, color){
+  const f=document.getElementById('feedback');
+  f.textContent=text;
+  f.style.color=color;
+  f.style.animation='none';
+  f.offsetHeight;
+  f.style.animation='feedbackPop 1s forwards';
+}
+
+function endGame(){
+  const correct=Math.round(score/10);
+  const stars=correct>=8?'⭐⭐⭐':correct>=5?'⭐⭐':'⭐';
+  const msgs=['Keep practicing! 💪','Good try! 👍','Well done! 😊','Awesome! 🌟','Animal Expert! 🦁'];
+  const msgIdx=Math.min(Math.floor(correct/2.5),4);
+  const emojis=['😅','🙂','😊','🤩','🏆'];
+  
+  document.getElementById('end-stars').textContent=stars;
+  document.getElementById('end-score').textContent=`${correct}/10`;
+  document.getElementById('end-msg').textContent=msgs[msgIdx];
+  document.getElementById('end-emoji').textContent=emojis[msgIdx];
+  document.getElementById('end-screen').style.display='flex';
+}
+
+startGame();
+</script>
+</body>
+</html>

@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>FreeCell Solitaire</title>
+    <style>
+        :root {
+            --bg-color: #0d6b2e;
+            --border-color: #d4af37; /* Gold */
+            --card-width: 11vw;
+            --card-height: 16vw;
+            --card-gap-x: 1.5vw;
+            --card-gap-y: 3vw;
+            --card-radius: 4px;
+            --text-light: #ffffff;
+            --text-dark: #1a1a1a;
+            --text-red: #e53935;
+            --safe-top: env(safe-area-inset-top, 20px);
+            --safe-bottom: env(safe-area-inset-bottom, 20px);
+        }
+
+        @media (min-width: 768px) {
+            :root {
+                --card-width: 60px;
+                --card-height: 85px;
+                --card-gap-x: 10px;
+                --card-gap-y: 20px;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: none;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle, #10853a 0%, #0d6b2e 100%);
+            color: var(--text-light);
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            position: absolute;
+            top: var(--safe-top);
+            left: 0;
+            width: 100%;
+            height: 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 10px;
+            z-index: 100;
+        }
+
+        .btn {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-color);
+            color: var(--border-color);
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .btn:active {
+            background: rgba(212, 175, 55, 0.3);
+        }
+
+        .game-info {
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--border-color);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        /* Game Board */
+        .board {
+            position: absolute;
+            top: calc(var(--safe-top) + 50px);
+            left: 0;
+            width: 100%;
+            height: calc(100vh - var(--safe-top) - 50px - var(--safe-bottom));
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .top-area {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 800px;
+            padding: 0 5px;
+            margin-bottom: 20px;
+        }
+
+        .cells-group {
+            display: flex;
+            gap: var(--card-gap-x);
+        }
+
+        .cell-slot {
+            width: var(--card-width);
+            height: var(--card-height);
+            border: 2px solid rgba(212, 175, 55, 0.4);
+            border-radius: var(--card-radius);
+            position: relative;
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        .tableau {
+            display: flex;
+            gap: var(--card-gap-x);
+            width: 100%;
+            max-width: 800px;
+            padding: 0 5px;
+            flex-grow: 1;
+        }
+
+        .column-slot {
+            width: var(--card-width);
+            height: var(--card-height);
+            border: 2px dashed rgba(255, 255, 255, 0.2);
+            border-radius: var(--card-radius);
+            position: relative;
+        }
+
+        /* Cards */
+        .card {
+            width: var(--card-width);
+            height: var(--card-height);
+            background: white;
+            border-radius: var(--card-radius);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            position: absolute;
+            top: 0;
+            left: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 2px;
+            transition: transform 0.2s ease-out, box-shadow 0.2s;
+            cursor: pointer;
+            z-index: 10;
+        }
+
+        .card.dragging {
+            transition: none;
+            z-index: 1000 !important;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            opacity: 0.9;
+        }
+
+        .card.selected {
+            box-shadow: 0 0 10px 4px rgba(255, 255, 0, 0.8);
+            transform: translateY(-5px);
+            z-index: 50;
+        }
+
+        .card.hint {
+            box-shadow: 0 0 10px 4px rgba(0, 255, 255, 0.8);
+        }
+
+        .card.red {
+            color: var(--text-red);
+        }
+
+        .card.black {
+            color: var(--text-dark);
+        }
+
+        .card-top {
+            font-size: calc(var(--card-width) * 0.4);
+            font-weight: bold;
+            line-height: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .card-suit {
+            font-size: calc(var(--card-width) * 0.35);
+        }
+
+        .card-center {
+            font-size: calc(var(--card-width) * 0.6);
+            text-align: center;
+            align-self: center;
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        /* Overlays */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .menu-panel {
+            background: #1a1a2e;
+            border: 2px solid var(--border-color);
+            border-radius: 15px;
+            padding: 20px;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(212, 175, 55, 0.3);
+        }
+
+        .menu-title {
+            color: var(--border-color);
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: white;
+        }
+
+        .menu-btn {
+            background: var(--border-color);
+            color: #1a1a2e;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 25px;
+            width: 100%;
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+
+        /* Cascade animation layer */
+        #cascade-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1500;
+        }
+        
+        .cascade-card {
+            position: absolute;
+            will-change: transform;
+        }
+        
+        .notification {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 30px;
+            font-size: 20px;
+            font-weight: bold;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+        }
+        
+        .notification.show {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="top-bar">
+        <button class="btn" id="btn-menu">Menu</button>
+        <div class="game-info" id="game-number">#12345</div>
+        <div>
+            <button class="btn" id="btn-hint" style="margin-right: 5px;">Hint</button>
+            <button class="btn" id="btn-undo">Undo</button>
+        </div>
+    </div>
+
+    <div class="board" id="board">
+        <div class="top-area">
+            <div class="cells-group" id="free-cells">
+                <div class="cell-slot" data-type="free" data-idx="0"></div>
+                <div class="cell-slot" data-type="free" data-idx="1"></div>
+                <div class="cell-slot" data-type="free" data-idx="2"></div>
+                <div class="cell-slot" data-type="free" data-idx="3"></div>
+            </div>
+            <div class="cells-group" id="foundation">
+                <div class="cell-slot" data-type="foundation" data-suit="0"></div>
+                <div class="cell-slot" data-type="foundation" data-suit="1"></div>
+                <div class="cell-slot" data-type="foundation" data-suit="2"></div>
+                <div class="cell-slot" data-type="foundation" data-suit="3"></div>
+            </div>
+        </div>
+        <div class="tableau" id="tableau">
+            <div class="column-slot" data-type="tableau" data-idx="0"></div>
+            <div class="column-slot" data-type="tableau" data-idx="1"></div>
+            <div class="column-slot" data-type="tableau" data-idx="2"></div>
+            <div class="column-slot" data-type="tableau" data-idx="3"></div>
+            <div class="column-slot" data-type="tableau" data-idx="4"></div>
+            <div class="column-slot" data-type="tableau" data-idx="5"></div>
+            <div class="column-slot" data-type="tableau" data-idx="6"></div>
+            <div class="column-slot" data-type="tableau" data-idx="7"></div>
+        </div>
+    </div>
+
+    <div id="cascade-layer"></div>
+    <div id="notification" class="notification"></div>
+
+    <!-- Main Menu / Win Screen -->
+    <div class="overlay" id="menu-overlay">
+        <div class="menu-panel">
+            <h2 class="menu-title" id="menu-title">FreeCell</h2>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-label">Played</div>
+                    <div class="stat-value" id="stat-played">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Won</div>
+                    <div class="stat-value" id="stat-won">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-value" id="stat-rate">0%</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Current Streak</div>
+                    <div class="stat-value" id="stat-streak">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Best Streak</div>
+                    <div class="stat-value" id="stat-best-streak">0</div>
+                </div>
+            </div>
+            <button class="menu-btn" id="btn-resume" style="display:none;">Resume Game</button>
+            <button class="menu-btn" id="btn-new-game">New Game</button>
+            <button class="menu-btn" id="btn-restart">Restart Deal</button>
+            <div style="margin-top: 15px;">
+                <input type="number" id="seed-input" placeholder="Deal #" style="padding: 5px; width: 80px; text-align: center; background: rgba(255,255,255,0.1); border: 1px solid var(--border-color); color: white; border-radius: 4px;">
+                <button class="btn" id="btn-play-seed">Play</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Audio System
+        let audioCtx;
+        
+        function playTone(freq, type, duration, vol=0.1) {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        const sounds = {
+            pickup: () => playTone(300, 'sine', 0.1, 0.05),
+            place: () => playTone(200, 'sine', 0.1, 0.05),
+            invalid: () => playTone(150, 'sawtooth', 0.2, 0.1),
+            foundation: () => playTone(600, 'sine', 0.1, 0.1),
+            win: () => {
+                [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+                    setTimeout(() => playTone(freq, 'sine', 0.3, 0.2), i * 150);
+                });
+            }
+        };
+
+        function vibrate(ms) {
+            if (navigator.vibrate) navigator.vibrate(ms);
+        }
+
+        // Stats System
+        let stats = JSON.parse(localStorage.getItem('freecell_stats')) || {
+            played: 0, won: 0, currentStreak: 0, bestStreak: 0
+        };
+
+        function saveStats() {
+            localStorage.setItem('freecell_stats', JSON.stringify(stats));
+            updateStatsUI();
+        }
+
+        function updateStatsUI() {
+            document.getElementById('stat-played').textContent = stats.played;
+            document.getElementById('stat-won').textContent = stats.won;
+            const rate = stats.played ? Math.round((stats.won / stats.played) * 100) : 0;
+            document.getElementById('stat-rate').textContent = rate + '%';
+            document.getElementById('stat-streak').textContent = stats.currentStreak;
+            document.getElementById('stat-best-streak').textContent = stats.bestStreak;
+        }
+
+        // Game Constants & State
+        const SUITS = ['♠', '♥', '♣', '♦'];
+        const COLORS = ['black', 'red', 'black', 'red'];
+        const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+        
+        let gameSeed = 1;
+        let deck = [];
+        let tableau = [[], [], [], [], [], [], [], []];
+        let freeCells = [null, null, null, null];
+        let foundation = [-1, -1, -1, -1]; // -1 means empty, 0=A, 1=2, etc.
+        let history = [];
+        let selectedCard = null;
+        let isWon = false;
+        
+        // Random Number Generator (Microsoft Windows FreeCell compatible)
+        class PRNG {
+            constructor(seed) {
+                this.seed = seed;
+            }
+            next() {
+                this.seed = (this.seed * 214013 + 2531011) % 2147483648;
+                return Math.floor(this.seed / 65536) % 32768;
+            }
+        }
+
+        // DOM Elements
+        const tableauEls = Array.from({length: 8}, (_, i) => document.querySelector(`.column-slot[data-idx="${i}"]`));
+        const freeCellEls = Array.from({length: 4}, (_, i) => document.querySelector(`.cell-slot[data-type="free"][data-idx="${i}"]`));
+        const foundationEls = Array.from({length: 4}, (_, i) => document.querySelector(`.cell-slot[data-type="foundation"][data-suit="${i}"]`));
+        const boardEl = document.getElementById('board');
+        const cascadeLayer = document.getElementById('cascade-layer');
+
+        function createDeck() {
+            deck = [];
+            for (let s = 0; s < 4; s++) {
+                for (let r = 0; r < 13; r++) {
+                    deck.push({ suit: s, rank: r, id: `${s}-${r}` });
+                }
+            }
+        }
+
+        function shuffle(seed) {
+            let rng = new PRNG(seed);
+            let d = [...deck];
+            for (let i = 0; i < 52; i++) {
+                let j = 51 - Math.floor((rng.next() / 32768) * (52 - i));
+                let temp = d[i];
+                d[i] = d[j];
+                d[j] = temp;
+            }
+            return d.reverse(); // Freecell deals backwards
+        }
+
+        function deal(seed) {
+            gameSeed = seed;
+            document.getElementById('game-number').textContent = '#' + seed;
+            createDeck();
+            let shuffled = shuffle(seed);
+            
+            tableau = [[], [], [], [], [], [], [], []];
+            freeCells = [null, null, null, null];
+            foundation = [-1, -1, -1, -1];
+            history = [];
+            selectedCard = null;
+            isWon = false;
+            
+            let c = 0;
+            for (let i = 0; i < 52; i++) {
+                tableau[c].push(shuffled[i]);
+                c = (c + 1) % 8;
+            }
+            
+            renderBoard();
+        }
+
+        // Rendering
+        function createCardDOM(card) {
+            const el = document.createElement('div');
+            el.className = `card ${COLORS[card.suit]}`;
+            el.dataset.id = card.id;
+            el.dataset.suit = card.suit;
+            el.dataset.rank = card.rank;
+            
+            const top = document.createElement('div');
+            top.className = 'card-top';
+            top.innerHTML = `<span>${RANKS[card.rank]}</span><span class="card-suit">${SUITS[card.suit]}</span>`;
+            
+            const center = document.createElement('div');
+            center.className = 'card-center';
+            center.textContent = SUITS[card.suit];
+            
+            el.appendChild(top);
+            el.appendChild(center);
+            
+            // Interaction
+            el.addEventListener('pointerdown', handlePointerDown);
+            return el;
+        }
+
+        let cardElements = {};
+
+        function renderBoard() {
+            boardEl.querySelectorAll('.card:not(.cascade-card)').forEach(e => e.remove());
+            cardElements = {};
+
+            // Render Foundation
+            for (let i = 0; i < 4; i++) {
+                if (foundation[i] >= 0) {
+                    const card = { suit: i, rank: foundation[i], id: `${i}-${foundation[i]}` };
+                    const el = createCardDOM(card);
+                    el.style.zIndex = 10;
+                    foundationEls[i].appendChild(el);
+                    cardElements[card.id] = el;
+                }
+            }
+
+            // Render FreeCells
+            for (let i = 0; i < 4; i++) {
+                if (freeCells[i]) {
+                    const el = createCardDOM(freeCells[i]);
+                    freeCellEls[i].appendChild(el);
+                    cardElements[freeCells[i].id] = el;
+                }
+            }
+
+            // Render Tableau
+            for (let i = 0; i < 8; i++) {
+                const col = tableau[i];
+                for (let j = 0; j < col.length; j++) {
+                    const el = createCardDOM(col[j]);
+                    el.style.top = `${j * 3.5}vw`;
+                    if (window.innerWidth >= 768) el.style.top = `${j * 25}px`;
+                    el.style.zIndex = j;
+                    tableauEls[i].appendChild(el);
+                    cardElements[col[j].id] = el;
+                }
+            }
+            
+            checkWinCondition();
+        }
+
+        // Logic
+        function getCardLocation(id) {
+            for (let i = 0; i < 8; i++) {
+                let idx = tableau[i].findIndex(c => c.id === id);
+                if (idx !== -1) return { loc: 'tableau', col: i, idx: idx };
+            }
+            for (let i = 0; i < 4; i++) {
+                if (freeCells[i] && freeCells[i].id === id) return { loc: 'freecell', idx: i };
+            }
+            return null;
+        }
+
+        function isMovableSequence(colIdx, startIdx) {
+            const col = tableau[colIdx];
+            for (let i = startIdx; i < col.length - 1; i++) {
+                const c1 = col[i];
+                const c2 = col[i+1];
+                if (COLORS[c1.suit] === COLORS[c2.suit] || c1.rank - 1 !== c2.rank) {
+                    return false;
+                }
+            }
+            
+            // Check if we have enough empty spaces to move this sequence
+            const emptyFreeCells = freeCells.filter(c => c === null).length;
+            const emptyColumns = tableau.filter(c => c.length === 0).length;
+            const targetEmpty = (col.length === 0) ? 1 : 0; // If moving TO empty column, it doesn't count as empty for calculation
+            const maxMovable = (1 + emptyFreeCells) * Math.pow(2, Math.max(0, emptyColumns - targetEmpty));
+            
+            return (col.length - startIdx) <= maxMovable;
+        }
+        
+        function canMoveToTableau(card, targetColIdx) {
+            const targetCol = tableau[targetColIdx];
+            if (targetCol.length === 0) return true;
+            const topCard = targetCol[targetCol.length - 1];
+            return (COLORS[card.suit] !== COLORS[topCard.suit] && card.rank === topCard.rank - 1);
+        }
+
+        function canMoveToFoundation(card) {
+            return foundation[card.suit] === card.rank - 1;
+        }
+
+        function executeMove(sourceLoc, destLoc, saveHistory=true) {
+            if (saveHistory) {
+                history.push({
+                    tableau: JSON.parse(JSON.stringify(tableau)),
+                    freeCells: JSON.parse(JSON.stringify(freeCells)),
+                    foundation: [...foundation]
+                });
+            }
+
+            let cardsToMove = [];
+            if (sourceLoc.loc === 'tableau') {
+                cardsToMove = tableau[sourceLoc.col].splice(sourceLoc.idx);
+            } else if (sourceLoc.loc === 'freecell') {
+                cardsToMove = [freeCells[sourceLoc.idx]];
+                freeCells[sourceLoc.idx] = null;
+            }
+
+            if (destLoc.loc === 'tableau') {
+                tableau[destLoc.col].push(...cardsToMove);
+                sounds.place();
+            } else if (destLoc.loc === 'freecell') {
+                freeCells[destLoc.idx] = cardsToMove[0];
+                sounds.place();
+            } else if (destLoc.loc === 'foundation') {
+                foundation[cardsToMove[0].suit] = cardsToMove[0].rank;
+                sounds.foundation();
+            }
+
+            renderBoard();
+            vibrate(10);
+            
+            if (saveHistory) setTimeout(autoComplete, 300);
+        }
+
+        // Interaction
+        let dragInfo = null;
+        let lastTapTime = 0;
+
+        function handlePointerDown(e) {
+            if (isWon) return;
+            const el = e.currentTarget;
+            const id = el.dataset.id;
+            const loc = getCardLocation(id);
+            if (!loc) return;
+
+            // Handle Double Tap
+            const now = Date.now();
+            if (now - lastTapTime < 300 && selectedCard === el) {
+                // Try foundation
+                const card = (loc.loc === 'tableau') ? tableau[loc.col][loc.idx] : freeCells[loc.idx];
+                if (loc.loc === 'freecell' || loc.idx === tableau[loc.col].length - 1) {
+                    if (canMoveToFoundation(card)) {
+                        executeMove(loc, { loc: 'foundation' });
+                        selectedCard = null;
+                        return;
+                    }
+                }
+            }
+            lastTapTime = now;
+
+            if (loc.loc === 'tableau' && !isMovableSequence(loc.col, loc.idx)) {
+                sounds.invalid();
+                vibrate(50);
+                return;
+            }
+
+            // Selection Logic
+            if (selectedCard) {
+                // Try to move selected to this column
+                const selLoc = getCardLocation(selectedCard.dataset.id);
+                if (selLoc && loc.loc === 'tableau' && loc.idx === tableau[loc.col].length - 1) {
+                    const sCard = (selLoc.loc === 'tableau') ? tableau[selLoc.col][selLoc.idx] : freeCells[selLoc.idx];
+                    if (canMoveToTableau(sCard, loc.col)) {
+                        executeMove(selLoc, { loc: 'tableau', col: loc.col });
+                        selectedCard.classList.remove('selected');
+                        selectedCard = null;
+                        return;
+                    }
+                }
+                selectedCard.classList.remove('selected');
+            }
+            
+            selectedCard = el;
+            el.classList.add('selected');
+            sounds.pickup();
+
+            // Drag setup
+            const rect = el.getBoundingClientRect();
+            dragInfo = {
+                id: id,
+                loc: loc,
+                els: [],
+                startX: e.clientX,
+                startY: e.clientY,
+                origLeft: rect.left,
+                origTop: rect.top,
+                isDragging: false
+            };
+
+            if (loc.loc === 'tableau') {
+                for (let i = loc.idx; i < tableau[loc.col].length; i++) {
+                    let cId = tableau[loc.col][i].id;
+                    dragInfo.els.push(cardElements[cId]);
+                }
+            } else {
+                dragInfo.els.push(el);
+            }
+
+            document.addEventListener('pointermove', handlePointerMove);
+            document.addEventListener('pointerup', handlePointerUp);
+        }
+
+        function handlePointerMove(e) {
+            if (!dragInfo) return;
+            const dx = e.clientX - dragInfo.startX;
+            const dy = e.clientY - dragInfo.startY;
+
+            if (!dragInfo.isDragging && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+                dragInfo.isDragging = true;
+                dragInfo.els.forEach(el => {
+                    el.classList.add('dragging');
+                    el.style.position = 'fixed';
+                    el.style.left = dragInfo.origLeft + 'px';
+                    // keep original top relative offset
+                });
+            }
+
+            if (dragInfo.isDragging) {
+                dragInfo.els.forEach((el, i) => {
+                    el.style.transform = `translate(${dx}px, ${dy}px)`;
+                });
+            }
+        }
+
+        function getElementUnderPoint(x, y, excludeEls) {
+            excludeEls.forEach(el => el.style.pointerEvents = 'none');
+            const target = document.elementFromPoint(x, y);
+            excludeEls.forEach(el => el.style.pointerEvents = '');
+            return target;
+        }
+
+        function handlePointerUp(e) {
+            document.removeEventListener('pointermove', handlePointerMove);
+            document.removeEventListener('pointerup', handlePointerUp);
+            
+            if (!dragInfo) return;
+
+            if (dragInfo.isDragging) {
+                const target = getElementUnderPoint(e.clientX, e.clientY, dragInfo.els);
+                let validMove = false;
+                
+                const sCard = (dragInfo.loc.loc === 'tableau') ? tableau[dragInfo.loc.col][dragInfo.loc.idx] : freeCells[dragInfo.loc.idx];
+
+                if (target) {
+                    const colSlot = target.closest('.column-slot');
+                    const freeSlot = target.closest('.cell-slot[data-type="free"]');
+                    const foundSlot = target.closest('.cell-slot[data-type="foundation"]');
+                    const card = target.closest('.card');
+
+                    if (colSlot || (card && getCardLocation(card.dataset.id)?.loc === 'tableau')) {
+                        let destCol = colSlot ? parseInt(colSlot.dataset.idx) : getCardLocation(card.dataset.id).col;
+                        if (canMoveToTableau(sCard, destCol)) {
+                            executeMove(dragInfo.loc, { loc: 'tableau', col: destCol });
+                            validMove = true;
+                        }
+                    } else if (freeSlot && dragInfo.els.length === 1) {
+                        let fIdx = parseInt(freeSlot.dataset.idx);
+                        if (!freeCells[fIdx]) {
+                            executeMove(dragInfo.loc, { loc: 'freecell', idx: fIdx });
+                            validMove = true;
+                        }
+                    } else if (foundSlot && dragInfo.els.length === 1) {
+                        if (canMoveToFoundation(sCard)) {
+                            executeMove(dragInfo.loc, { loc: 'foundation' });
+                            validMove = true;
+                        }
+                    }
+                }
+
+                if (!validMove) {
+                    sounds.invalid();
+                    vibrate(50);
+                    renderBoard(); // Reset positions
+                }
+                
+                if (selectedCard) {
+                    selectedCard.classList.remove('selected');
+                    selectedCard = null;
+                }
+            }
+            
+            dragInfo.els.forEach(el => {
+                el.classList.remove('dragging');
+                el.style.position = '';
+                el.style.left = '';
+                el.style.transform = '';
+            });
+            
+            dragInfo = null;
+        }
+
+        // Auto Complete
+        function autoComplete() {
+            if (isWon) return;
+            let moved = false;
+            
+            const minFoundRank = Math.min(...foundation);
+            const safeRank = minFoundRank + 1; // Can safely move cards up to this rank + 1
+
+            // Check tableau
+            for (let i = 0; i < 8; i++) {
+                if (tableau[i].length > 0) {
+                    const card = tableau[i][tableau[i].length - 1];
+                    if (canMoveToFoundation(card) && card.rank <= safeRank + 1) { // Slight optimization for safe auto
+                        executeMove({loc: 'tableau', col: i, idx: tableau[i].length - 1}, {loc: 'foundation'}, false);
+                        moved = true;
+                        break;
+                    }
+                }
+            }
+
+            // Check freecells
+            if (!moved) {
+                for (let i = 0; i < 4; i++) {
+                    if (freeCells[i]) {
+                        const card = freeCells[i];
+                        if (canMoveToFoundation(card) && card.rank <= safeRank + 1) {
+                            executeMove({loc: 'freecell', idx: i}, {loc: 'foundation'}, false);
+                            moved = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (moved) {
+                // Continue auto-completing
+                setTimeout(autoComplete, 100);
+            }
+        }
+
+        function checkWinCondition() {
+            if (isWon) return;
+            if (foundation.every(r => r === 12)) {
+                isWon = true;
+                stats.played++;
+                stats.won++;
+                stats.currentStreak++;
+                if (stats.currentStreak > stats.bestStreak) stats.bestStreak = stats.currentStreak;
+                saveStats();
+                sounds.win();
+                triggerWinCascade();
+                setTimeout(showMenu, 3000);
+            }
+        }
+        
+        function triggerWinCascade() {
+            const allCards = [];
+            for (let s=0; s<4; s++) {
+                for(let r=0; r<13; r++) {
+                    allCards.push({suit:s, rank:r, id:`${s}-${r}`});
+                }
+            }
+            
+            let delay = 0;
+            // Send cards flying from foundations
+            allCards.reverse().forEach((card) => {
+                setTimeout(() => {
+                    const el = createCardDOM(card);
+                    el.classList.add('cascade-card');
+                    
+                    const foundRect = foundationEls[card.suit].getBoundingClientRect();
+                    el.style.left = foundRect.left + 'px';
+                    el.style.top = foundRect.top + 'px';
+                    
+                    cascadeLayer.appendChild(el);
+                    
+                    let x = foundRect.left;
+                    let y = foundRect.top;
+                    let vx = (Math.random() - 0.5) * 15;
+                    let vy = - (Math.random() * 10 + 5);
+                    const gravity = 0.5;
+                    
+                    function animate() {
+                        vy += gravity;
+                        x += vx;
+                        y += vy;
+                        
+                        if (y + foundRect.height > window.innerHeight) {
+                            y = window.innerHeight - foundRect.height;
+                            vy = -vy * 0.7; // bounce
+                        }
+                        if (x < 0 || x + foundRect.width > window.innerWidth) {
+                            vx = -vx;
+                        }
+                        
+                        el.style.transform = `translate(${x - foundRect.left}px, ${y - foundRect.top}px)`;
+                        
+                        if (Math.abs(vx) > 0.1 || Math.abs(vy) > 0.1 || y < window.innerHeight - foundRect.height - 5) {
+                            requestAnimationFrame(animate);
+                        } else {
+                            setTimeout(() => el.remove(), 2000);
+                        }
+                    }
+                    requestAnimationFrame(animate);
+                }, delay);
+                delay += 50;
+            });
+        }
+
+        // Hint System
+        function findHint() {
+            // Find any valid move
+            // 1. To Foundation
+            for (let i = 0; i < 8; i++) {
+                if (tableau[i].length > 0) {
+                    if (canMoveToFoundation(tableau[i][tableau[i].length - 1])) {
+                        return {loc: 'tableau', col: i, idx: tableau[i].length - 1};
+                    }
+                }
+            }
+            for (let i = 0; i < 4; i++) {
+                if (freeCells[i] && canMoveToFoundation(freeCells[i])) {
+                    return {loc: 'freecell', idx: i};
+                }
+            }
+            // 2. Tableau to Tableau
+            for (let i = 0; i < 8; i++) {
+                if (tableau[i].length === 0) continue;
+                for (let j = 0; j < tableau[i].length; j++) {
+                    if (isMovableSequence(i, j)) {
+                        const card = tableau[i][j];
+                        for (let k = 0; k < 8; k++) {
+                            if (i !== k && canMoveToTableau(card, k)) {
+                                // Prevent moving a full sequence to an empty column if it doesn't reveal anything
+                                if (j === 0 && tableau[k].length === 0) continue; 
+                                return {loc: 'tableau', col: i, idx: j};
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        // Empty column handlers for click
+        tableauEls.forEach(el => {
+            el.addEventListener('pointerdown', (e) => {
+                if (selectedCard && e.target === el) {
+                    const destCol = parseInt(el.dataset.idx);
+                    const selLoc = getCardLocation(selectedCard.dataset.id);
+                    const sCard = (selLoc.loc === 'tableau') ? tableau[selLoc.col][selLoc.idx] : freeCells[selLoc.idx];
+                    
+                    if (canMoveToTableau(sCard, destCol)) {
+                        executeMove(selLoc, {loc: 'tableau', col: destCol});
+                        selectedCard.classList.remove('selected');
+                        selectedCard = null;
+                    }
+                }
+            });
+        });
+
+        freeCellEls.forEach(el => {
+            el.addEventListener('pointerdown', (e) => {
+                if (selectedCard && e.target === el) {
+                    const fIdx = parseInt(el.dataset.idx);
+                    if (!freeCells[fIdx]) {
+                        const selLoc = getCardLocation(selectedCard.dataset.id);
+                        if (selLoc.loc === 'tableau' && selLoc.idx === tableau[selLoc.col].length - 1) {
+                            executeMove(selLoc, {loc: 'freecell', idx: fIdx});
+                            selectedCard.classList.remove('selected');
+                            selectedCard = null;
+                        }
+                    }
+                }
+            });
+        });
+
+        // UI Buttons
+        document.getElementById('btn-undo').addEventListener('click', () => {
+            if (history.length > 0 && !isWon) {
+                const state = history.pop();
+                tableau = state.tableau;
+                freeCells = state.freeCells;
+                foundation = state.foundation;
+                selectedCard = null;
+                renderBoard();
+            }
+        });
+
+        document.getElementById('btn-hint').addEventListener('click', () => {
+            if (isWon) return;
+            const hintLoc = findHint();
+            if (hintLoc) {
+                let id = hintLoc.loc === 'tableau' ? tableau[hintLoc.col][hintLoc.idx].id : freeCells[hintLoc.idx].id;
+                const el = cardElements[id];
+                el.classList.add('hint');
+                setTimeout(() => el.classList.remove('hint'), 1000);
+            } else {
+                const notif = document.getElementById('notification');
+                notif.textContent = "No obvious moves.";
+                notif.classList.add('show');
+                setTimeout(() => notif.classList.remove('show'), 2000);
+            }
+        });
+
+        const menuOverlay = document.getElementById('menu-overlay');
+        document.getElementById('btn-menu').addEventListener('click', showMenu);
+        
+        function showMenu() {
+            updateStatsUI();
+            document.getElementById('btn-resume').style.display = isWon ? 'none' : 'block';
+            menuOverlay.classList.add('active');
+        }
+
+        document.getElementById('btn-resume').addEventListener('click', () => {
+            menuOverlay.classList.remove('active');
+        });
+
+        document.getElementById('btn-new-game').addEventListener('click', () => {
+            if (!isWon && history.length > 0) {
+                stats.played++;
+                stats.currentStreak = 0;
+                saveStats();
+            }
+            menuOverlay.classList.remove('active');
+            deal(Math.floor(Math.random() * 32000) + 1);
+        });
+
+        document.getElementById('btn-restart').addEventListener('click', () => {
+            if (!isWon && history.length > 0) {
+                stats.played++;
+                stats.currentStreak = 0;
+                saveStats();
+            }
+            menuOverlay.classList.remove('active');
+            deal(gameSeed);
+        });
+        
+        document.getElementById('btn-play-seed').addEventListener('click', () => {
+            const seed = parseInt(document.getElementById('seed-input').value);
+            if (seed > 0) {
+                if (!isWon && history.length > 0) {
+                    stats.played++;
+                    stats.currentStreak = 0;
+                    saveStats();
+                }
+                menuOverlay.classList.remove('active');
+                deal(seed);
+            }
+        });
+
+        // Init
+        updateStatsUI();
+        deal(Math.floor(Math.random() * 32000) + 1);
+
+    </script>
+</body>
+</html>

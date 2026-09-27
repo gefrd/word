@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Math Rush!</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
+    background: linear-gradient(160deg, #e8f5e9 0%, #f3e5f5 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    user-select: none;
+    overflow: hidden;
+  }
+
+  #header {
+    width: 100%;
+    background: #7b1fa2;
+    padding: 14px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 0 #4a148c;
+  }
+  #header h1 { color: #fff; font-size: 22px; }
+  .stat {
+    background: #fff;
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 16px;
+    font-weight: bold;
+    color: #7b1fa2;
+  }
+
+  #game-area {
+    flex: 1;
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 16px;
+    gap: 16px;
+  }
+
+  #progress-wrap {
+    width: 100%;
+    height: 12px;
+    background: #ce93d8;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  #progress-bar {
+    height: 100%;
+    background: #7b1fa2;
+    border-radius: 10px;
+    transition: width 0.1s linear;
+    width: 100%;
+  }
+
+  #question-box {
+    width: 100%;
+    background: #fff;
+    border-radius: 24px;
+    padding: 28px 20px;
+    text-align: center;
+    box-shadow: 0 6px 0 #ce93d8;
+    min-height: 130px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  #question-box .label { font-size: 14px; color: #ab47bc; font-weight: bold; letter-spacing: 2px; }
+  #question-text { font-size: 52px; font-weight: bold; color: #4a148c; }
+
+  #answers {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .ans-btn {
+    background: #fff;
+    border: 3px solid #ce93d8;
+    border-radius: 18px;
+    padding: 18px 10px;
+    font-size: 28px;
+    font-weight: bold;
+    color: #4a148c;
+    cursor: pointer;
+    box-shadow: 0 5px 0 #ce93d8;
+    transition: transform 0.08s, box-shadow 0.08s;
+    font-family: inherit;
+    width: 100%;
+  }
+  .ans-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #ce93d8; }
+  .ans-btn.correct { background: #c8e6c9; border-color: #4caf50; box-shadow: 0 5px 0 #388e3c; color: #1b5e20; }
+  .ans-btn.wrong   { background: #ffcdd2; border-color: #ef5350; box-shadow: 0 5px 0 #c62828; color: #b71c1c; }
+
+  #feedback {
+    font-size: 32px;
+    min-height: 44px;
+    animation: bounce 0.3s;
+  }
+  @keyframes bounce { 0%{transform:scale(1)} 50%{transform:scale(1.4)} 100%{transform:scale(1)} }
+
+  /* Overlay */
+  #overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(243,229,245,0.97);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    z-index: 100;
+    padding: 24px;
+  }
+  #overlay h2 { font-size: 34px; color: #7b1fa2; text-align: center; }
+  #overlay .big { font-size: 60px; font-weight: bold; color: #4a148c; }
+  #overlay p { font-size: 18px; color: #666; text-align: center; }
+
+  #play-btn {
+    background: #7b1fa2;
+    color: #fff;
+    border: none;
+    border-radius: 50px;
+    padding: 16px 50px;
+    font-size: 22px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 5px 0 #4a148c;
+    font-family: inherit;
+  }
+  #play-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #4a148c; }
+
+  #streak { font-size: 15px; color: #ab47bc; font-weight: bold; min-height: 22px; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>🧮 MATH RUSH</h1>
+  <div class="stat">⭐ <span id="score-el">0</span></div>
+  <div class="stat">Q: <span id="q-el">0</span>/10</div>
+</div>
+
+<div id="game-area">
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+  <div id="question-box">
+    <div class="label">SOLVE IT!</div>
+    <div id="question-text">?</div>
+  </div>
+  <div id="feedback"></div>
+  <div id="streak"></div>
+  <div id="answers">
+    <button class="ans-btn" id="a0">?</button>
+    <button class="ans-btn" id="a1">?</button>
+    <button class="ans-btn" id="a2">?</button>
+    <button class="ans-btn" id="a3">?</button>
+  </div>
+</div>
+
+<div id="overlay" style="display:none;">
+  <h2>🧮 MATH RUSH</h2>
+  <p>Answer 10 questions as fast as you can!<br>Faster answers = more points!</p>
+  <div class="big">GO!</div>
+  <button id="play-btn">START!</button>
+</div>
+
+<script>
+var scoreEl   = document.getElementById('score-el');
+var qEl       = document.getElementById('q-el');
+var progBar   = document.getElementById('progress-bar');
+var qText     = document.getElementById('question-text');
+var feedbackEl= document.getElementById('feedback');
+var streakEl  = document.getElementById('streak');
+var overlay   = document.getElementById('overlay');
+var ansBtns   = [
+  document.getElementById('a0'),
+  document.getElementById('a1'),
+  document.getElementById('a2'),
+  document.getElementById('a3'),
+];
+
+var score = 0, qNum = 0, streak = 0, best = 0;
+var correctAnswer = 0;
+var qStart = 0;
+var canAnswer = false;
+var timerInterval = null;
+var TOTAL_Q = 10;
+var TIME_PER_Q = 8; // seconds
+
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function generateQuestion(level) {
+  var ops = ['+', '-', '×'];
+  if (level >= 4) ops.push('÷');
+  var op = ops[Math.floor(Math.random() * ops.length)];
+  var a, b, ans;
+
+  if (op === '+') {
+    a = randInt(1, 20 + level * 5);
+    b = randInt(1, 20 + level * 5);
+    ans = a + b;
+  } else if (op === '-') {
+    a = randInt(5, 30 + level * 3);
+    b = randInt(1, a);
+    ans = a - b;
+  } else if (op === '×') {
+    a = randInt(2, 5 + level);
+    b = randInt(2, 5 + level);
+    ans = a * b;
+  } else {
+    ans = randInt(2, 9 + level);
+    b   = randInt(2, 9);
+    a   = ans * b;
+    op  = '÷';
+  }
+
+  return { text: a + ' ' + op + ' ' + b + ' = ?', answer: ans };
+}
+
+function shuffle(arr) {
+  for (var i = arr.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+  }
+  return arr;
+}
+
+function makeWrongAnswers(correct) {
+  var wrong = [];
+  var offsets = shuffle([-3,-2,-1,1,2,3,4,5,-4,-5]).filter(function(o){ return correct+o !== correct && correct+o > 0; });
+  while (wrong.length < 3) {
+    var w = correct + offsets[wrong.length];
+    if (w > 0 && wrong.indexOf(w) === -1) wrong.push(w);
+    else wrong.push(correct + wrong.length + 6);
+  }
+  return wrong;
+}
+
+function nextQuestion() {
+  if (qNum >= TOTAL_Q) { endGame(); return; }
+  clearInterval(timerInterval);
+
+  var level = Math.floor(qNum / 3) + 1;
+  var q = generateQuestion(level);
+  correctAnswer = q.answer;
+  qText.textContent = q.text;
+  qNum++;
+  qEl.textContent = qNum;
+  progBar.style.width = ((qNum - 1) / TOTAL_Q * 100) + '%';
+  feedbackEl.textContent = '';
+
+  // Build choices
+  var wrongs = makeWrongAnswers(correctAnswer);
+  var choices = shuffle([correctAnswer, wrongs[0], wrongs[1], wrongs[2]]);
+  ansBtns.forEach(function(btn, i) {
+    btn.textContent = choices[i];
+    btn.className = 'ans-btn';
+    btn.disabled = false;
+    btn.dataset.val = choices[i];
+  });
+
+  canAnswer = true;
+  qStart = Date.now();
+
+  // Timer bar
+  var totalMs = TIME_PER_Q * 1000;
+  timerInterval = setInterval(function() {
+    var elapsed = Date.now() - qStart;
+    var pct = Math.max(0, 100 - (elapsed / totalMs) * 100);
+    progBar.style.width = pct + '%';
+    progBar.style.background = pct < 30 ? '#ef5350' : '#7b1fa2';
+    if (elapsed >= totalMs && canAnswer) {
+      canAnswer = false;
+      clearInterval(timerInterval);
+      streak = 0; streakEl.textContent = '';
+      feedbackEl.textContent = '⏰ Too slow! Answer: ' + correctAnswer;
+      ansBtns.forEach(function(btn) {
+        btn.disabled = true;
+        if (parseInt(btn.dataset.val) === correctAnswer) btn.className = 'ans-btn correct';
+      });
+      setTimeout(nextQuestion, 1200);
+    }
+  }, 80);
+}
+
+function answer(val) {
+  if (!canAnswer) return;
+  canAnswer = false;
+  clearInterval(timerInterval);
+
+  var timeTaken = (Date.now() - qStart) / 1000;
+  var timeBonus = Math.max(0, Math.round((TIME_PER_Q - timeTaken) * 5));
+
+  ansBtns.forEach(function(btn) {
+    btn.disabled = true;
+    if (parseInt(btn.dataset.val) === correctAnswer) btn.className = 'ans-btn correct';
+  });
+
+  if (val === correctAnswer) {
+    streak++;
+    var pts = 10 + timeBonus + (streak >= 3 ? 10 : 0);
+    score += pts;
+    scoreEl.textContent = score;
+    feedbackEl.textContent = '✅ +' + pts + (streak >= 3 ? ' 🔥' : '');
+    if (streak >= 3) streakEl.textContent = '🔥 Streak x' + streak + '!';
+    else streakEl.textContent = '';
+  } else {
+    streak = 0;
+    streakEl.textContent = '';
+    feedbackEl.textContent = '❌ Answer: ' + correctAnswer;
+    // Mark wrong choice
+    ansBtns.forEach(function(btn) {
+      if (parseInt(btn.dataset.val) === val) btn.className = 'ans-btn wrong';
+    });
+  }
+
+  setTimeout(nextQuestion, 900);
+}
+
+ansBtns.forEach(function(btn) {
+  btn.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    answer(parseInt(btn.dataset.val));
+  }, { passive: false });
+  btn.addEventListener('click', function() {
+    answer(parseInt(btn.dataset.val));
+  });
+});
+
+function startGame() {
+  score = 0; qNum = 0; streak = 0;
+  scoreEl.textContent = '0';
+  overlay.style.display = 'none';
+  feedbackEl.textContent = '';
+  streakEl.textContent = '';
+  nextQuestion();
+}
+
+function endGame() {
+  clearInterval(timerInterval);
+  if (score > best) best = score;
+
+  var grade = score >= 120 ? '🌟 Genius!' : score >= 80 ? '😎 Smart!' : score >= 50 ? '👍 Good!' : '💪 Keep practicing!';
+  overlay.innerHTML = '';
+
+  var h2 = document.createElement('h2');
+  h2.textContent = grade;
+  var big = document.createElement('div');
+  big.className = 'big';
+  big.textContent = score + ' pts';
+  var p = document.createElement('p');
+  p.textContent = 'Best: ' + best + ' pts';
+  var btn = document.createElement('button');
+  btn.id = 'play-btn';
+  btn.textContent = 'PLAY AGAIN!';
+  btn.addEventListener('click', startGame);
+  btn.addEventListener('touchstart', function(e) { e.preventDefault(); startGame(); }, { passive: false });
+
+  overlay.appendChild(h2);
+  overlay.appendChild(big);
+  overlay.appendChild(p);
+  overlay.appendChild(btn);
+  overlay.style.display = 'flex';
+}
+
+document.getElementById('play-btn').addEventListener('click', startGame);
+document.getElementById('play-btn').addEventListener('touchstart', function(e) {
+  e.preventDefault(); startGame();
+}, { passive: false });
+
+startGame();
+</script>
+</body>
+</html>

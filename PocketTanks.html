@@ -1,0 +1,3688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pocket Tanks Arena</title>
+    <style>
+        :root {
+            --bg: #0d1320;
+            --panel: rgba(9, 14, 24, 0.72);
+            --line: rgba(255, 255, 255, 0.08);
+            --text: #edf3fb;
+            --muted: #98a7c0;
+            --accent: #5de0c0;
+            --accent-2: #64c6ff;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            position: fixed;
+            inset: 0;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: #0b111b;
+        }
+
+        .hud {
+            position: fixed;
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .panel {
+            min-width: 132px;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: var(--panel);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+        }
+
+        .stats {
+            top: 12px;
+            left: 12px;
+        }
+
+        .notice {
+            top: 12px;
+            right: 12px;
+            max-width: min(220px, calc(100vw - 24px));
+        }
+
+        .stats-menu {
+            top: 120px;
+            left: 12px;
+            width: min(196px, calc(100vw - 24px));
+        }
+
+        .label {
+            display: block;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 11px;
+        }
+
+        .value {
+            display: block;
+            margin-top: 4px;
+            font-size: 22px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .sub {
+            display: block;
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .xp-wrap {
+            position: fixed;
+            left: 12px;
+            right: 12px;
+            bottom: 12px;
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .xp-bar {
+            height: 18px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.06);
+            overflow: hidden;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.24);
+        }
+
+        .xp-fill {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            transition: width 0.12s linear;
+        }
+
+        .xp-text {
+            margin-top: 6px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .stat-list {
+            margin-top: 10px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .stat-row {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 8px;
+            align-items: center;
+            font-size: 13px;
+            color: var(--text);
+        }
+
+        .stat-count {
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .stat-plus {
+            width: 28px;
+            height: 28px;
+            border: 0;
+            border-radius: 9px;
+            background: linear-gradient(180deg, rgba(93, 224, 192, 0.94), rgba(77, 183, 255, 0.9));
+            color: #07111c;
+            font-size: 18px;
+            font-weight: 800;
+            line-height: 1;
+            pointer-events: auto;
+        }
+
+        .stat-plus:disabled {
+            opacity: 0.35;
+        }
+
+        .boss-hud {
+            position: fixed;
+            left: 50%;
+            top: 12px;
+            transform: translateX(-50%);
+            z-index: 4;
+            width: min(320px, calc(100vw - 28px));
+            pointer-events: none;
+        }
+
+        .boss-hud[hidden] {
+            display: none;
+        }
+
+        .boss-title {
+            text-align: center;
+            font-size: 12px;
+            color: #ffb287;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .boss-bar {
+            height: 14px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.06);
+            overflow: hidden;
+        }
+
+        .boss-fill {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #ff7a66, #ffba6a);
+        }
+
+        .evolution-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 8;
+            display: grid;
+            place-items: center;
+            padding: 18px;
+            background: rgba(5, 9, 15, 0.72);
+        }
+
+        .evolution-overlay[hidden] {
+            display: none;
+        }
+
+        .evolution-card {
+            width: min(420px, 100%);
+            padding: 16px;
+            border-radius: 20px;
+            border: 1px solid var(--line);
+            background: rgba(9, 14, 24, 0.95);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .evolution-card h2 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .evolution-card p {
+            margin: 8px 0 0;
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .evolution-actions {
+            display: grid;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .choice-btn {
+            border: 0;
+            border-radius: 16px;
+            padding: 14px;
+            color: var(--text);
+            text-align: left;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            pointer-events: auto;
+        }
+
+        .choice-btn strong {
+            display: block;
+            font-size: 17px;
+        }
+
+        .choice-btn span {
+            display: block;
+            margin-top: 5px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .controls {
+            position: fixed;
+            inset: 0;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .joystick {
+            position: absolute;
+            bottom: 18px;
+            width: 126px;
+            height: 126px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03));
+            pointer-events: auto;
+            touch-action: none;
+        }
+
+        .joystick::before {
+            content: "";
+            position: absolute;
+            inset: 18px;
+            border-radius: 50%;
+            border: 1px dashed rgba(255, 255, 255, 0.07);
+        }
+
+        .move-pad {
+            left: 18px;
+        }
+
+        .aim-pad {
+            right: 18px;
+        }
+
+        .stick {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 58px;
+            height: 58px;
+            margin-left: -29px;
+            margin-top: -29px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.16);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            transform: translate3d(0, 0, 0);
+        }
+
+        .aim-pad .stick::before,
+        .aim-pad .stick::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            background: rgba(255, 255, 255, 0.28);
+            transform: translate(-50%, -50%);
+        }
+
+        .aim-pad .stick::before {
+            width: 22px;
+            height: 2px;
+        }
+
+        .aim-pad .stick::after {
+            width: 2px;
+            height: 22px;
+        }
+
+        @media (max-width: 640px) {
+            .panel {
+                padding: 9px 10px;
+            }
+
+            .value {
+                font-size: 20px;
+            }
+
+            .joystick {
+                width: 114px;
+                height: 114px;
+            }
+
+            .stick {
+                width: 52px;
+                height: 52px;
+                margin-left: -26px;
+                margin-top: -26px;
+            }
+
+            .stats-menu {
+                top: 108px;
+                width: 168px;
+            }
+
+            .stat-row {
+                grid-template-columns: 1fr auto;
+            }
+
+            .stat-count {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game"></canvas>
+
+    <div class="hud stats">
+        <div class="panel">
+            <span class="label">Level</span>
+            <span class="value" id="levelValue">1</span>
+            <span class="sub" id="hpValue">HP 100 / 100</span>
+        </div>
+    </div>
+
+    <div class="hud stats-menu">
+        <div class="panel">
+            <span class="label">Upgrades</span>
+            <span class="sub" id="pointsValue">Points 0</span>
+            <div class="stat-list">
+                <div class="stat-row">
+                    <span>Damage</span>
+                    <span class="stat-count" id="damageCount">0</span>
+                    <button class="stat-plus" type="button" data-stat="damage">+</button>
+                </div>
+                <div class="stat-row">
+                    <span>Reload</span>
+                    <span class="stat-count" id="reloadCount">0</span>
+                    <button class="stat-plus" type="button" data-stat="reload">+</button>
+                </div>
+                <div class="stat-row">
+                    <span>Health</span>
+                    <span class="stat-count" id="healthCount">0</span>
+                    <button class="stat-plus" type="button" data-stat="health">+</button>
+                </div>
+                <div class="stat-row">
+                    <span>Speed</span>
+                    <span class="stat-count" id="speedCount">0</span>
+                    <button class="stat-plus" type="button" data-stat="speed">+</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="hud notice">
+        <div class="panel">
+            <span class="label">Goal</span>
+            <span class="sub" id="noticeText">Farm shapes. Arrows move on PC. Hold mouse or right stick to shoot.</span>
+        </div>
+    </div>
+
+    <div class="boss-hud" id="bossHud" hidden>
+        <div class="boss-title" id="bossTitle">Boss Helicopter</div>
+        <div class="boss-bar">
+            <div class="boss-fill" id="bossFill"></div>
+        </div>
+    </div>
+
+    <div class="xp-wrap">
+        <div class="xp-bar">
+            <div class="xp-fill" id="xpFill"></div>
+        </div>
+        <div class="xp-text" id="xpText">XP 0 / 30</div>
+    </div>
+
+    <div class="controls">
+        <div class="joystick move-pad" id="movePad">
+            <div class="stick" id="moveStick"></div>
+        </div>
+        <div class="joystick aim-pad" id="aimPad">
+            <div class="stick" id="aimStick"></div>
+        </div>
+    </div>
+
+    <div class="evolution-overlay" id="evolutionOverlay" hidden>
+        <div class="evolution-card">
+            <span class="label">Evolution</span>
+            <h2>Choose your tank</h2>
+            <p>Level 15 unlocked a branch. Pick one.</p>
+            <div class="evolution-actions">
+                <button class="choice-btn" type="button" data-class="sniper">
+                    <strong>Sniper</strong>
+                    <span>Long range, high damage, slow fire.</span>
+                </button>
+                <button class="choice-btn" type="button" data-class="gunner">
+                    <strong>Gunner</strong>
+                    <span>Fast fire, small bullets, low damage.</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("game");
+        const ctx = canvas.getContext("2d", { alpha: false });
+
+        const levelValue = document.getElementById("levelValue");
+        const hpValue = document.getElementById("hpValue");
+        const pointsValue = document.getElementById("pointsValue");
+        const xpFill = document.getElementById("xpFill");
+        const xpText = document.getElementById("xpText");
+        const noticeText = document.getElementById("noticeText");
+        const bossHud = document.getElementById("bossHud");
+        const bossTitle = document.getElementById("bossTitle");
+        const bossFill = document.getElementById("bossFill");
+        const evolutionOverlay = document.getElementById("evolutionOverlay");
+        const evolutionTitle = evolutionOverlay.querySelector("h2");
+        const evolutionDesc = evolutionOverlay.querySelector("p");
+        const statButtons = Array.from(document.querySelectorAll(".stat-plus"));
+        const choiceButtons = Array.from(document.querySelectorAll(".choice-btn"));
+        const choiceButtonCopy = choiceButtons.map(function (button) {
+            return {
+                button,
+                title: button.querySelector("strong"),
+                description: button.querySelector("span")
+            };
+        });
+        const statCounts = {
+            damage: document.getElementById("damageCount"),
+            reload: document.getElementById("reloadCount"),
+            health: document.getElementById("healthCount"),
+            speed: document.getElementById("speedCount")
+        };
+
+        const movePad = document.getElementById("movePad");
+        const moveStick = document.getElementById("moveStick");
+        const aimPad = document.getElementById("aimPad");
+        const aimStick = document.getElementById("aimStick");
+
+        // Fixed counts and short-lived bullets keep runtime stable on weak devices.
+        const CONFIG = {
+            worldSize: 3600,
+            botCount: 8,
+            squareCount: 72,
+            triangleCount: 24,
+            pentagonCount: 9,
+            tankRadius: 22,
+            maxBullets: 560,
+            bulletLife: 850,
+            bulletRange: 470,
+            hudRate: 120,
+            noticeRate: 160,
+            respawnDelay: 2200,
+            autoHealDelay: 5000,
+            bossSpawnDelay: 90000,
+            hotZoneInterval: 60000,
+            hotZoneDuration: 22000,
+            hotZoneRadius: 210,
+            hotZoneXpPerSecond: 5.4,
+            hotZoneDamagePerSecond: 4.6,
+            nemesisRetargetDelay: 800,
+            mutatorDuration: 30000,
+            deathZoomScale: 1.55,
+            shapeSwarmInterval: 45000,
+            shapeSwarmDuration: 14000,
+            shapeSwarmMin: 15,
+            shapeSwarmMax: 20,
+            shapeSwarmRadius: 280,
+            vampirismHeal: 2.5,
+            railgunChargeTime: 2600,
+            boostSpawnInterval: 15000,
+            boostLifetime: 13000,
+            boostDuration: 10000,
+            boostRadius: 18,
+            bossShieldCount: 3,
+            bossShieldRadius: 27,
+            hexagonCount: 6,
+            heptagonCount: 3
+        };
+
+        const SHAPE_TYPES = {
+            square: { hp: 18, xp: 10, r: 16, sides: 4, color: "#f6d94b", stroke: "#c8ab1f" },
+            triangle: { hp: 44, xp: 24, r: 20, sides: 3, color: "#ff6f61", stroke: "#d34d40" },
+            pentagon: { hp: 82, xp: 46, r: 27, sides: 5, color: "#4c86ff", stroke: "#2c63d7" },
+            hexagon: { hp: 126, xp: 74, r: 33, sides: 6, color: "#41d79d", stroke: "#17a86f" },
+            heptagon: { hp: 186, xp: 108, r: 39, sides: 7, color: "#c17bff", stroke: "#8b47e4" }
+        };
+
+        const BOT_COLORS = [
+            { body: "#ff7f66", barrel: "#ffb7a8" },
+            { body: "#67d1ff", barrel: "#a9ebff" },
+            { body: "#7fe07c", barrel: "#baf7b6" },
+            { body: "#f08dff", barrel: "#f7c7ff" },
+            { body: "#ffcb62", barrel: "#ffe4a6" }
+        ];
+
+        const BOT_STATS = ["damage", "reload", "health", "speed"];
+        const BOSS_VARIANTS = [
+            {
+                type: "assault",
+                name: "Assault Helicopter",
+                bodyColor: "#ff704d",
+                barrelColor: "#ffd2bd",
+                fireMode: "radial",
+                moveSpeedMult: 1,
+                bulletSpeedMult: 1,
+                damageMult: 1,
+                burstDelay: 1120
+            },
+            {
+                type: "hunter",
+                name: "Hunter Chopper",
+                bodyColor: "#6e96ff",
+                barrelColor: "#d9e4ff",
+                fireMode: "fan",
+                moveSpeedMult: 1.24,
+                bulletSpeedMult: 1.32,
+                damageMult: 0.94,
+                burstDelay: 860
+            },
+            {
+                type: "siege",
+                name: "Siege Gunship",
+                bodyColor: "#ffb563",
+                barrelColor: "#fff2cf",
+                fireMode: "mortar",
+                moveSpeedMult: 0.92,
+                bulletSpeedMult: 0.84,
+                damageMult: 1.24,
+                burstDelay: 1320
+            }
+        ];
+
+        const BOSS_ESCORT_VARIANTS = [
+            {
+                type: "stinger",
+                name: "Stinger Drone",
+                bodyColor: "#7cc8ff",
+                barrelColor: "#d8f4ff",
+                fireMode: "burst",
+                moveSpeed: 138,
+                bulletSpeed: 410,
+                damage: 8
+            },
+            {
+                type: "bomber",
+                name: "Bomber Drone",
+                bodyColor: "#ffb26a",
+                barrelColor: "#fff0d0",
+                fireMode: "bomb",
+                moveSpeed: 112,
+                bulletSpeed: 285,
+                damage: 10
+            }
+        ];
+
+        const MUTATORS = [
+            {
+                type: "ricochet",
+                label: "Ricochet",
+                color: "#ffd36d",
+                detail: "Bullets bounce off arena walls."
+            },
+            {
+                type: "overclock",
+                label: "Overclock",
+                color: "#70e8ff",
+                detail: "Fire rate x5 for 30 seconds."
+            },
+            {
+                type: "vampirism",
+                label: "Vampirism",
+                color: "#ff78a7",
+                detail: "Every hit restores HP."
+            },
+            {
+                type: "tripleshot",
+                label: "Triple Shot",
+                color: "#c5ff7e",
+                detail: "Every shot fires 3 rounds."
+            }
+        ];
+
+        const BOOST_TYPES = [
+            {
+                type: "repair",
+                label: "Repair",
+                color: "#7ef3a3",
+                stroke: "#dcffe6",
+                detail: "Instant heal +45 HP."
+            },
+            {
+                type: "nitro",
+                label: "Nitro",
+                color: "#76d6ff",
+                stroke: "#ddf5ff",
+                detail: "+35% move speed for 10s."
+            },
+            {
+                type: "rapid",
+                label: "Rapid",
+                color: "#ffd86c",
+                stroke: "#fff0c9",
+                detail: "-32% reload time for 10s."
+            },
+            {
+                type: "cache",
+                label: "XP Cache",
+                color: "#ff92d1",
+                stroke: "#ffe0f3",
+                detail: "Instant XP +30."
+            }
+        ];
+
+        const EVOLUTION_OPTIONS = {
+            tier1: {
+                title: "Choose your tank",
+                description: "Level 15 unlocked a branch. Pick one.",
+                options: [
+                    { key: "sniper", title: "Sniper", description: "Long range, high damage, slow fire." },
+                    { key: "gunner", title: "Gunner", description: "Fast fire, small bullets, low damage." }
+                ]
+            },
+            tier2: {
+                sniper: {
+                    title: "Ascend your Sniper",
+                    description: "Level 50 unlocked a second evolution.",
+                    options: [
+                        { key: "railgun", title: "Railgun", description: "Piercing beam that drills through tanks and shapes." },
+                        { key: "artillery", title: "Artillery", description: "Slow shell with brutal area explosion." }
+                    ]
+                },
+                gunner: {
+                    title: "Ascend your Gunner",
+                    description: "Level 50 unlocked a second evolution.",
+                    options: [
+                        { key: "machinegun", title: "Machine Gun", description: "Continuous stream of bullets, but firing slows your tank." },
+                        { key: "shotgun", title: "Spread", description: "Five-round fan that erases anything up close." }
+                    ]
+                }
+            }
+        };
+
+        // A small bullet pool avoids unbounded allocations during long runs.
+        const bullets = new Array(CONFIG.maxBullets).fill(null).map(function () {
+            return { active: false };
+        });
+        const beams = [];
+        const explosions = [];
+        const bossShields = [];
+        const bossEscorts = [];
+        const boosts = [];
+        const shapes = [];
+        const bots = [];
+        let player = null;
+        let boss = null;
+        let nextBossAt = 0;
+        let nextBoostAt = 0;
+        let bossWave = 0;
+        let matchStartedAt = 0;
+        let pendingEvolutionTier = 0;
+        let playerLevelBoosts = 0;
+
+        let canvasWidth = 0;
+        let canvasHeight = 0;
+        let camera = {
+            x: 0,
+            y: 0,
+            zoom: 1,
+            targetZoom: 1,
+            tauntTarget: null,
+            tauntUntil: 0
+        };
+        let lastFrame = performance.now();
+        let hudTimer = 0;
+        let noticeTimer = 0;
+        let deadUntil = 0;
+        let eventNotice = { text: "", until: 0 };
+        let nemesis = { bot: null, retargetAt: 0, announceUntil: 0 };
+        let hotZone = {
+            active: false,
+            x: CONFIG.worldSize * 0.5,
+            y: CONFIG.worldSize * 0.5,
+            radius: CONFIG.hotZoneRadius,
+            expiresAt: 0,
+            nextSpawnAt: CONFIG.hotZoneInterval
+        };
+        let shapeSwarm = {
+            active: false,
+            x: CONFIG.worldSize * 0.5,
+            y: CONFIG.worldSize * 0.5,
+            expiresAt: 0,
+            nextSpawnAt: CONFIG.shapeSwarmInterval
+        };
+
+        const moveInput = { x: 0, y: 0, active: false };
+        const aimInput = { x: 0, y: 0, active: false, aiming: false };
+        const moveTouchInput = { x: 0, y: 0, active: false };
+        const aimTouchInput = { x: 0, y: 0, active: false };
+        const keyboardMoveState = { left: false, right: false, up: false, down: false };
+        const mouseAimState = { x: 0, y: 0, aiming: false, firing: false };
+
+        const moveTouch = { pointerId: null, x: 0, y: 0, radius: 0 };
+        const aimTouch = { pointerId: null, x: 0, y: 0, radius: 0 };
+
+        function clamp(value, min, max) {
+            return value < min ? min : (value > max ? max : value);
+        }
+
+        function rand(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function distSq(ax, ay, bx, by) {
+            const dx = ax - bx;
+            const dy = ay - by;
+            return (dx * dx) + (dy * dy);
+        }
+
+        function angleLerp(from, to, amount) {
+            const diff = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+            return from + (diff * amount);
+        }
+
+        function normalizeVector(x, y) {
+            const length = Math.hypot(x, y);
+            if (!length) {
+                return { x: 0, y: 0 };
+            }
+
+            const scale = length > 1 ? (1 / length) : 1;
+            return {
+                x: x * scale,
+                y: y * scale
+            };
+        }
+
+        function setEventNotice(text, now, duration) {
+            eventNotice.text = text;
+            eventNotice.until = now + (duration || 2200);
+        }
+
+        function mutatorDef(type) {
+            for (let i = 0; i < MUTATORS.length; i += 1) {
+                if (MUTATORS[i].type === type) {
+                    return MUTATORS[i];
+                }
+            }
+            return null;
+        }
+
+        function tankHasMutator(tank, now, type) {
+            if (!tank || !tank.mutatorType || now >= tank.mutatorUntil) {
+                return false;
+            }
+
+            return !type || tank.mutatorType === type;
+        }
+
+        function tankHasPickupBoost(tank, now, type) {
+            if (!tank || !tank.pickupBoostType || now >= tank.pickupBoostUntil) {
+                return false;
+            }
+
+            return !type || tank.pickupBoostType === type;
+        }
+
+        function clearMutator(tank) {
+            if (!tank) {
+                return;
+            }
+
+            tank.mutatorType = null;
+            tank.mutatorUntil = 0;
+            tank.mutatorLabel = "";
+            tank.mutatorColor = "#ffffff";
+        }
+
+        function clearPickupBoost(tank) {
+            if (!tank) {
+                return;
+            }
+
+            tank.pickupBoostType = null;
+            tank.pickupBoostUntil = 0;
+            tank.pickupBoostLabel = "";
+            tank.pickupBoostColor = "#ffffff";
+        }
+
+        function shapeXpBonusMultiplier(now) {
+            const minutes = Math.max(0, Math.floor((now - matchStartedAt) / 60000));
+            return 1 + (minutes * 0.07);
+        }
+
+        function shapeXpValue(shape, now) {
+            const baseXp = SHAPE_TYPES[shape.type].xp;
+            if (shape.type === "square" || shape.type === "triangle") {
+                return Math.floor(baseXp * shapeXpBonusMultiplier(now));
+            }
+
+            return baseXp;
+        }
+
+        function botScaleBonus(now) {
+            if (!matchStartedAt) {
+                return 0;
+            }
+
+            return Math.max(0, Math.floor((now - matchStartedAt) / 60000)) + playerLevelBoosts;
+        }
+
+        function botKillXpReward(tank) {
+            return Math.floor(42 * (1 + Math.max(0, tank.level - 1) * 0.18));
+        }
+
+        function randomChoice(list) {
+            return list[Math.floor(Math.random() * list.length)];
+        }
+
+        function configureEvolutionOverlay(config) {
+            evolutionTitle.textContent = config.title;
+            evolutionDesc.textContent = config.description;
+
+            for (let i = 0; i < choiceButtonCopy.length; i += 1) {
+                const option = config.options[i];
+                choiceButtons[i].dataset.class = option.key;
+                choiceButtonCopy[i].title.textContent = option.title;
+                choiceButtonCopy[i].description.textContent = option.description;
+            }
+        }
+
+        function showEvolutionChoice(tier, branch) {
+            pendingEvolutionTier = tier;
+
+            if (tier === 1) {
+                configureEvolutionOverlay(EVOLUTION_OPTIONS.tier1);
+            } else {
+                configureEvolutionOverlay(EVOLUTION_OPTIONS.tier2[branch]);
+            }
+
+            evolutionOverlay.hidden = false;
+        }
+
+        function getTankFireDelay(tank, now) {
+            let fireDelay = tank.fireDelay;
+
+            if (tankHasMutator(tank, now, "overclock")) {
+                fireDelay *= 0.2;
+            }
+
+            if (tankHasPickupBoost(tank, now, "rapid")) {
+                fireDelay *= 0.68;
+            }
+
+            return Math.max(16, fireDelay);
+        }
+
+        function applyRandomMutator(tank, now) {
+            if (!tank || tank.isBoss) {
+                return null;
+            }
+
+            const def = MUTATORS[Math.floor(Math.random() * MUTATORS.length)];
+            tank.mutatorType = def.type;
+            tank.mutatorUntil = now + CONFIG.mutatorDuration;
+            tank.mutatorLabel = def.label;
+            tank.mutatorColor = def.color;
+            return def;
+        }
+
+        function isNemesis(tank) {
+            return !!tank && tank === nemesis.bot && tank.alive;
+        }
+
+        function nemesisReward(now) {
+            player.hp = player.maxHp;
+            grantLevels(player, 1);
+            setEventNotice("Nemesis down: full heal + 1 level.", now, 2600);
+        }
+
+        function randomAliveBot() {
+            const aliveBots = [];
+            for (let i = 0; i < bots.length; i += 1) {
+                if (bots[i].alive) {
+                    aliveBots.push(bots[i]);
+                }
+            }
+
+            if (!aliveBots.length) {
+                return null;
+            }
+
+            return aliveBots[Math.floor(Math.random() * aliveBots.length)];
+        }
+
+        function assignNemesis(now, preferred) {
+            const nextBot = preferred && preferred.alive ? preferred : randomAliveBot();
+            nemesis.bot = nextBot;
+            nemesis.retargetAt = 0;
+            nemesis.announceUntil = nextBot ? now + 2200 : 0;
+
+            if (nextBot) {
+                setEventNotice(`Target marked: ${nextBot.name}. Kill it for heal + 1 level.`, now, 2400);
+            }
+        }
+
+        function ensureNemesis(now) {
+            if (nemesis.bot && nemesis.bot.alive) {
+                return;
+            }
+
+            if (now < nemesis.retargetAt) {
+                return;
+            }
+
+            assignNemesis(now);
+        }
+
+        function hotZoneSpawnPoint() {
+            const bias = 760;
+            return {
+                x: clamp((CONFIG.worldSize * 0.5) + rand(-bias, bias), 300, CONFIG.worldSize - 300),
+                y: clamp((CONFIG.worldSize * 0.5) + rand(-bias, bias), 300, CONFIG.worldSize - 300)
+            };
+        }
+
+        function tankInsideHotZone(tank) {
+            if (!hotZone.active || !tank || !tank.alive) {
+                return false;
+            }
+
+            const radius = Math.max(26, hotZone.radius - (tank.radius * 0.35));
+            return distSq(tank.x, tank.y, hotZone.x, hotZone.y) <= radius * radius;
+        }
+
+        function spawnHotZone(now) {
+            const spawn = hotZoneSpawnPoint();
+            hotZone.active = true;
+            hotZone.x = spawn.x;
+            hotZone.y = spawn.y;
+            hotZone.radius = CONFIG.hotZoneRadius;
+            hotZone.expiresAt = now + CONFIG.hotZoneDuration;
+            hotZone.nextSpawnAt = now + CONFIG.hotZoneInterval;
+            setEventNotice("Hot zone online: x3 XP, but it burns.", now, 2600);
+        }
+
+        function startNemesisTaunt(attacker, now) {
+            if (!attacker || attacker !== nemesis.bot) {
+                return;
+            }
+
+            camera.tauntTarget = attacker;
+            camera.tauntUntil = now + CONFIG.respawnDelay;
+            camera.targetZoom = CONFIG.deathZoomScale;
+        }
+
+        function clearCameraTaunt() {
+            camera.tauntTarget = null;
+            camera.tauntUntil = 0;
+            camera.targetZoom = 1;
+        }
+
+        function getVolleyAngles(tank, now) {
+            return tankHasMutator(tank, now, "tripleshot") ? [-0.16, 0, 0.16] : [0];
+        }
+
+        function healFromHit(attacker, now) {
+            if (!attacker || !attacker.alive) {
+                return;
+            }
+
+            if (tankHasMutator(attacker, now, "vampirism")) {
+                attacker.hp = Math.min(attacker.maxHp, attacker.hp + CONFIG.vampirismHeal);
+            }
+        }
+
+        function getTankMoveSpeed(tank, firing, now) {
+            let moveSpeed = tank.moveSpeed;
+
+            if (tankHasPickupBoost(tank, now, "nitro")) {
+                moveSpeed *= 1.35;
+            }
+
+            if (tank && tank.advancedType === "machinegun" && firing) {
+                moveSpeed *= 0.44;
+            }
+
+            return moveSpeed;
+        }
+
+        function railgunChargeRatio(tank, now) {
+            return clamp((now - tank.lastFiredAt) / CONFIG.railgunChargeTime, 0, 1);
+        }
+
+        function applyTankStatPoint(tank, stat) {
+            if (!tank || tank.skillPoints <= 0) {
+                return false;
+            }
+
+            tank.skillPoints -= 1;
+            tank.statLevels[stat] += 1;
+
+            if (stat === "damage") {
+                tank.damage += 2.6;
+                tank.bulletSpeed += 8;
+            } else if (stat === "reload") {
+                tank.fireDelay = Math.max(55, tank.fireDelay * 0.9);
+            } else if (stat === "health") {
+                tank.maxHp += 24;
+                tank.hp = Math.min(tank.maxHp, tank.hp + 24);
+                tank.regenRate += 0.7;
+            } else if (stat === "speed") {
+                tank.moveSpeed += 10;
+            }
+
+            return true;
+        }
+
+        function applyTankEvolution(tank, type) {
+            tank.classType = type;
+
+            if (type === "sniper") {
+                tank.classLabel = tank.isPlayer ? "Sniper" : "Bot Sniper Mk";
+                tank.damage *= 2.25;
+                tank.fireDelay = Math.min(520, tank.fireDelay * 1.9);
+                tank.bulletSpeed += 210;
+                tank.bulletRange += 260;
+                tank.bulletRadius = 6;
+                tank.barrelLength += 18;
+                tank.spread = 0.01;
+            } else if (type === "gunner") {
+                tank.classLabel = tank.isPlayer ? "Gunner" : "Bot Gunner Mk";
+                tank.damage *= 0.72;
+                tank.fireDelay = Math.max(45, tank.fireDelay * 0.48);
+                tank.bulletSpeed = Math.max(360, tank.bulletSpeed - 35);
+                tank.bulletRange = Math.max(330, tank.bulletRange - 70);
+                tank.bulletRadius = 4;
+                tank.barrelLength += 8;
+                tank.moveSpeed += 8;
+                tank.spread = 0.12;
+            }
+        }
+
+        function applyTankAdvancedEvolution(tank, type) {
+            tank.advancedType = type;
+
+            if (type === "railgun") {
+                tank.classLabel = tank.isPlayer ? "Sniper/Railgun" : "Bot Railgun";
+                tank.damage *= 1.35;
+                tank.fireDelay = Math.min(860, tank.fireDelay * 1.42);
+                tank.bulletSpeed += 90;
+                tank.bulletRange += 240;
+                tank.barrelLength += 10;
+                tank.spread = 0.006;
+            } else if (type === "artillery") {
+                tank.classLabel = tank.isPlayer ? "Sniper/Artillery" : "Bot Artillery";
+                tank.damage *= 1.45;
+                tank.fireDelay = Math.min(760, tank.fireDelay * 1.5);
+                tank.bulletSpeed = Math.max(250, tank.bulletSpeed * 0.56);
+                tank.bulletRange += 140;
+                tank.bulletRadius = 8;
+                tank.barrelLength += 10;
+                tank.spread = 0.02;
+            } else if (type === "machinegun") {
+                tank.classLabel = tank.isPlayer ? "Gunner/Machine Gun" : "Bot Machine Gun";
+                tank.damage *= 0.86;
+                tank.fireDelay = Math.max(26, tank.fireDelay * 0.36);
+                tank.bulletSpeed = Math.max(350, tank.bulletSpeed - 12);
+                tank.moveSpeed += 6;
+                tank.spread += 0.05;
+            } else if (type === "shotgun") {
+                tank.classLabel = tank.isPlayer ? "Gunner/Spread" : "Bot Spread";
+                tank.damage *= 1.08;
+                tank.fireDelay = Math.max(80, tank.fireDelay * 0.95);
+                tank.bulletSpeed = Math.max(320, tank.bulletSpeed - 28);
+                tank.bulletRange = Math.max(240, tank.bulletRange - 100);
+                tank.bulletRadius = Math.max(5, tank.bulletRadius);
+                tank.barrelLength += 6;
+                tank.spread = Math.max(tank.spread, 0.1);
+            }
+        }
+
+        function upgradeBotLoadout(bot) {
+            if (!bot || bot.isPlayer) {
+                return;
+            }
+
+            if (!bot.classType && bot.level >= 15) {
+                applyTankEvolution(bot, randomChoice(["sniper", "gunner"]));
+            }
+
+            if (bot.classType && !bot.advancedType && bot.level >= 50) {
+                const advanced = bot.classType === "sniper" ? randomChoice(["railgun", "artillery"]) : randomChoice(["machinegun", "shotgun"]);
+                applyTankAdvancedEvolution(bot, advanced);
+            }
+
+            while (bot.skillPoints > 0) {
+                applyTankStatPoint(bot, randomChoice(BOT_STATS));
+            }
+        }
+
+        function assignBotArchetype(bot) {
+            const roll = Math.random();
+            bot.botClass = "basic";
+
+            if (roll < 0.3) {
+                bot.botClass = "gunner";
+                bot.classLabel = "Bot Gunner";
+                bot.damage *= 0.68;
+                bot.fireDelay = Math.max(60, bot.fireDelay * 0.52);
+                bot.bulletSpeed = Math.max(380, bot.bulletSpeed - 35);
+                bot.bulletRange = Math.max(280, bot.bulletRange - 70);
+                bot.moveSpeed += 14;
+                bot.spread = 0.08;
+            } else if (roll < 0.6) {
+                bot.botClass = "sniper";
+                bot.classLabel = "Bot Sniper";
+                bot.damage *= 1.6;
+                bot.fireDelay = Math.min(560, bot.fireDelay * 1.7);
+                bot.bulletSpeed += 170;
+                bot.bulletRange += 240;
+                bot.bulletRadius = 6;
+                bot.moveSpeed = Math.max(135, bot.moveSpeed - 4);
+                bot.spread = 0.008;
+            }
+        }
+
+        function syncBotScaling(bot, now) {
+            if (!bot || bot.isPlayer) {
+                return;
+            }
+
+            const targetBonus = botScaleBonus(now);
+            while (bot.scaledLevel < targetBonus) {
+                levelUpTank(bot);
+                bot.scaledLevel += 1;
+            }
+
+            upgradeBotLoadout(bot);
+        }
+
+        function syncMoveInput() {
+            if (moveTouchInput.active) {
+                moveInput.x = moveTouchInput.x;
+                moveInput.y = moveTouchInput.y;
+                moveInput.active = true;
+                return;
+            }
+
+            const x = (keyboardMoveState.right ? 1 : 0) - (keyboardMoveState.left ? 1 : 0);
+            const y = (keyboardMoveState.down ? 1 : 0) - (keyboardMoveState.up ? 1 : 0);
+            const vector = normalizeVector(x, y);
+
+            moveInput.x = vector.x;
+            moveInput.y = vector.y;
+            moveInput.active = x !== 0 || y !== 0;
+        }
+
+        function syncAimInput() {
+            if (aimTouchInput.active) {
+                aimInput.x = aimTouchInput.x;
+                aimInput.y = aimTouchInput.y;
+                aimInput.aiming = true;
+                aimInput.active = true;
+                return;
+            }
+
+            aimInput.x = mouseAimState.x;
+            aimInput.y = mouseAimState.y;
+            aimInput.aiming = mouseAimState.aiming;
+            aimInput.active = mouseAimState.firing;
+        }
+
+        function worldToScreenX(x) {
+            return ((x - camera.x) * camera.zoom) + (canvasWidth * 0.5);
+        }
+
+        function worldToScreenY(y) {
+            return ((y - camera.y) * camera.zoom) + (canvasHeight * 0.5);
+        }
+
+        function resize() {
+            const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+            canvasWidth = window.innerWidth;
+            canvasHeight = window.innerHeight;
+            canvas.width = Math.round(canvasWidth * dpr);
+            canvas.height = Math.round(canvasHeight * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        function makeTank(name, bodyColor, barrelColor, isPlayer) {
+            return {
+                name,
+                isPlayer,
+                bodyColor,
+                barrelColor,
+                x: 0,
+                y: 0,
+                vx: 0,
+                vy: 0,
+                radius: CONFIG.tankRadius,
+                barrelAngle: -Math.PI / 2,
+                level: 1,
+                xp: 0,
+                xpNext: 30,
+                maxHp: 100,
+                hp: 100,
+                damage: 8,
+                fireDelay: 220,
+                bulletSpeed: 520,
+                bulletRange: CONFIG.bulletRange,
+                bulletRadius: 5,
+                barrelLength: CONFIG.tankRadius + 16,
+                moveSpeed: 170,
+                spread: 0,
+                regenRate: 7,
+                skillPoints: 0,
+                classType: null,
+                classLabel: "Basic",
+                advancedType: null,
+                botClass: "basic",
+                scaledLevel: 0,
+                mutatorType: null,
+                mutatorUntil: 0,
+                mutatorLabel: "",
+                mutatorColor: "#ffffff",
+                pickupBoostType: null,
+                pickupBoostUntil: 0,
+                pickupBoostLabel: "",
+                pickupBoostColor: "#ffffff",
+                statLevels: {
+                    damage: 0,
+                    reload: 0,
+                    health: 0,
+                    speed: 0
+                },
+                lastHitAt: 0,
+                lastFiredAt: 0,
+                nextShotAt: 0,
+                alive: true,
+                respawnAt: 0,
+                ai: isPlayer ? null : {
+                    moveX: 0,
+                    moveY: 0,
+                    aimAngle: -Math.PI / 2,
+                    firing: false,
+                    target: null,
+                    mode: "wander",
+                    thinkAt: 0,
+                    wanderX: 0,
+                    wanderY: 0
+                }
+            };
+        }
+
+        function resetTankStats(tank) {
+            tank.level = 1;
+            tank.xp = 0;
+            tank.xpNext = 30;
+            tank.maxHp = 100;
+            tank.hp = 100;
+            tank.damage = 8;
+            tank.fireDelay = 220;
+            tank.bulletSpeed = 520;
+            tank.bulletRange = CONFIG.bulletRange;
+            tank.bulletRadius = 5;
+            tank.barrelLength = CONFIG.tankRadius + 16;
+            tank.moveSpeed = 170;
+            tank.spread = 0;
+            tank.regenRate = 7;
+            tank.skillPoints = 0;
+            tank.classType = null;
+            tank.classLabel = "Basic";
+            tank.advancedType = null;
+            tank.botClass = "basic";
+            tank.scaledLevel = 0;
+            clearMutator(tank);
+            clearPickupBoost(tank);
+            tank.statLevels.damage = 0;
+            tank.statLevels.reload = 0;
+            tank.statLevels.health = 0;
+            tank.statLevels.speed = 0;
+            tank.lastHitAt = 0;
+            tank.lastFiredAt = 0;
+            tank.nextShotAt = 0;
+        }
+
+        function hideEvolutionChoice() {
+            pendingEvolutionTier = 0;
+            evolutionOverlay.hidden = true;
+        }
+
+        function evolutionOpen() {
+            return !evolutionOverlay.hidden;
+        }
+
+        function levelUpTank(tank) {
+            tank.level += 1;
+            tank.xpNext = Math.floor((tank.xpNext * 1.15) + 20);
+            tank.maxHp += 8;
+            tank.hp = Math.min(tank.maxHp, tank.hp + 12);
+            tank.damage += 1.2;
+            tank.fireDelay = Math.max(90, tank.fireDelay * 0.97);
+            tank.bulletSpeed += 12;
+            tank.bulletRange += 8;
+            tank.moveSpeed += 3;
+            tank.regenRate += 0.24;
+            tank.barrelLength = Math.min(CONFIG.tankRadius + 32, tank.barrelLength + 0.6);
+            tank.skillPoints += 1;
+
+            if (tank.isPlayer) {
+                playerLevelBoosts += 1;
+                if (tank.level >= 50 && tank.classType && !tank.advancedType) {
+                    showEvolutionChoice(2, tank.classType);
+                } else if (tank.level >= 15 && !tank.classType) {
+                    showEvolutionChoice(1);
+                }
+            } else {
+                upgradeBotLoadout(tank);
+            }
+        }
+
+        // Levels still auto-boost base stats, with extra player points on top.
+        function gainXp(tank, value) {
+            tank.xp += value;
+
+            while (tank.xp >= tank.xpNext) {
+                tank.xp -= tank.xpNext;
+                levelUpTank(tank);
+            }
+        }
+
+        function grantLevels(tank, count) {
+            for (let index = 0; index < count; index += 1) {
+                levelUpTank(tank);
+            }
+        }
+
+        function spendStatPoint(stat) {
+            if (!player || !player.alive || player.skillPoints <= 0) {
+                return;
+            }
+
+            applyTankStatPoint(player, stat);
+        }
+
+        function chooseEvolution(type) {
+            if (!player || !pendingEvolutionTier) {
+                return;
+            }
+
+            if (pendingEvolutionTier === 1) {
+                if (player.classType || player.level < 15) {
+                    return;
+                }
+
+                applyTankEvolution(player, type);
+            } else if (pendingEvolutionTier === 2) {
+                if (!player.classType || player.advancedType || player.level < 50) {
+                    return;
+                }
+
+                applyTankAdvancedEvolution(player, type);
+            }
+
+            hideEvolutionChoice();
+        }
+
+        function randomSpawnPoint() {
+            return {
+                x: rand(80, CONFIG.worldSize - 80),
+                y: rand(80, CONFIG.worldSize - 80)
+            };
+        }
+
+        function respawnTank(tank, now) {
+            const spawn = randomSpawnPoint();
+            tank.x = spawn.x;
+            tank.y = spawn.y;
+            tank.vx = 0;
+            tank.vy = 0;
+            tank.barrelAngle = -Math.PI / 2;
+            tank.hp = tank.maxHp;
+            tank.lastHitAt = now;
+            tank.lastFiredAt = now;
+            tank.alive = true;
+            tank.respawnAt = 0;
+            tank.nextShotAt = now + 450;
+
+            if (tank.ai) {
+                tank.ai.mode = "wander";
+                tank.ai.firing = false;
+                tank.ai.target = null;
+                tank.ai.moveX = 0;
+                tank.ai.moveY = 0;
+                tank.ai.aimAngle = tank.barrelAngle;
+                tank.ai.thinkAt = now + rand(160, 420);
+                tank.ai.wanderX = spawn.x;
+                tank.ai.wanderY = spawn.y;
+                assignBotArchetype(tank);
+                syncBotScaling(tank, now);
+            }
+
+            if (tank.isPlayer) {
+                clearCameraTaunt();
+                if (bots.length) {
+                    assignNemesis(now);
+                }
+            }
+        }
+
+        function killTank(tank, attacker, now) {
+            tank.alive = false;
+            tank.respawnAt = now + CONFIG.respawnDelay;
+            tank.vx = 0;
+            tank.vy = 0;
+            clearMutator(tank);
+            clearPickupBoost(tank);
+
+            if (attacker && attacker !== tank) {
+                gainXp(attacker, tank.isPlayer ? 42 : botKillXpReward(tank));
+            }
+
+            if (tank.isPlayer) {
+                deadUntil = tank.respawnAt;
+                hideEvolutionChoice();
+                if (attacker && attacker === nemesis.bot) {
+                    startNemesisTaunt(attacker, now);
+                    setEventNotice(`${attacker.name} cashed in the target hunt.`, now, 2500);
+                }
+            } else {
+                if (tank === nemesis.bot) {
+                    if (attacker === player) {
+                        nemesisReward(now);
+                    }
+                    nemesis.bot = null;
+                    nemesis.retargetAt = now + CONFIG.nemesisRetargetDelay;
+                }
+                resetTankStats(tank);
+            }
+        }
+
+        function applyShapeType(shape, type) {
+            const def = SHAPE_TYPES[type];
+            shape.type = type;
+            shape.hp = def.hp;
+            shape.maxHp = def.hp;
+            shape.r = def.r;
+            shape.sides = def.sides;
+            shape.color = def.color;
+            shape.stroke = def.stroke;
+            shape.xp = def.xp;
+        }
+
+        function spawnShape(type) {
+            const shape = {
+                type,
+                x: rand(60, CONFIG.worldSize - 60),
+                y: rand(60, CONFIG.worldSize - 60),
+                hp: 0,
+                maxHp: 0,
+                r: 0,
+                sides: 0,
+                color: "#ffffff",
+                stroke: "#ffffff",
+                xp: 0,
+                rotation: rand(0, Math.PI * 2),
+                spin: rand(-0.8, 0.8),
+                alive: true
+            };
+            applyShapeType(shape, type);
+            return shape;
+        }
+
+        function resetShape(shape) {
+            shape.x = rand(60, CONFIG.worldSize - 60);
+            shape.y = rand(60, CONFIG.worldSize - 60);
+            applyShapeType(shape, shape.type);
+            shape.rotation = rand(0, Math.PI * 2);
+            shape.spin = rand(-0.8, 0.8);
+            shape.alive = true;
+        }
+
+        function createShapes() {
+            shapes.length = 0;
+
+            for (let i = 0; i < CONFIG.squareCount; i += 1) {
+                shapes.push(spawnShape("square"));
+            }
+
+            for (let i = 0; i < CONFIG.triangleCount; i += 1) {
+                shapes.push(spawnShape("triangle"));
+            }
+
+            for (let i = 0; i < CONFIG.pentagonCount; i += 1) {
+                shapes.push(spawnShape("pentagon"));
+            }
+
+            for (let i = 0; i < CONFIG.hexagonCount; i += 1) {
+                shapes.push(spawnShape("hexagon"));
+            }
+
+            for (let i = 0; i < CONFIG.heptagonCount; i += 1) {
+                shapes.push(spawnShape("heptagon"));
+            }
+        }
+
+        function createActors(now) {
+            matchStartedAt = now;
+            playerLevelBoosts = 0;
+            player = makeTank("You", "#6cd6ff", "#c9f1ff", true);
+            resetTankStats(player);
+            respawnTank(player, now);
+
+            bots.length = 0;
+            for (let i = 0; i < CONFIG.botCount; i += 1) {
+                const colors = BOT_COLORS[i % BOT_COLORS.length];
+                const bot = makeTank(`Bot ${i + 1}`, colors.body, colors.barrel, false);
+                resetTankStats(bot);
+                respawnTank(bot, now);
+                bots.push(bot);
+            }
+
+            boss = null;
+            nextBossAt = now + CONFIG.bossSpawnDelay;
+            bossWave = 0;
+            nextBoostAt = now + CONFIG.boostSpawnInterval;
+            eventNotice.until = 0;
+            clearCameraTaunt();
+            hotZone.active = false;
+            hotZone.radius = CONFIG.hotZoneRadius;
+            hotZone.nextSpawnAt = now + CONFIG.hotZoneInterval;
+            hotZone.expiresAt = 0;
+            shapeSwarm.active = false;
+            shapeSwarm.expiresAt = 0;
+            shapeSwarm.nextSpawnAt = now + CONFIG.shapeSwarmInterval;
+            bossShields.length = 0;
+            bossEscorts.length = 0;
+            boosts.length = 0;
+            assignNemesis(now);
+        }
+
+        function spawnBoss(now) {
+            const spawn = randomSpawnPoint();
+            bossWave += 1;
+            const variant = randomChoice(BOSS_VARIANTS);
+            const bossHp = Math.floor(1900 * Math.pow(1.78, bossWave - 1));
+            const burstCount = 12 + ((bossWave - 1) * 2);
+            boss = {
+                isBoss: true,
+                type: variant.type,
+                name: variant.name,
+                tier: bossWave,
+                x: spawn.x,
+                y: spawn.y,
+                vx: 0,
+                vy: 0,
+                radius: 54,
+                hp: bossHp,
+                maxHp: bossHp,
+                moveSpeed: (82 + (bossWave * 4)) * variant.moveSpeedMult,
+                barrelAngle: 0,
+                barrelLength: 34,
+                nextBurstAt: now + 900,
+                thinkAt: now + 280,
+                targetX: spawn.x,
+                targetY: spawn.y,
+                rotor: 0,
+                damage: (11 + (bossWave * 1.8)) * variant.damageMult,
+                bulletSpeed: (340 + (bossWave * 18)) * variant.bulletSpeedMult,
+                bulletRange: 360 + (bossWave * 10),
+                bulletRadius: 6,
+                burstCount,
+                burstDelay: variant.burstDelay,
+                fireMode: variant.fireMode,
+                bodyColor: variant.bodyColor,
+                barrelColor: variant.barrelColor,
+                spread: 0,
+                lastHitBy: null,
+                alive: true
+            };
+            spawnBossShields();
+            spawnBossEscorts(now);
+        }
+
+        function spawnBossEscorts(now) {
+            bossEscorts.length = 0;
+            if (!boss || bossWave < 2) {
+                return;
+            }
+
+            const escortCount = bossWave - 1;
+            for (let i = 0; i < escortCount; i += 1) {
+                const variant = randomChoice(BOSS_ESCORT_VARIANTS);
+                const angle = ((Math.PI * 2) * i) / escortCount;
+                bossEscorts.push({
+                    isBossEscort: true,
+                    type: variant.type,
+                    name: variant.name,
+                    x: clamp(boss.x + (Math.cos(angle) * 130), 70, CONFIG.worldSize - 70),
+                    y: clamp(boss.y + (Math.sin(angle) * 130), 70, CONFIG.worldSize - 70),
+                    vx: 0,
+                    vy: 0,
+                    radius: 30,
+                    hp: Math.floor(340 * Math.pow(1.34, bossWave - 1)),
+                    maxHp: Math.floor(340 * Math.pow(1.34, bossWave - 1)),
+                    moveSpeed: variant.moveSpeed + (bossWave * 5),
+                    barrelAngle: angle,
+                    barrelLength: 22,
+                    nextBurstAt: now + rand(600, 1100),
+                    thinkAt: now + rand(200, 420),
+                    targetX: boss.x,
+                    targetY: boss.y,
+                    damage: variant.damage + (bossWave * 1.2),
+                    bulletSpeed: variant.bulletSpeed + (bossWave * 10),
+                    bulletRange: 310 + (bossWave * 8),
+                    bulletRadius: variant.type === "bomber" ? 6 : 5,
+                    fireMode: variant.fireMode,
+                    bodyColor: variant.bodyColor,
+                    barrelColor: variant.barrelColor,
+                    lastHitBy: null,
+                    alive: true
+                });
+            }
+        }
+
+        function makeBoost(now) {
+            const spawn = randomSpawnPoint();
+            const def = randomChoice(BOOST_TYPES);
+            return {
+                type: def.type,
+                label: def.label,
+                detail: def.detail,
+                color: def.color,
+                stroke: def.stroke,
+                x: spawn.x,
+                y: spawn.y,
+                r: CONFIG.boostRadius,
+                rotation: rand(0, Math.PI * 2),
+                spin: rand(-1.4, 1.4),
+                spawnedAt: now,
+                expiresAt: now + CONFIG.boostLifetime
+            };
+        }
+
+        function applyBoostPickup(tank, boost, now) {
+            if (!tank || !boost) {
+                return;
+            }
+
+            if (boost.type === "repair") {
+                tank.hp = Math.min(tank.maxHp, tank.hp + 45);
+            } else if (boost.type === "cache") {
+                gainXp(tank, 30);
+            } else {
+                tank.pickupBoostType = boost.type;
+                tank.pickupBoostUntil = now + CONFIG.boostDuration;
+                tank.pickupBoostLabel = boost.label;
+                tank.pickupBoostColor = boost.color;
+            }
+
+            if (tank.isPlayer) {
+                setEventNotice(`${boost.label}: ${boost.detail}`, now, 2200);
+            }
+        }
+
+        function nearestBoost(x, y, rangeSq, now) {
+            let best = null;
+            let bestDist = rangeSq;
+
+            for (let i = 0; i < boosts.length; i += 1) {
+                const boost = boosts[i];
+                if (now >= boost.expiresAt) {
+                    continue;
+                }
+
+                const d2 = distSq(x, y, boost.x, boost.y);
+                if (d2 < bestDist) {
+                    bestDist = d2;
+                    best = boost;
+                }
+            }
+
+            return best;
+        }
+
+        function spawnBossShields() {
+            bossShields.length = 0;
+            if (!boss || boss.tier < 2) {
+                return;
+            }
+
+            const shieldHp = SHAPE_TYPES.pentagon.hp + ((boss.tier - 2) * 18);
+            for (let i = 0; i < CONFIG.bossShieldCount; i += 1) {
+                bossShields.push({
+                    angle: ((Math.PI * 2) * i) / CONFIG.bossShieldCount,
+                    distance: boss.radius + 54,
+                    radius: CONFIG.bossShieldRadius,
+                    hp: shieldHp,
+                    maxHp: shieldHp,
+                    x: boss.x,
+                    y: boss.y,
+                    rotation: rand(0, Math.PI * 2),
+                    spin: rand(1.4, 2.1)
+                });
+            }
+        }
+
+        function updateBossAimTarget(now) {
+            if (!boss || !boss.alive || now < boss.thinkAt) {
+                return;
+            }
+
+            boss.thinkAt = now + rand(260, 520);
+
+            let target = player.alive ? player : null;
+            if (!target) {
+                for (let index = 0; index < bots.length; index += 1) {
+                    if (bots[index].alive) {
+                        target = bots[index];
+                        break;
+                    }
+                }
+            }
+
+            if (target) {
+                boss.targetX = target.x;
+                boss.targetY = target.y;
+            } else if (hotZone.active) {
+                boss.targetX = hotZone.x;
+                boss.targetY = hotZone.y;
+            } else if (shapeSwarm.active) {
+                boss.targetX = shapeSwarm.x;
+                boss.targetY = shapeSwarm.y;
+            } else {
+                boss.targetX = clamp(boss.x + rand(-280, 280), 80, CONFIG.worldSize - 80);
+                boss.targetY = clamp(boss.y + rand(-280, 280), 80, CONFIG.worldSize - 80);
+            }
+        }
+
+        function rewardBossKill(attacker, now) {
+            if (attacker && !attacker.isBoss && attacker.alive) {
+                grantLevels(attacker, 3);
+                attacker.hp = Math.min(attacker.maxHp, attacker.hp + 80);
+                const mutator = applyRandomMutator(attacker, now);
+                if (mutator) {
+                    if (attacker.isPlayer) {
+                        setEventNotice(`Boss down: ${mutator.label} for 30s.`, now, 2800);
+                    } else {
+                        setEventNotice(`${attacker.name} stole ${mutator.label}.`, now, 2600);
+                    }
+                }
+            }
+        }
+
+        function destroyBoss(now) {
+            if (!boss) {
+                return;
+            }
+
+            rewardBossKill(boss.lastHitBy, now);
+            boss = null;
+            bossShields.length = 0;
+            bossEscorts.length = 0;
+            bossHud.hidden = true;
+            nextBossAt = now + CONFIG.bossSpawnDelay;
+        }
+
+        function spawnBullet(owner, angle, now, overrides) {
+            const settings = overrides || {};
+            const spread = settings.spread !== undefined ? settings.spread : (owner.spread || 0);
+            const actualAngle = angle + rand(-spread, spread);
+
+            for (let i = 0; i < bullets.length; i += 1) {
+                const bullet = bullets[i];
+                if (bullet.active) {
+                    continue;
+                }
+
+                const muzzle = settings.muzzle || owner.barrelLength || (owner.radius + 18);
+                bullet.active = true;
+                bullet.x = owner.x + (Math.cos(actualAngle) * muzzle);
+                bullet.y = owner.y + (Math.sin(actualAngle) * muzzle);
+                bullet.startX = bullet.x;
+                bullet.startY = bullet.y;
+                bullet.vx = Math.cos(actualAngle) * (settings.speed || owner.bulletSpeed);
+                bullet.vy = Math.sin(actualAngle) * (settings.speed || owner.bulletSpeed);
+                bullet.r = settings.radius || owner.bulletRadius;
+                bullet.damage = settings.damage || owner.damage;
+                bullet.owner = owner;
+                bullet.bornAt = now;
+                bullet.expireAt = now + CONFIG.bulletLife;
+                bullet.maxDistance = settings.range || owner.bulletRange;
+                bullet.color = settings.color || (tankHasMutator(owner, now, "ricochet") ? "#ffd36d" : owner.bodyColor);
+                bullet.isBoss = !!owner.isBoss || !!settings.isBoss;
+                bullet.bouncesRemaining = settings.bouncesRemaining !== undefined ? settings.bouncesRemaining : (tankHasMutator(owner, now, "ricochet") ? 4 : 0);
+                bullet.explosiveRadius = settings.explosiveRadius || 0;
+                bullet.explosionDamage = settings.explosionDamage || 0;
+                bullet.explosionColor = settings.explosionColor || "#ffb06c";
+                return;
+            }
+        }
+
+        function addBeam(x1, y1, x2, y2, color, now) {
+            beams.push({
+                x1,
+                y1,
+                x2,
+                y2,
+                color,
+                expiresAt: now + 110
+            });
+        }
+
+        function addExplosion(x, y, radius, color, now) {
+            explosions.push({
+                x,
+                y,
+                radius,
+                color,
+                expiresAt: now + 180
+            });
+        }
+
+        function beamHitDistance(originX, originY, dirX, dirY, range, targetX, targetY, targetRadius, padding) {
+            const relX = targetX - originX;
+            const relY = targetY - originY;
+            const along = (relX * dirX) + (relY * dirY);
+            if (along < 0 || along > range) {
+                return Infinity;
+            }
+
+            const perpSq = (relX * relX) + (relY * relY) - (along * along);
+            const hitRadius = targetRadius + (padding || 9);
+            return perpSq <= hitRadius * hitRadius ? along : Infinity;
+        }
+
+        function fireStandardVolley(tank, now) {
+            const volleyAngles = getVolleyAngles(tank, now);
+            for (let i = 0; i < volleyAngles.length; i += 1) {
+                spawnBullet(tank, tank.barrelAngle + volleyAngles[i], now);
+            }
+        }
+
+        function fireShotgunVolley(tank, now) {
+            const volleyAngles = getVolleyAngles(tank, now);
+            const pellets = [-0.24, -0.12, 0, 0.12, 0.24];
+
+            for (let i = 0; i < volleyAngles.length; i += 1) {
+                for (let j = 0; j < pellets.length; j += 1) {
+                    spawnBullet(tank, tank.barrelAngle + volleyAngles[i] + pellets[j], now, {
+                        damage: tank.damage * 0.62,
+                        speed: tank.bulletSpeed * 0.82,
+                        range: tank.bulletRange * 0.58,
+                        radius: Math.max(4, tank.bulletRadius - 0.2),
+                        color: "#ffd8a1",
+                        spread: 0.02
+                    });
+                }
+            }
+        }
+
+        function fireArtilleryVolley(tank, now) {
+            const volleyAngles = getVolleyAngles(tank, now);
+
+            for (let i = 0; i < volleyAngles.length; i += 1) {
+                spawnBullet(tank, tank.barrelAngle + volleyAngles[i], now, {
+                    damage: tank.damage * 0.45,
+                    speed: tank.bulletSpeed * 0.58,
+                    range: tank.bulletRange * 1.15,
+                    radius: Math.max(7, tank.bulletRadius),
+                    color: "#ffb47d",
+                    explosiveRadius: 96,
+                    explosionDamage: tank.damage * 2.8,
+                    explosionColor: "#ffb56c",
+                    spread: 0.01
+                });
+            }
+        }
+
+        function fireRailgunVolley(tank, now) {
+            const volleyAngles = getVolleyAngles(tank, now);
+            const range = tank.bulletRange + 280;
+            const charge = railgunChargeRatio(tank, now);
+            const damage = tank.damage * (1.02 + (charge * 1.08));
+            const beamPadding = 9 + (charge * 20);
+            const beamAlpha = 0.3 + (charge * 0.6);
+            const beamColor = `rgba(214, 247, 255, ${beamAlpha})`;
+
+            for (let i = 0; i < volleyAngles.length; i += 1) {
+                const angle = tank.barrelAngle + volleyAngles[i];
+                const dirX = Math.cos(angle);
+                const dirY = Math.sin(angle);
+                addBeam(tank.x, tank.y, tank.x + (dirX * range), tank.y + (dirY * range), beamColor, now);
+
+                for (let s = 0; s < bossShields.length; s += 1) {
+                    const shield = bossShields[s];
+                    const shieldHit = beamHitDistance(tank.x, tank.y, dirX, dirY, range, shield.x, shield.y, shield.radius, beamPadding);
+                    if (shieldHit !== Infinity) {
+                        shield.hp -= damage;
+                    }
+                }
+
+                if (boss) {
+                    const bossHit = beamHitDistance(tank.x, tank.y, dirX, dirY, range, boss.x, boss.y, boss.radius, beamPadding);
+                    if (bossHit !== Infinity) {
+                        damageBossTarget(damage, tank, now);
+                    }
+                }
+
+                for (let e = 0; e < bossEscorts.length; e += 1) {
+                    const escort = bossEscorts[e];
+                    const escortHit = beamHitDistance(tank.x, tank.y, dirX, dirY, range, escort.x, escort.y, escort.radius, beamPadding);
+                    if (escortHit !== Infinity) {
+                        damageBossEscort(escort, damage, tank, now);
+                    }
+                }
+
+                for (let s = 0; s < shapes.length; s += 1) {
+                    const shape = shapes[s];
+                    if (!shape.alive) {
+                        continue;
+                    }
+
+                    const shapeHit = beamHitDistance(tank.x, tank.y, dirX, dirY, range, shape.x, shape.y, shape.r, beamPadding);
+                    if (shapeHit !== Infinity) {
+                        damageShapeTarget(shape, damage, tank, now);
+                    }
+                }
+
+                const tanks = [player].concat(bots);
+                for (let t = 0; t < tanks.length; t += 1) {
+                    const target = tanks[t];
+                    if (!target.alive || target === tank) {
+                        continue;
+                    }
+
+                    const tankHit = beamHitDistance(tank.x, tank.y, dirX, dirY, range, target.x, target.y, target.radius, beamPadding);
+                    if (tankHit !== Infinity) {
+                        damageTankTarget(target, damage, tank, now);
+                    }
+                }
+            }
+        }
+
+        function fireWeapon(tank, now) {
+            if (tank.advancedType === "railgun") {
+                fireRailgunVolley(tank, now);
+            } else if (tank.advancedType === "artillery") {
+                fireArtilleryVolley(tank, now);
+            } else if (tank.advancedType === "shotgun") {
+                fireShotgunVolley(tank, now);
+            } else {
+                fireStandardVolley(tank, now);
+            }
+        }
+
+        function tryFire(tank, now, aiming) {
+            if (!tank.alive || !aiming || now < tank.nextShotAt) {
+                return;
+            }
+
+            tank.nextShotAt = now + getTankFireDelay(tank, now);
+            fireWeapon(tank, now);
+            tank.lastFiredAt = now;
+        }
+
+        function updatePlayer(now, dt) {
+            if (!player.alive) {
+                if (now >= player.respawnAt) {
+                    resetTankStats(player);
+                    respawnTank(player, now);
+                }
+                return;
+            }
+
+            const hasAimDirection = aimInput.aiming && (Math.abs(aimInput.x) > 0.12 || Math.abs(aimInput.y) > 0.12);
+            const playerFiring = aimInput.active && hasAimDirection;
+            const moveSpeed = getTankMoveSpeed(player, playerFiring, now);
+            const targetVX = moveInput.x * moveSpeed;
+            const targetVY = moveInput.y * moveSpeed;
+            const accel = 1 - Math.pow(0.0009, dt);
+
+            player.vx += (targetVX - player.vx) * accel;
+            player.vy += (targetVY - player.vy) * accel;
+            player.x += player.vx * dt;
+            player.y += player.vy * dt;
+
+            player.x = clamp(player.x, player.radius, CONFIG.worldSize - player.radius);
+            player.y = clamp(player.y, player.radius, CONFIG.worldSize - player.radius);
+
+            if (hasAimDirection) {
+                const targetAngle = Math.atan2(aimInput.y, aimInput.x);
+                player.barrelAngle = angleLerp(player.barrelAngle, targetAngle, 0.22);
+            }
+
+            tryFire(player, now, playerFiring);
+        }
+
+        function nearestShape(x, y, rangeSq) {
+            let best = null;
+            let bestDist = rangeSq;
+
+            for (let i = 0; i < shapes.length; i += 1) {
+                const shape = shapes[i];
+                if (!shape.alive) {
+                    continue;
+                }
+
+                const d2 = distSq(x, y, shape.x, shape.y);
+                if (d2 < bestDist) {
+                    bestDist = d2;
+                    best = shape;
+                }
+            }
+
+            return best;
+        }
+
+        function nearestHostileTank(source, rangeSq) {
+            let best = null;
+            let bestDist = rangeSq;
+            const tanks = [player].concat(bots);
+
+            for (let i = 0; i < tanks.length; i += 1) {
+                const target = tanks[i];
+                if (!target || !target.alive || target === source) {
+                    continue;
+                }
+
+                const d2 = distSq(source.x, source.y, target.x, target.y);
+                if (d2 < bestDist) {
+                    bestDist = d2;
+                    best = target;
+                }
+            }
+
+            return best;
+        }
+
+        // Bots use a cheap think-tick instead of expensive per-frame logic.
+        function updateBotAI(bot, now) {
+            if (!bot.alive || now < bot.ai.thinkAt) {
+                return;
+            }
+
+            bot.ai.thinkAt = now + rand(220, 380);
+
+            const baseAggroRange = bot.botClass === "sniper" ? 760 : (bot.botClass === "gunner" ? 700 : 620);
+            const aggroRange = hotZone.active && tankInsideHotZone(bot) ? 1050 : baseAggroRange;
+            const combatTarget = nearestHostileTank(bot, aggroRange * aggroRange);
+            const hillFocus = hotZone.active && bot.hp > bot.maxHp * 0.36;
+            const swarmFocus = shapeSwarm.active && bot.hp > bot.maxHp * 0.3;
+            const boostFocus = nearestBoost(bot.x, bot.y, 390 * 390, now);
+            if (combatTarget) {
+                bot.ai.mode = "attack";
+                bot.ai.target = combatTarget;
+            } else if (hillFocus) {
+                bot.ai.mode = "hill";
+                bot.ai.target = hotZone;
+            } else if (swarmFocus) {
+                bot.ai.mode = "swarm";
+                bot.ai.target = shapeSwarm;
+            } else if (boostFocus) {
+                bot.ai.mode = "boost";
+                bot.ai.target = boostFocus;
+            } else {
+                const shape = nearestShape(bot.x, bot.y, 520 * 520);
+                if (shape) {
+                    bot.ai.mode = "farm";
+                    bot.ai.target = shape;
+                } else {
+                    bot.ai.mode = "wander";
+                    bot.ai.target = null;
+                    bot.ai.wanderX = clamp(bot.x + rand(-260, 260), 60, CONFIG.worldSize - 60);
+                    bot.ai.wanderY = clamp(bot.y + rand(-260, 260), 60, CONFIG.worldSize - 60);
+                }
+            }
+
+            if (bot.ai.target) {
+                const targetX = bot.ai.target.x;
+                const targetY = bot.ai.target.y;
+                const dx = targetX - bot.x;
+                const dy = targetY - bot.y;
+                const distance = Math.hypot(dx, dy) || 1;
+                const nx = dx / distance;
+                const ny = dy / distance;
+
+                bot.ai.aimAngle = Math.atan2(dy, dx);
+                bot.ai.firing = distance < 560 && bot.ai.mode === "attack";
+
+                if (bot.ai.mode === "attack") {
+                    bot.ai.firing = distance < (bot.botClass === "sniper" ? 820 : 600);
+
+                    if (bot.botClass === "sniper") {
+                        if (distance > 430) {
+                            bot.ai.moveX = nx;
+                            bot.ai.moveY = ny;
+                        } else if (distance < 310) {
+                            bot.ai.moveX = -nx;
+                            bot.ai.moveY = -ny;
+                        } else {
+                            bot.ai.moveX = -ny * 0.7;
+                            bot.ai.moveY = nx * 0.7;
+                        }
+                    } else if (bot.botClass === "gunner") {
+                        if (distance > 170) {
+                            bot.ai.moveX = nx;
+                            bot.ai.moveY = ny;
+                        } else {
+                            bot.ai.moveX = -ny * 0.8;
+                            bot.ai.moveY = nx * 0.8;
+                        }
+                    } else {
+                        if (distance > 260) {
+                            bot.ai.moveX = nx;
+                            bot.ai.moveY = ny;
+                        } else if (distance < 150) {
+                            bot.ai.moveX = -nx;
+                            bot.ai.moveY = -ny;
+                        } else {
+                            bot.ai.moveX = -ny * 0.6;
+                            bot.ai.moveY = nx * 0.6;
+                        }
+                    }
+                } else if (bot.ai.mode === "hill" || bot.ai.mode === "swarm") {
+                    const orbitRadius = bot.ai.mode === "hill" ? hotZone.radius * 0.48 : 132;
+                    if (distance > orbitRadius) {
+                        bot.ai.moveX = nx;
+                        bot.ai.moveY = ny;
+                    } else {
+                        bot.ai.moveX = -ny * 0.55;
+                        bot.ai.moveY = nx * 0.55;
+                    }
+                    const nearbyTarget = nearestHostileTank(bot, 680 * 680);
+                    if (nearbyTarget) {
+                        bot.ai.aimAngle = Math.atan2(nearbyTarget.y - bot.y, nearbyTarget.x - bot.x);
+                        bot.ai.firing = true;
+                    }
+                } else if (bot.ai.mode === "boost") {
+                    bot.ai.firing = false;
+                    bot.ai.moveX = nx;
+                    bot.ai.moveY = ny;
+                } else {
+                    bot.ai.moveX = distance > 170 ? nx : 0;
+                    bot.ai.moveY = distance > 170 ? ny : 0;
+                }
+            } else {
+                const dx = bot.ai.wanderX - bot.x;
+                const dy = bot.ai.wanderY - bot.y;
+                const distance = Math.hypot(dx, dy) || 1;
+                bot.ai.moveX = distance > 28 ? dx / distance : 0;
+                bot.ai.moveY = distance > 28 ? dy / distance : 0;
+                bot.ai.aimAngle = Math.atan2(bot.ai.moveY || 0.001, bot.ai.moveX || 1);
+                bot.ai.firing = false;
+            }
+        }
+
+        function updateBots(now, dt) {
+            for (let i = 0; i < bots.length; i += 1) {
+                const bot = bots[i];
+
+                if (!bot.alive) {
+                    if (now >= bot.respawnAt) {
+                        resetTankStats(bot);
+                        respawnTank(bot, now);
+                    }
+                    continue;
+                }
+
+                syncBotScaling(bot, now);
+                updateBotAI(bot, now);
+
+                const moveSpeed = getTankMoveSpeed(bot, bot.ai.firing, now);
+                const targetVX = bot.ai.moveX * moveSpeed;
+                const targetVY = bot.ai.moveY * moveSpeed;
+                const accel = 1 - Math.pow(0.0009, dt);
+
+                bot.vx += (targetVX - bot.vx) * accel;
+                bot.vy += (targetVY - bot.vy) * accel;
+                bot.x += bot.vx * dt;
+                bot.y += bot.vy * dt;
+
+                bot.x = clamp(bot.x, bot.radius, CONFIG.worldSize - bot.radius);
+                bot.y = clamp(bot.y, bot.radius, CONFIG.worldSize - bot.radius);
+                bot.barrelAngle = angleLerp(bot.barrelAngle, bot.ai.aimAngle, 0.18);
+
+                tryFire(bot, now, bot.ai.firing);
+            }
+        }
+
+        function updateNemesis(now) {
+            ensureNemesis(now);
+        }
+
+        function updateBoss(now, dt) {
+            if (!boss) {
+                if (now >= nextBossAt) {
+                    spawnBoss(now);
+                }
+                return;
+            }
+
+            updateBossAimTarget(now);
+
+            const dx = boss.targetX - boss.x;
+            const dy = boss.targetY - boss.y;
+            const distance = Math.hypot(dx, dy) || 1;
+            const nx = dx / distance;
+            const ny = dy / distance;
+            const travel = distance > 260 ? 1 : 0.22;
+            const targetVX = nx * boss.moveSpeed * travel;
+            const targetVY = ny * boss.moveSpeed * travel;
+            const accel = 1 - Math.pow(0.0008, dt);
+
+            boss.vx += (targetVX - boss.vx) * accel;
+            boss.vy += (targetVY - boss.vy) * accel;
+            boss.x += boss.vx * dt;
+            boss.y += boss.vy * dt;
+            boss.x = clamp(boss.x, boss.radius, CONFIG.worldSize - boss.radius);
+            boss.y = clamp(boss.y, boss.radius, CONFIG.worldSize - boss.radius);
+            boss.barrelAngle = Math.atan2(ny, nx);
+            boss.rotor += dt * 10;
+
+            if (now >= boss.nextBurstAt) {
+                boss.nextBurstAt = now + boss.burstDelay;
+                if (boss.fireMode === "fan") {
+                    for (let index = -3; index <= 3; index += 1) {
+                        spawnBullet(boss, boss.barrelAngle + (index * 0.16), now, {
+                            speed: boss.bulletSpeed,
+                            radius: boss.bulletRadius,
+                            range: boss.bulletRange,
+                            damage: boss.damage,
+                            color: boss.bodyColor,
+                            isBoss: true
+                        });
+                    }
+                } else if (boss.fireMode === "mortar") {
+                    for (let index = -1; index <= 1; index += 1) {
+                        spawnBullet(boss, boss.barrelAngle + (index * 0.12), now, {
+                            speed: boss.bulletSpeed * 0.7,
+                            radius: boss.bulletRadius + 1,
+                            range: boss.bulletRange + 80,
+                            damage: boss.damage * 0.55,
+                            color: boss.bodyColor,
+                            explosiveRadius: 88,
+                            explosionDamage: boss.damage * 2.2,
+                            explosionColor: "#ffc381",
+                            isBoss: true
+                        });
+                    }
+                } else {
+                    for (let index = 0; index < boss.burstCount; index += 1) {
+                        const angle = (Math.PI * 2 * index) / boss.burstCount;
+                        spawnBullet(boss, angle, now, {
+                            speed: boss.bulletSpeed,
+                            radius: boss.bulletRadius,
+                            range: boss.bulletRange,
+                            damage: boss.damage,
+                            color: boss.bodyColor,
+                            isBoss: true
+                        });
+                    }
+                }
+            }
+        }
+
+        function updateBossEscorts(now, dt) {
+            for (let i = bossEscorts.length - 1; i >= 0; i -= 1) {
+                const escort = bossEscorts[i];
+                if (escort.hp <= 0) {
+                    bossEscorts.splice(i, 1);
+                    continue;
+                }
+
+                if (now >= escort.thinkAt) {
+                    escort.thinkAt = now + rand(180, 340);
+                    const target = player.alive ? player : randomAliveBot();
+                    if (target) {
+                        escort.targetX = target.x;
+                        escort.targetY = target.y;
+                    } else if (boss) {
+                        escort.targetX = boss.x;
+                        escort.targetY = boss.y;
+                    }
+                }
+
+                const dx = escort.targetX - escort.x;
+                const dy = escort.targetY - escort.y;
+                const distance = Math.hypot(dx, dy) || 1;
+                const nx = dx / distance;
+                const ny = dy / distance;
+                const accel = 1 - Math.pow(0.0008, dt);
+                const targetVX = nx * escort.moveSpeed;
+                const targetVY = ny * escort.moveSpeed;
+
+                escort.vx += (targetVX - escort.vx) * accel;
+                escort.vy += (targetVY - escort.vy) * accel;
+                escort.x += escort.vx * dt;
+                escort.y += escort.vy * dt;
+                escort.x = clamp(escort.x, escort.radius, CONFIG.worldSize - escort.radius);
+                escort.y = clamp(escort.y, escort.radius, CONFIG.worldSize - escort.radius);
+                escort.barrelAngle = Math.atan2(ny, nx);
+
+                if (now >= escort.nextBurstAt) {
+                    escort.nextBurstAt = now + rand(720, 1080);
+                    if (escort.fireMode === "bomb") {
+                        spawnBullet(escort, escort.barrelAngle, now, {
+                            speed: escort.bulletSpeed * 0.72,
+                            radius: escort.bulletRadius,
+                            range: escort.bulletRange + 40,
+                            damage: escort.damage * 0.55,
+                            color: escort.bodyColor,
+                            explosiveRadius: 70,
+                            explosionDamage: escort.damage * 2.1,
+                            explosionColor: "#ffbe79",
+                            isBoss: true
+                        });
+                    } else {
+                        for (let index = -1; index <= 1; index += 1) {
+                            spawnBullet(escort, escort.barrelAngle + (index * 0.14), now, {
+                                speed: escort.bulletSpeed,
+                                radius: escort.bulletRadius,
+                                range: escort.bulletRange,
+                                damage: escort.damage,
+                                color: escort.bodyColor,
+                                isBoss: true
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateBossShields(dt) {
+            if (!boss) {
+                bossShields.length = 0;
+                return;
+            }
+
+            for (let i = bossShields.length - 1; i >= 0; i -= 1) {
+                const shield = bossShields[i];
+                if (shield.hp <= 0) {
+                    bossShields.splice(i, 1);
+                    continue;
+                }
+
+                shield.angle += dt * 1.4;
+                shield.rotation += shield.spin * dt;
+                shield.x = boss.x + (Math.cos(shield.angle) * shield.distance);
+                shield.y = boss.y + (Math.sin(shield.angle) * shield.distance);
+            }
+        }
+
+        function spawnShapeSwarm(now) {
+            if (!player.alive) {
+                return;
+            }
+
+            const count = Math.floor(rand(CONFIG.shapeSwarmMin, CONFIG.shapeSwarmMax + 1));
+            const used = Object.create(null);
+            shapeSwarm.active = true;
+            shapeSwarm.x = player.x;
+            shapeSwarm.y = player.y;
+            shapeSwarm.expiresAt = now + CONFIG.shapeSwarmDuration;
+            shapeSwarm.nextSpawnAt = now + CONFIG.shapeSwarmInterval;
+
+            let spawned = 0;
+            while (spawned < count) {
+                const index = Math.floor(rand(0, shapes.length));
+                if (used[index]) {
+                    continue;
+                }
+
+                used[index] = true;
+                const shape = shapes[index];
+                const type = Math.random() < 0.72 ? "triangle" : "pentagon";
+                const angle = rand(0, Math.PI * 2);
+                const distance = rand(80, CONFIG.shapeSwarmRadius);
+                applyShapeType(shape, type);
+                shape.x = clamp(player.x + (Math.cos(angle) * distance), 60, CONFIG.worldSize - 60);
+                shape.y = clamp(player.y + (Math.sin(angle) * distance), 60, CONFIG.worldSize - 60);
+                shape.rotation = rand(0, Math.PI * 2);
+                shape.spin = rand(-1.2, 1.2);
+                shape.alive = true;
+                spawned += 1;
+            }
+
+            setEventNotice("Shape Swarm: jackpot just dropped around you.", now, 2600);
+        }
+
+        function updateShapeSwarm(now) {
+            if (!shapeSwarm.active) {
+                if (player.alive && now >= shapeSwarm.nextSpawnAt) {
+                    spawnShapeSwarm(now);
+                }
+                return;
+            }
+
+            if (now >= shapeSwarm.expiresAt) {
+                shapeSwarm.active = false;
+            }
+        }
+
+        function updateHotZone(now, dt) {
+            if (!hotZone.active) {
+                if (now >= hotZone.nextSpawnAt) {
+                    spawnHotZone(now);
+                }
+                return;
+            }
+
+            if (now >= hotZone.expiresAt) {
+                hotZone.active = false;
+                return;
+            }
+
+            const tanks = [player].concat(bots);
+            for (let i = 0; i < tanks.length; i += 1) {
+                const tank = tanks[i];
+                if (!tankInsideHotZone(tank)) {
+                    continue;
+                }
+
+                gainXp(tank, CONFIG.hotZoneXpPerSecond * 3 * dt);
+                tank.hp -= CONFIG.hotZoneDamagePerSecond * dt;
+                tank.lastHitAt = now;
+
+                if (tank.hp <= 0) {
+                    killTank(tank, null, now);
+                }
+            }
+        }
+
+        function updateBoosts(now, dt) {
+            if (now >= nextBoostAt) {
+                boosts.push(makeBoost(now));
+                nextBoostAt = now + CONFIG.boostSpawnInterval;
+            }
+
+            for (let i = boosts.length - 1; i >= 0; i -= 1) {
+                const boost = boosts[i];
+                boost.rotation += boost.spin * dt;
+
+                if (now >= boost.expiresAt) {
+                    boosts.splice(i, 1);
+                    continue;
+                }
+
+                const tanks = [player].concat(bots);
+                let picked = false;
+                for (let t = 0; t < tanks.length; t += 1) {
+                    const tank = tanks[t];
+                    if (!tank.alive) {
+                        continue;
+                    }
+
+                    const hitDist = boost.r + tank.radius;
+                    if (distSq(boost.x, boost.y, tank.x, tank.y) <= hitDist * hitDist) {
+                        applyBoostPickup(tank, boost, now);
+                        boosts.splice(i, 1);
+                        picked = true;
+                        break;
+                    }
+                }
+
+                if (picked) {
+                    continue;
+                }
+            }
+        }
+
+        function updateMutators(now) {
+            const tanks = [player].concat(bots);
+            for (let i = 0; i < tanks.length; i += 1) {
+                if (tanks[i].mutatorType && now >= tanks[i].mutatorUntil) {
+                    clearMutator(tanks[i]);
+                }
+                if (tanks[i].pickupBoostType && now >= tanks[i].pickupBoostUntil) {
+                    clearPickupBoost(tanks[i]);
+                }
+            }
+        }
+
+        function updateAutoHeal(now, dt) {
+            const tanks = [player].concat(bots);
+
+            for (let index = 0; index < tanks.length; index += 1) {
+                const tank = tanks[index];
+                if (!tank.alive || tank.hp >= tank.maxHp) {
+                    continue;
+                }
+
+                if (now - tank.lastHitAt >= CONFIG.autoHealDelay) {
+                    tank.hp = Math.min(tank.maxHp, tank.hp + (tank.regenRate * dt));
+                }
+            }
+        }
+
+        function resolveTankSeparation() {
+            const tanks = [player].concat(bots);
+
+            for (let i = 0; i < tanks.length; i += 1) {
+                const a = tanks[i];
+                if (!a.alive) {
+                    continue;
+                }
+
+                for (let j = i + 1; j < tanks.length; j += 1) {
+                    const b = tanks[j];
+                    if (!b.alive) {
+                        continue;
+                    }
+
+                    const dx = b.x - a.x;
+                    const dy = b.y - a.y;
+                    const distance = Math.hypot(dx, dy) || 0.0001;
+                    const minDist = a.radius + b.radius + 4;
+                    if (distance < minDist) {
+                        const push = (minDist - distance) * 0.5;
+                        const nx = dx / distance;
+                        const ny = dy / distance;
+                        a.x -= nx * push;
+                        a.y -= ny * push;
+                        b.x += nx * push;
+                        b.y += ny * push;
+                    }
+                }
+
+                if (boss) {
+                    const dx = boss.x - a.x;
+                    const dy = boss.y - a.y;
+                    const distance = Math.hypot(dx, dy) || 0.0001;
+                    const minDist = a.radius + boss.radius + 6;
+                    if (distance < minDist) {
+                        const push = minDist - distance;
+                        const nx = dx / distance;
+                        const ny = dy / distance;
+                        a.x -= nx * push;
+                        a.y -= ny * push;
+                    }
+                }
+
+                for (let shieldIndex = 0; shieldIndex < bossEscorts.length; shieldIndex += 1) {
+                    const escort = bossEscorts[shieldIndex];
+                    const dx = escort.x - a.x;
+                    const dy = escort.y - a.y;
+                    const distance = Math.hypot(dx, dy) || 0.0001;
+                    const minDist = a.radius + escort.radius + 6;
+                    if (distance < minDist) {
+                        const push = minDist - distance;
+                        const nx = dx / distance;
+                        const ny = dy / distance;
+                        a.x -= nx * push;
+                        a.y -= ny * push;
+                    }
+                }
+            }
+        }
+
+        function damageShapeTarget(shape, damage, attacker, now) {
+            shape.hp -= damage;
+
+            if (attacker) {
+                healFromHit(attacker, now);
+            }
+
+            if (shape.hp <= 0) {
+                shape.alive = false;
+                if (attacker) {
+                    gainXp(attacker, shapeXpValue(shape, now));
+                }
+                resetShape(shape);
+            }
+        }
+
+        function damageTankTarget(tank, damage, attacker, now) {
+            tank.hp -= damage;
+            tank.lastHitAt = now;
+
+            if (attacker) {
+                healFromHit(attacker, now);
+            }
+
+            if (tank.hp <= 0) {
+                killTank(tank, attacker, now);
+            }
+        }
+
+        function damageBossTarget(damage, attacker, now) {
+            if (!boss) {
+                return;
+            }
+
+            boss.hp -= damage;
+            boss.lastHitBy = attacker;
+
+            if (attacker) {
+                healFromHit(attacker, now);
+            }
+
+            if (boss.hp <= 0) {
+                destroyBoss(now);
+            }
+        }
+
+        function damageBossEscort(escort, damage, attacker, now) {
+            escort.hp -= damage;
+            escort.lastHitBy = attacker;
+
+            if (attacker) {
+                healFromHit(attacker, now);
+            }
+        }
+
+        function damageBossShield(shield, damage) {
+            shield.hp -= damage;
+        }
+
+        function explodeBullet(bullet, now) {
+            if (!bullet.active) {
+                return;
+            }
+
+            const radius = bullet.explosiveRadius;
+            bullet.active = false;
+
+            if (!radius) {
+                return;
+            }
+
+            addExplosion(bullet.x, bullet.y, radius, bullet.explosionColor, now);
+
+            for (let i = 0; i < bossShields.length; i += 1) {
+                const shield = bossShields[i];
+                const hitDist = radius + shield.radius;
+                if (distSq(bullet.x, bullet.y, shield.x, shield.y) <= hitDist * hitDist) {
+                    damageBossShield(shield, bullet.explosionDamage);
+                }
+            }
+
+            for (let i = 0; i < bossEscorts.length; i += 1) {
+                const escort = bossEscorts[i];
+                const hitDist = radius + escort.radius;
+                if (distSq(bullet.x, bullet.y, escort.x, escort.y) <= hitDist * hitDist) {
+                    damageBossEscort(escort, bullet.explosionDamage, bullet.owner, now);
+                }
+            }
+
+            if (boss && !bullet.isBoss && bullet.owner !== boss) {
+                const bossHitDist = radius + boss.radius;
+                if (distSq(bullet.x, bullet.y, boss.x, boss.y) <= bossHitDist * bossHitDist) {
+                    damageBossTarget(bullet.explosionDamage, bullet.owner, now);
+                }
+            }
+
+            for (let s = 0; s < shapes.length; s += 1) {
+                const shape = shapes[s];
+                if (!shape.alive) {
+                    continue;
+                }
+
+                const hitDist = radius + shape.r;
+                if (distSq(bullet.x, bullet.y, shape.x, shape.y) <= hitDist * hitDist) {
+                    damageShapeTarget(shape, bullet.explosionDamage, bullet.owner, now);
+                }
+            }
+
+            const tanks = [player].concat(bots);
+            for (let t = 0; t < tanks.length; t += 1) {
+                const tank = tanks[t];
+                if (!tank.alive || tank === bullet.owner) {
+                    continue;
+                }
+
+                const hitDist = radius + tank.radius;
+                if (distSq(bullet.x, bullet.y, tank.x, tank.y) <= hitDist * hitDist) {
+                    damageTankTarget(tank, bullet.explosionDamage, bullet.owner, now);
+                }
+            }
+        }
+
+        function hitShape(shape, bullet, now) {
+            if (bullet.explosiveRadius) {
+                explodeBullet(bullet, now);
+                return;
+            }
+
+            damageShapeTarget(shape, bullet.damage, bullet.owner, now);
+            bullet.active = false;
+        }
+
+        function hitTank(tank, bullet, now) {
+            if (bullet.explosiveRadius) {
+                explodeBullet(bullet, now);
+                return;
+            }
+
+            damageTankTarget(tank, bullet.damage, bullet.owner, now);
+            bullet.active = false;
+        }
+
+        function hitBoss(bullet, now) {
+            if (bullet.explosiveRadius) {
+                explodeBullet(bullet, now);
+                return;
+            }
+
+            damageBossTarget(bullet.damage, bullet.owner, now);
+            bullet.active = false;
+        }
+
+        function updateEffects(now) {
+            for (let i = beams.length - 1; i >= 0; i -= 1) {
+                if (now >= beams[i].expiresAt) {
+                    beams.splice(i, 1);
+                }
+            }
+
+            for (let i = explosions.length - 1; i >= 0; i -= 1) {
+                if (now >= explosions[i].expiresAt) {
+                    explosions.splice(i, 1);
+                }
+            }
+        }
+
+        function bounceBullet(bullet) {
+            if (!bullet.bouncesRemaining) {
+                return false;
+            }
+
+            let bounced = false;
+            if (bullet.x <= bullet.r) {
+                bullet.x = bullet.r;
+                bullet.vx = Math.abs(bullet.vx);
+                bounced = true;
+            } else if (bullet.x >= CONFIG.worldSize - bullet.r) {
+                bullet.x = CONFIG.worldSize - bullet.r;
+                bullet.vx = -Math.abs(bullet.vx);
+                bounced = true;
+            }
+
+            if (bullet.y <= bullet.r) {
+                bullet.y = bullet.r;
+                bullet.vy = Math.abs(bullet.vy);
+                bounced = true;
+            } else if (bullet.y >= CONFIG.worldSize - bullet.r) {
+                bullet.y = CONFIG.worldSize - bullet.r;
+                bullet.vy = -Math.abs(bullet.vy);
+                bounced = true;
+            }
+
+            if (bounced) {
+                bullet.bouncesRemaining -= 1;
+                bullet.startX = bullet.x;
+                bullet.startY = bullet.y;
+            }
+
+            return bounced;
+        }
+
+        function updateBullets(now, dt) {
+            for (let i = 0; i < bullets.length; i += 1) {
+                const bullet = bullets[i];
+                if (!bullet.active) {
+                    continue;
+                }
+
+                bullet.x += bullet.vx * dt;
+                bullet.y += bullet.vy * dt;
+
+                bounceBullet(bullet);
+
+                if (now >= bullet.expireAt ||
+                    bullet.x < -20 || bullet.y < -20 ||
+                    bullet.x > CONFIG.worldSize + 20 || bullet.y > CONFIG.worldSize + 20 ||
+                    distSq(bullet.x, bullet.y, bullet.startX, bullet.startY) > bullet.maxDistance * bullet.maxDistance) {
+                    if (bullet.explosiveRadius) {
+                        explodeBullet(bullet, now);
+                    } else {
+                        bullet.active = false;
+                    }
+                    continue;
+                }
+
+                if (!bullet.isBoss) {
+                    for (let shieldIndex = 0; shieldIndex < bossShields.length; shieldIndex += 1) {
+                        const shield = bossShields[shieldIndex];
+                        const shieldHitDist = bullet.r + shield.radius;
+                        if (distSq(bullet.x, bullet.y, shield.x, shield.y) <= shieldHitDist * shieldHitDist) {
+                            damageBossShield(shield, bullet.damage);
+                            bullet.active = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (!bullet.active) {
+                    continue;
+                }
+
+                if (boss && !bullet.isBoss && bullet.owner !== boss) {
+                    const bossHitDist = bullet.r + boss.radius;
+                    if (distSq(bullet.x, bullet.y, boss.x, boss.y) <= bossHitDist * bossHitDist) {
+                        hitBoss(bullet, now);
+                    }
+                }
+
+                if (!bullet.active) {
+                    continue;
+                }
+
+                if (!bullet.isBoss) {
+                    for (let escortIndex = 0; escortIndex < bossEscorts.length; escortIndex += 1) {
+                        const escort = bossEscorts[escortIndex];
+                        const hitDist = bullet.r + escort.radius;
+                        if (distSq(bullet.x, bullet.y, escort.x, escort.y) <= hitDist * hitDist) {
+                            damageBossEscort(escort, bullet.damage, bullet.owner, now);
+                            bullet.active = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (!bullet.active) {
+                    continue;
+                }
+
+                if (!bullet.isBoss) {
+                    for (let s = 0; s < shapes.length; s += 1) {
+                        const shape = shapes[s];
+                        if (!shape.alive) {
+                            continue;
+                        }
+                        const hitDist = bullet.r + shape.r;
+                        if (distSq(bullet.x, bullet.y, shape.x, shape.y) <= hitDist * hitDist) {
+                            hitShape(shape, bullet, now);
+                            break;
+                        }
+                    }
+                }
+
+                if (!bullet.active) {
+                    continue;
+                }
+
+                const tanks = [player].concat(bots);
+                for (let t = 0; t < tanks.length; t += 1) {
+                    const tank = tanks[t];
+                    if (!tank.alive || tank === bullet.owner) {
+                        continue;
+                    }
+
+                    const hitDist = bullet.r + tank.radius;
+                    if (distSq(bullet.x, bullet.y, tank.x, tank.y) <= hitDist * hitDist) {
+                        hitTank(tank, bullet, now);
+                        break;
+                    }
+                }
+            }
+        }
+
+        function updateShapes(dt) {
+            for (let i = 0; i < shapes.length; i += 1) {
+                shapes[i].rotation += shapes[i].spin * dt;
+            }
+        }
+
+        function updateCamera(now, dt) {
+            if (camera.tauntTarget && now >= camera.tauntUntil) {
+                clearCameraTaunt();
+            }
+
+            let follow = player.alive ? player : null;
+            camera.targetZoom = 1;
+
+            if (!follow && camera.tauntTarget && camera.tauntTarget.alive) {
+                follow = camera.tauntTarget;
+                camera.targetZoom = CONFIG.deathZoomScale;
+            } else if (!follow && player) {
+                follow = player;
+            }
+
+            if (!follow) {
+                return;
+            }
+
+            const lerp = 1 - Math.pow(0.001, dt);
+            const zoomLerp = 1 - Math.pow(0.0004, dt);
+            camera.x += (follow.x - camera.x) * lerp;
+            camera.y += (follow.y - camera.y) * lerp;
+            camera.zoom += (camera.targetZoom - camera.zoom) * zoomLerp;
+
+            const halfWidth = (canvasWidth * 0.5) / camera.zoom;
+            const halfHeight = (canvasHeight * 0.5) / camera.zoom;
+            camera.x = clamp(camera.x, halfWidth, CONFIG.worldSize - halfWidth);
+            camera.y = clamp(camera.y, halfHeight, CONFIG.worldSize - halfHeight);
+        }
+
+        function updateHud(now) {
+            const playerMutatorActive = tankHasMutator(player, now);
+            const playerMutatorDef = playerMutatorActive ? mutatorDef(player.mutatorType) : null;
+            const mutatorSeconds = playerMutatorActive ? Math.ceil((player.mutatorUntil - now) / 1000) : 0;
+            const playerBoostActive = tankHasPickupBoost(player, now);
+            const boostSeconds = playerBoostActive ? Math.ceil((player.pickupBoostUntil - now) / 1000) : 0;
+            const inHotZone = tankInsideHotZone(player);
+            const shapeBonusPercent = Math.max(0, Math.round((shapeXpBonusMultiplier(now) - 1) * 100));
+            const railChargePercent = player.advancedType === "railgun" ? Math.round(railgunChargeRatio(player, now) * 100) : 0;
+            const mutatorText = playerMutatorActive ? ` • ${player.mutatorLabel} ${mutatorSeconds}s` : "";
+            const boostText = playerBoostActive ? ` • ${player.pickupBoostLabel} ${boostSeconds}s` : "";
+            const railChargeText = player.advancedType === "railgun" ? ` • Charge ${railChargePercent}%` : "";
+
+            levelValue.textContent = player.level.toString();
+            hpValue.textContent = `HP ${Math.max(0, Math.ceil(player.hp))} / ${player.maxHp}`;
+            pointsValue.textContent = `Points ${player.skillPoints} • ${player.classLabel}${mutatorText}${boostText}${railChargeText}`;
+            xpFill.style.width = `${(player.xp / player.xpNext) * 100}%`;
+            xpText.textContent = inHotZone ?
+                `XP ${Math.floor(player.xp)} / ${player.xpNext} • HOT x3` :
+                `XP ${Math.floor(player.xp)} / ${player.xpNext} • Shapes +${shapeBonusPercent}%`;
+
+            statCounts.damage.textContent = player.statLevels.damage.toString();
+            statCounts.reload.textContent = player.statLevels.reload.toString();
+            statCounts.health.textContent = player.statLevels.health.toString();
+            statCounts.speed.textContent = player.statLevels.speed.toString();
+
+            for (let index = 0; index < statButtons.length; index += 1) {
+                statButtons[index].disabled = player.skillPoints <= 0 || !player.alive || evolutionOpen();
+            }
+
+            if (boss) {
+                bossHud.hidden = false;
+                const escortInfo = bossEscorts.length ? ` • +${bossEscorts.length} bosses` : "";
+                bossTitle.textContent = bossShields.length ?
+                    `${boss.name} Mk ${boss.tier} • ${boss.burstCount} burst • ${bossShields.length} shields${escortInfo}` :
+                    `${boss.name} Mk ${boss.tier} • ${boss.burstCount} burst${escortInfo}`;
+                bossFill.style.width = `${Math.max(0, (boss.hp / boss.maxHp) * 100)}%`;
+            } else {
+                bossHud.hidden = true;
+            }
+
+            if (eventNotice.text && now < eventNotice.until) {
+                noticeText.textContent = eventNotice.text;
+            } else if (!player.alive && camera.tauntTarget && now < camera.tauntUntil) {
+                noticeText.textContent = `${camera.tauntTarget.name} was your target. Enjoy the zoom.`;
+            } else if (!player.alive && now < deadUntil) {
+                noticeText.textContent = "You were destroyed. Respawning...";
+            } else if (evolutionOpen()) {
+                noticeText.textContent = pendingEvolutionTier === 2 ? "Choose your second evolution." : "Choose your evolution.";
+            } else if (shapeSwarm.active) {
+                noticeText.textContent = "Shape Swarm active: triangles and pentagons are spilling around you.";
+            } else if (hotZone.active) {
+                noticeText.textContent = "Hot zone: x3 XP, but it burns HP and drags bots in.";
+            } else if (playerBoostActive) {
+                noticeText.textContent = `${player.pickupBoostLabel}: map pickup active for ${boostSeconds}s.`;
+            } else if (playerMutatorActive && playerMutatorDef) {
+                noticeText.textContent = `${player.mutatorLabel}: ${playerMutatorDef.detail}`;
+            } else if (boss) {
+                noticeText.textContent = "Boss wave live. Kill the main boss for 3 levels and a mutator.";
+            } else if (player.classType && !player.advancedType && player.level >= 40) {
+                noticeText.textContent = "Push level 50 for your second evolution.";
+            } else if (nemesis.bot) {
+                noticeText.textContent = `${nemesis.bot.name} is marked Цель. Kill it for heal + 1 level.`;
+            } else if (aimInput.aiming || aimInput.active) {
+                noticeText.textContent = "Mouse or right stick aims. Hold to auto-fire.";
+            } else if (player.level >= 6) {
+                noticeText.textContent = "Higher level = stronger bullets and tank.";
+            } else {
+                noticeText.textContent = "Farm shapes. Arrows move on PC. Hold mouse or right stick to shoot.";
+            }
+        }
+
+        function drawGrid() {
+            const spacing = 72 * camera.zoom;
+            const offsetX = ((worldToScreenX(0) % spacing) + spacing) % spacing;
+            const offsetY = ((worldToScreenY(0) % spacing) + spacing) % spacing;
+
+            ctx.strokeStyle = "rgba(255,255,255,0.04)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+
+            for (let x = offsetX; x <= canvasWidth; x += spacing) {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvasHeight);
+            }
+
+            for (let y = offsetY; y <= canvasHeight; y += spacing) {
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvasWidth, y);
+            }
+
+            ctx.stroke();
+        }
+
+        function drawWorldBorder() {
+            const x = worldToScreenX(0);
+            const y = worldToScreenY(0);
+            ctx.strokeStyle = "rgba(255,255,255,0.1)";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, CONFIG.worldSize * camera.zoom, CONFIG.worldSize * camera.zoom);
+        }
+
+        function drawHotZone(now) {
+            if (!hotZone.active) {
+                return;
+            }
+
+            const sx = worldToScreenX(hotZone.x);
+            const sy = worldToScreenY(hotZone.y);
+            const radius = hotZone.radius * camera.zoom;
+            const pulse = 0.94 + (Math.sin(now * 0.008) * 0.06);
+            const gradient = ctx.createRadialGradient(sx, sy, radius * 0.22, sx, sy, radius * pulse);
+            gradient.addColorStop(0, "rgba(255, 128, 82, 0.34)");
+            gradient.addColorStop(0.6, "rgba(255, 106, 72, 0.14)");
+            gradient.addColorStop(1, "rgba(255, 106, 72, 0.02)");
+
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(sx, sy, radius * pulse, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = "rgba(255, 183, 112, 0.88)";
+            ctx.lineWidth = Math.max(2, 3 * camera.zoom);
+            ctx.beginPath();
+            ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.save();
+            ctx.setLineDash([12, 9]);
+            ctx.strokeStyle = "rgba(255, 220, 178, 0.58)";
+            ctx.lineWidth = Math.max(1.5, 2 * camera.zoom);
+            ctx.beginPath();
+            ctx.arc(sx, sy, radius * 0.72, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.fillStyle = "#ffd9b4";
+            ctx.font = "800 12px system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("HOT ZONE", sx, sy - radius - 14);
+        }
+
+        function drawBoost(boost, now) {
+            const sx = worldToScreenX(boost.x);
+            const sy = worldToScreenY(boost.y);
+            const radius = boost.r * camera.zoom;
+            const pulse = 1 + (Math.sin((now - boost.spawnedAt) * 0.01) * 0.09);
+
+            ctx.save();
+            ctx.globalAlpha = 0.18;
+            ctx.fillStyle = boost.color;
+            ctx.beginPath();
+            ctx.arc(sx, sy, radius * 1.85 * pulse, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(boost.rotation);
+            ctx.fillStyle = boost.color;
+            ctx.strokeStyle = boost.stroke;
+            ctx.lineWidth = Math.max(1.4, 2 * camera.zoom);
+            ctx.beginPath();
+            for (let i = 0; i < 4; i += 1) {
+                const angle = (Math.PI * 0.5 * i);
+                const x = Math.cos(angle) * radius;
+                const y = Math.sin(angle) * radius;
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.fillStyle = "#f4fbff";
+            ctx.font = "800 10px system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText(boost.label, sx, sy - (radius + 12));
+        }
+
+        function drawShape(shape) {
+            if (!shape.alive) {
+                return;
+            }
+
+            const sx = worldToScreenX(shape.x);
+            const sy = worldToScreenY(shape.y);
+            const sides = shape.sides;
+            const radius = shape.r * camera.zoom;
+
+            ctx.fillStyle = shape.color;
+            ctx.strokeStyle = shape.stroke;
+            ctx.lineWidth = Math.max(1.5, 2 * camera.zoom);
+            ctx.beginPath();
+
+            for (let i = 0; i < sides; i += 1) {
+                const angle = shape.rotation + ((Math.PI * 2) / sides) * i;
+                const x = sx + Math.cos(angle) * radius;
+                const y = sy + Math.sin(angle) * radius;
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        function drawBullet(bullet) {
+            ctx.fillStyle = bullet.color;
+            ctx.beginPath();
+            ctx.arc(worldToScreenX(bullet.x), worldToScreenY(bullet.y), bullet.r * camera.zoom, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawBeams(now) {
+            for (let i = 0; i < beams.length; i += 1) {
+                const beam = beams[i];
+                const life = Math.max(0, (beam.expiresAt - now) / 110);
+                ctx.save();
+                ctx.strokeStyle = beam.color;
+                ctx.globalAlpha = 0.25 + (life * 0.75);
+                ctx.lineWidth = Math.max(4, 8 * camera.zoom * life);
+                ctx.beginPath();
+                ctx.moveTo(worldToScreenX(beam.x1), worldToScreenY(beam.y1));
+                ctx.lineTo(worldToScreenX(beam.x2), worldToScreenY(beam.y2));
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        function drawExplosions(now) {
+            for (let i = 0; i < explosions.length; i += 1) {
+                const explosion = explosions[i];
+                const life = Math.max(0, (explosion.expiresAt - now) / 180);
+                const radius = explosion.radius * camera.zoom * (1.15 - (life * 0.25));
+                ctx.save();
+                ctx.strokeStyle = explosion.color;
+                ctx.globalAlpha = 0.18 + (life * 0.34);
+                ctx.lineWidth = Math.max(2, 5 * camera.zoom * life);
+                ctx.beginPath();
+                ctx.arc(worldToScreenX(explosion.x), worldToScreenY(explosion.y), radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        function drawBadge(text, x, y, fill, stroke) {
+            ctx.save();
+            ctx.font = "800 11px system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif";
+            ctx.textAlign = "center";
+            const textWidth = ctx.measureText(text).width;
+            const width = textWidth + 14;
+            const height = 20;
+            const left = x - (width * 0.5);
+            const top = y - height;
+            const radius = 10;
+
+            ctx.fillStyle = fill;
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(left + radius, top);
+            ctx.lineTo(left + width - radius, top);
+            ctx.arcTo(left + width, top, left + width, top + radius, radius);
+            ctx.lineTo(left + width, top + height - radius);
+            ctx.arcTo(left + width, top + height, left + width - radius, top + height, radius);
+            ctx.lineTo(left + radius, top + height);
+            ctx.arcTo(left, top + height, left, top + height - radius, radius);
+            ctx.lineTo(left, top + radius);
+            ctx.arcTo(left, top, left + radius, top, radius);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = "#07111c";
+            ctx.fillText(text, x, y - 6);
+            ctx.restore();
+        }
+
+        function drawTankBadges(tank, sx, sy, bodyRadius, now) {
+            let badgeY = sy - bodyRadius - 14;
+
+            if (isNemesis(tank)) {
+                const markerRadius = bodyRadius + 10;
+                ctx.save();
+                ctx.strokeStyle = "rgba(255, 125, 96, 0.95)";
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.arc(sx, sy, markerRadius, 0, Math.PI * 2);
+                ctx.moveTo(sx - markerRadius - 8, sy);
+                ctx.lineTo(sx - markerRadius + 4, sy);
+                ctx.moveTo(sx + markerRadius - 4, sy);
+                ctx.lineTo(sx + markerRadius + 8, sy);
+                ctx.moveTo(sx, sy - markerRadius - 8);
+                ctx.lineTo(sx, sy - markerRadius + 4);
+                ctx.moveTo(sx, sy + markerRadius - 4);
+                ctx.lineTo(sx, sy + markerRadius + 8);
+                ctx.stroke();
+                ctx.restore();
+
+                drawBadge("Цель", sx, badgeY, "#ff8965", "rgba(255,255,255,0.18)");
+                badgeY -= 24;
+            }
+
+            if (tankHasMutator(tank, now)) {
+                drawBadge(tank.mutatorLabel, sx, badgeY, tank.mutatorColor, "rgba(255,255,255,0.14)");
+                badgeY -= 24;
+            }
+
+            if (tankHasPickupBoost(tank, now)) {
+                drawBadge(tank.pickupBoostLabel, sx, badgeY, tank.pickupBoostColor, "rgba(255,255,255,0.14)");
+            }
+        }
+
+        function drawTank(tank, now) {
+            if (!tank.alive) {
+                return;
+            }
+
+            const sx = worldToScreenX(tank.x);
+            const sy = worldToScreenY(tank.y);
+            const barrelLength = tank.barrelLength * camera.zoom;
+            const barrelWidth = 12 * camera.zoom;
+            const bodyRadius = tank.radius * camera.zoom;
+
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(tank.barrelAngle);
+            ctx.fillStyle = tank.barrelColor;
+            ctx.fillRect(0, -barrelWidth * 0.5, barrelLength, barrelWidth);
+            ctx.restore();
+
+            ctx.fillStyle = tank.bodyColor;
+            ctx.beginPath();
+            ctx.arc(sx, sy, bodyRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = "rgba(255,255,255,0.16)";
+            ctx.lineWidth = Math.max(1.5, 2 * camera.zoom);
+            ctx.stroke();
+
+            drawTankBadges(tank, sx, sy, bodyRadius, now);
+        }
+
+        function drawBoss() {
+            if (!boss) {
+                return;
+            }
+
+            const sx = worldToScreenX(boss.x);
+            const sy = worldToScreenY(boss.y);
+            const tailWidth = 42 * camera.zoom;
+            const tailHeight = 12 * camera.zoom;
+            const rotorReach = 36 * camera.zoom;
+            const barrelWidth = 16 * camera.zoom;
+            const barrelLength = boss.barrelLength * camera.zoom;
+            const bodyRadius = boss.radius * camera.zoom;
+
+            ctx.save();
+            ctx.translate(sx, sy);
+
+            ctx.fillStyle = boss.bodyColor;
+            ctx.fillRect(-14 * camera.zoom, -6 * camera.zoom, -tailWidth, tailHeight);
+
+            ctx.rotate(boss.rotor);
+            ctx.strokeStyle = "rgba(255,255,255,0.55)";
+            ctx.lineWidth = Math.max(2, 4 * camera.zoom);
+            ctx.beginPath();
+            ctx.moveTo(-rotorReach, 0);
+            ctx.lineTo(rotorReach, 0);
+            ctx.moveTo(0, -rotorReach);
+            ctx.lineTo(0, rotorReach);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.save();
+            ctx.translate(sx, sy);
+            ctx.rotate(boss.barrelAngle);
+            ctx.fillStyle = boss.barrelColor;
+            ctx.fillRect(0, -barrelWidth * 0.5, barrelLength, barrelWidth);
+            ctx.restore();
+
+            ctx.fillStyle = boss.bodyColor;
+            ctx.beginPath();
+            ctx.arc(sx, sy, bodyRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = "rgba(255,255,255,0.2)";
+            ctx.lineWidth = Math.max(1.5, 3 * camera.zoom);
+            ctx.stroke();
+        }
+
+        function drawBossEscorts() {
+            for (let i = 0; i < bossEscorts.length; i += 1) {
+                const escort = bossEscorts[i];
+                const sx = worldToScreenX(escort.x);
+                const sy = worldToScreenY(escort.y);
+                const bodyRadius = escort.radius * camera.zoom;
+                const barrelLength = escort.barrelLength * camera.zoom;
+                const barrelWidth = 10 * camera.zoom;
+
+                ctx.save();
+                ctx.translate(sx, sy);
+                ctx.rotate(escort.barrelAngle);
+                ctx.fillStyle = escort.barrelColor;
+                ctx.fillRect(0, -barrelWidth * 0.5, barrelLength, barrelWidth);
+                ctx.restore();
+
+                ctx.fillStyle = escort.bodyColor;
+                ctx.beginPath();
+                ctx.arc(sx, sy, bodyRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = "rgba(255,255,255,0.18)";
+                ctx.lineWidth = Math.max(1.2, 2 * camera.zoom);
+                ctx.stroke();
+            }
+        }
+
+        function drawBossShields() {
+            for (let i = 0; i < bossShields.length; i += 1) {
+                const shield = bossShields[i];
+                const sx = worldToScreenX(shield.x);
+                const sy = worldToScreenY(shield.y);
+                const radius = shield.radius * camera.zoom;
+
+                ctx.fillStyle = "#4c86ff";
+                ctx.strokeStyle = "#cfdcff";
+                ctx.lineWidth = Math.max(1.5, 2.2 * camera.zoom);
+                ctx.beginPath();
+
+                for (let side = 0; side < 5; side += 1) {
+                    const angle = shield.rotation + ((Math.PI * 2) / 5) * side;
+                    const x = sx + Math.cos(angle) * radius;
+                    const y = sy + Math.sin(angle) * radius;
+                    if (side === 0) {
+                        ctx.moveTo(x, y);
+                    } else {
+                        ctx.lineTo(x, y);
+                    }
+                }
+
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+            }
+        }
+
+        // Render order stays intentionally simple and cheap.
+        function render() {
+            const now = performance.now();
+            ctx.fillStyle = "#0b111b";
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+            drawGrid();
+            drawWorldBorder();
+            drawHotZone(now);
+
+            for (let i = 0; i < shapes.length; i += 1) {
+                drawShape(shapes[i]);
+            }
+
+            for (let i = 0; i < boosts.length; i += 1) {
+                drawBoost(boosts[i], now);
+            }
+
+            for (let i = 0; i < bullets.length; i += 1) {
+                if (bullets[i].active) {
+                    drawBullet(bullets[i]);
+                }
+            }
+
+            drawExplosions(now);
+            drawBeams(now);
+
+            drawBossShields();
+            drawBossEscorts();
+            drawBoss();
+
+            for (let i = 0; i < bots.length; i += 1) {
+                drawTank(bots[i], now);
+            }
+            drawTank(player, now);
+        }
+
+        function handleStickMove(state, input, stickEl, clientX, clientY) {
+            const dx = clientX - state.x;
+            const dy = clientY - state.y;
+            const dist = Math.hypot(dx, dy);
+            const limit = state.radius;
+            const scale = dist > limit ? (limit / dist) : 1;
+            const px = dx * scale;
+            const py = dy * scale;
+
+            stickEl.style.transform = `translate3d(${px}px, ${py}px, 0)`;
+            input.x = clamp(px / limit, -1, 1);
+            input.y = clamp(py / limit, -1, 1);
+        }
+
+        function resetStick(state, input, stickEl) {
+            state.pointerId = null;
+            input.x = 0;
+            input.y = 0;
+            input.active = false;
+            stickEl.style.transform = "translate3d(0, 0, 0)";
+        }
+
+        function bindPad(pad, stickEl, state, input, syncInput) {
+            pad.addEventListener("pointerdown", function (event) {
+                const rect = pad.getBoundingClientRect();
+                state.pointerId = event.pointerId;
+                state.x = rect.left + (rect.width * 0.5);
+                state.y = rect.top + (rect.height * 0.5);
+                state.radius = rect.width * 0.34;
+                input.active = true;
+                pad.setPointerCapture(event.pointerId);
+                handleStickMove(state, input, stickEl, event.clientX, event.clientY);
+                syncInput();
+            });
+
+            pad.addEventListener("pointermove", function (event) {
+                if (state.pointerId === event.pointerId) {
+                    handleStickMove(state, input, stickEl, event.clientX, event.clientY);
+                    syncInput();
+                }
+            });
+
+            pad.addEventListener("pointerup", function (event) {
+                if (state.pointerId === event.pointerId) {
+                    resetStick(state, input, stickEl);
+                    syncInput();
+                }
+            });
+
+            pad.addEventListener("pointercancel", function (event) {
+                if (state.pointerId === event.pointerId) {
+                    resetStick(state, input, stickEl);
+                    syncInput();
+                }
+            });
+        }
+
+        function setKeyboardMove(code, pressed) {
+            if (code === "ArrowLeft") {
+                keyboardMoveState.left = pressed;
+            } else if (code === "ArrowRight") {
+                keyboardMoveState.right = pressed;
+            } else if (code === "ArrowUp") {
+                keyboardMoveState.up = pressed;
+            } else if (code === "ArrowDown") {
+                keyboardMoveState.down = pressed;
+            } else {
+                return false;
+            }
+
+            syncMoveInput();
+            return true;
+        }
+
+        function updateMouseAim(event) {
+            if (!player) {
+                return;
+            }
+
+            const rect = canvas.getBoundingClientRect();
+            const pointerX = event.clientX - rect.left;
+            const pointerY = event.clientY - rect.top;
+            const dx = pointerX - worldToScreenX(player.x);
+            const dy = pointerY - worldToScreenY(player.y);
+            const vector = normalizeVector(dx, dy);
+
+            mouseAimState.x = vector.x;
+            mouseAimState.y = vector.y;
+            mouseAimState.aiming = Math.hypot(dx, dy) > 4;
+            syncAimInput();
+        }
+
+        function clearDesktopInput() {
+            keyboardMoveState.left = false;
+            keyboardMoveState.right = false;
+            keyboardMoveState.up = false;
+            keyboardMoveState.down = false;
+            mouseAimState.x = 0;
+            mouseAimState.y = 0;
+            mouseAimState.aiming = false;
+            mouseAimState.firing = false;
+            syncMoveInput();
+            syncAimInput();
+        }
+
+        function init() {
+            const now = performance.now();
+            resize();
+            createShapes();
+            createActors(now);
+            syncMoveInput();
+            syncAimInput();
+            camera.x = player.x;
+            camera.y = player.y;
+            updateHud(now);
+            requestAnimationFrame(loop);
+        }
+
+        function loop(now) {
+            const dt = Math.min((now - lastFrame) / 1000, 0.05);
+            lastFrame = now;
+
+            if (evolutionOpen()) {
+                updateHud(now);
+                render();
+                requestAnimationFrame(loop);
+                return;
+            }
+
+            updatePlayer(now, dt);
+            updateShapeSwarm(now);
+            updateBots(now, dt);
+            updateBoosts(now, dt);
+            updateNemesis(now);
+            updateBoss(now, dt);
+            updateBossEscorts(now, dt);
+            updateBossShields(dt);
+            resolveTankSeparation();
+            updateBullets(now, dt);
+            updateShapes(dt);
+            updateHotZone(now, dt);
+            updateMutators(now);
+            updateEffects(now);
+            updateAutoHeal(now, dt);
+            updateCamera(now, dt);
+
+            hudTimer += dt * 1000;
+            if (hudTimer >= CONFIG.hudRate) {
+                hudTimer = 0;
+                updateHud(now);
+            }
+
+            noticeTimer += dt * 1000;
+            if (noticeTimer >= CONFIG.noticeRate) {
+                noticeTimer = 0;
+                updateHud(now);
+            }
+
+            render();
+            requestAnimationFrame(loop);
+        }
+
+        bindPad(movePad, moveStick, moveTouch, moveTouchInput, syncMoveInput);
+        bindPad(aimPad, aimStick, aimTouch, aimTouchInput, syncAimInput);
+
+        window.addEventListener("keydown", function (event) {
+            if (setKeyboardMove(event.code, true)) {
+                event.preventDefault();
+            }
+        });
+
+        window.addEventListener("keyup", function (event) {
+            if (setKeyboardMove(event.code, false)) {
+                event.preventDefault();
+            }
+        });
+
+        canvas.addEventListener("mousemove", updateMouseAim);
+        canvas.addEventListener("mousedown", function (event) {
+            if (event.button !== 0) {
+                return;
+            }
+
+            updateMouseAim(event);
+            mouseAimState.firing = true;
+            syncAimInput();
+        });
+
+        canvas.addEventListener("mouseleave", function () {
+            if (!mouseAimState.firing) {
+                mouseAimState.x = 0;
+                mouseAimState.y = 0;
+                mouseAimState.aiming = false;
+                syncAimInput();
+            }
+        });
+
+        window.addEventListener("mouseup", function (event) {
+            if (event.button !== 0) {
+                return;
+            }
+
+            mouseAimState.firing = false;
+            syncAimInput();
+        });
+
+        for (let index = 0; index < statButtons.length; index += 1) {
+            statButtons[index].addEventListener("click", function () {
+                spendStatPoint(statButtons[index].dataset.stat);
+                updateHud(performance.now());
+            });
+        }
+
+        for (let index = 0; index < choiceButtons.length; index += 1) {
+            choiceButtons[index].addEventListener("click", function () {
+                chooseEvolution(choiceButtons[index].dataset.class);
+                updateHud(performance.now());
+            });
+        }
+
+        window.addEventListener("resize", resize);
+        document.addEventListener("visibilitychange", function () {
+            lastFrame = performance.now();
+        });
+        window.addEventListener("blur", function () {
+            clearDesktopInput();
+            lastFrame = performance.now();
+        });
+
+        init();
+    </script>
+</body>
+</html>

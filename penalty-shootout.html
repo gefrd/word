@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Penalty Shootout</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: radial-gradient(ellipse at 50% 100%, #1a4a1a 0%, #0d2b0d 60%, #061206 100%);
+            overflow: hidden;
+            touch-action: none;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #header {
+            width: 100%;
+            max-width: 480px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            color: #fff;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 0 0 8px rgba(255,255,255,0.5);
+            z-index: 10;
+        }
+
+        #header .score-box {
+            background: rgba(0,0,0,0.5);
+            border: 2px solid #4cff4c;
+            border-radius: 8px;
+            padding: 5px 14px;
+            box-shadow: 0 0 10px rgba(76,255,76,0.3);
+        }
+
+        #header .kicks-box {
+            display: flex;
+            gap: 6px;
+        }
+
+        .kick-dot {
+            width: 14px; height: 14px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            background: transparent;
+            transition: background 0.2s;
+        }
+        .kick-dot.scored { background: #4cff4c; border-color: #4cff4c; box-shadow: 0 0 6px #4cff4c; }
+        .kick-dot.missed { background: #ff4c4c; border-color: #ff4c4c; box-shadow: 0 0 6px #ff4c4c; }
+
+        #gameCanvas {
+            display: block;
+            max-width: 480px;
+            width: 100%;
+            flex: 1;
+        }
+
+        #message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 52px;
+            font-weight: bold;
+            text-align: center;
+            pointer-events: none;
+            text-shadow: 0 0 20px currentColor;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 20;
+        }
+
+        #instruction {
+            position: absolute;
+            bottom: 180px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,0.7);
+            font-size: 14px;
+            text-align: center;
+            z-index: 10;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse { 0%,100%{opacity:0.7} 50%{opacity:1} }
+
+        #gameOver {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.95);
+            border: 3px solid #4cff4c;
+            border-radius: 16px;
+            padding: 35px 40px;
+            text-align: center;
+            display: none;
+            box-shadow: 0 0 40px rgba(76,255,76,0.4);
+            z-index: 100;
+            min-width: 280px;
+        }
+
+        #gameOver h1 { color: #4cff4c; font-size: 36px; margin-bottom: 15px; text-shadow: 0 0 12px #4cff4c; }
+        #gameOver .result { font-size: 48px; margin: 10px 0; }
+        #gameOver p { color: #fff; font-size: 18px; margin: 8px 0; }
+
+        #restartBtn {
+            margin-top: 20px;
+            padding: 13px 40px;
+            background: #4cff4c;
+            color: #000;
+            border: none;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(76,255,76,0.5);
+            transition: transform 0.1s;
+        }
+        #restartBtn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div class="score-box">⚽ <span id="scoreDisp">0</span> / 5</div>
+        <div class="kicks-box" id="kicksBox"></div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="message"></div>
+    <div id="instruction">TAP where you want to shoot!</div>
+
+    <div id="gameOver">
+        <h1>FINAL SCORE</h1>
+        <div class="result" id="resultEmoji">🏆</div>
+        <p id="finalResult">You scored 5 / 5</p>
+        <p id="finalGrade">PERFECT!</p>
+        <button id="restartBtn">PLAY AGAIN</button>
+    </div>
+
+    <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = Math.min(window.innerWidth, 480);
+    canvas.height = window.innerHeight - 70;
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(type) {
+        const now = audioCtx.currentTime;
+        if (type === 'goal') {
+            [523,659,784,1047].forEach((f,i) => {
+                const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+                o.connect(g); g.connect(audioCtx.destination);
+                o.frequency.value = f; g.gain.setValueAtTime(0.15, now+i*0.1);
+                g.gain.exponentialRampToValueAtTime(0.001, now+i*0.1+0.3);
+                o.start(now+i*0.1); o.stop(now+i*0.1+0.3);
+            });
+        } else if (type === 'save') {
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.connect(g); g.connect(audioCtx.destination);
+            o.type = 'sawtooth'; o.frequency.setValueAtTime(300, now);
+            o.frequency.exponentialRampToValueAtTime(80, now+0.3);
+            g.gain.setValueAtTime(0.15, now); g.gain.exponentialRampToValueAtTime(0.001, now+0.3);
+            o.start(now); o.stop(now+0.35);
+        } else if (type === 'kick') {
+            const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+            o.connect(g); g.connect(audioCtx.destination);
+            o.type = 'triangle'; o.frequency.value = 120;
+            g.gain.setValueAtTime(0.3, now); g.gain.exponentialRampToValueAtTime(0.001, now+0.1);
+            o.start(now); o.stop(now+0.12);
+        }
+    }
+
+    // Layout
+    const goalTop    = canvas.height * 0.18;
+    const goalBottom = canvas.height * 0.48;
+    const goalLeft   = canvas.width  * 0.12;
+    const goalRight  = canvas.width  * 0.88;
+    const goalW      = goalRight - goalLeft;
+    const goalH      = goalBottom - goalTop;
+
+    // GK
+    const gk = { x: canvas.width/2, y: goalTop + goalH*0.4, w: 55, h: 75, targetX: canvas.width/2, diving: false, diveDir: 0 };
+
+    // Ball
+    const ballStart = { x: canvas.width/2, y: canvas.height * 0.82 };
+    const ball = { x: ballStart.x, y: ballStart.y, r: 13, targetX: 0, targetY: 0, flying: false, progress: 0, scored: false, saved: false };
+
+    let state = 'waiting'; // waiting | flying | result
+    let kicks = 0;
+    let score = 0;
+    let results = [];
+    let animId;
+    let msgTimeout;
+
+    function buildKickDots() {
+        const box = document.getElementById('kicksBox');
+        box.innerHTML = '';
+        for (let i = 0; i < 5; i++) {
+            const d = document.createElement('div');
+            d.className = 'kick-dot';
+            d.id = 'dot-' + i;
+            box.appendChild(d);
+        }
+    }
+
+    function updateDot(idx, type) {
+        const d = document.getElementById('dot-' + idx);
+        if (d) d.className = 'kick-dot ' + type;
+    }
+
+    function showMessage(text, color, duration = 900) {
+        const el = document.getElementById('message');
+        el.textContent = text;
+        el.style.color = color;
+        el.style.opacity = '1';
+        clearTimeout(msgTimeout);
+        msgTimeout = setTimeout(() => { el.style.opacity = '0'; }, duration);
+    }
+
+    function easeInOutQuad(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    function shootBall(targetX, targetY) {
+        if (state !== 'waiting') return;
+        state = 'flying';
+        ball.targetX = targetX;
+        ball.targetY = targetY;
+        ball.flying = true;
+        ball.progress = 0;
+        ball.scored = false;
+        ball.saved = false;
+        document.getElementById('instruction').style.display = 'none';
+
+        // GK decides to dive
+        const diveRoll = Math.random();
+        if (diveRoll < 0.35) {
+            gk.diveDir = -1; // left
+        } else if (diveRoll < 0.70) {
+            gk.diveDir = 1; // right
+        } else {
+            gk.diveDir = 0; // center
+        }
+        gk.diving = true;
+        gk.targetX = gk.diveDir === -1 ? goalLeft + goalW*0.18 :
+                     gk.diveDir === 1  ? goalLeft + goalW*0.82 :
+                     canvas.width / 2;
+
+        playSound('kick');
+    }
+
+    function update() {
+        if (state === 'flying') {
+            ball.progress = Math.min(1, ball.progress + 0.025);
+            const t = easeInOutQuad(ball.progress);
+            ball.x = lerp(ballStart.x, ball.targetX, t);
+            ball.y = lerp(ballStart.y, ball.targetY, t);
+
+            // GK dive
+            gk.x = lerp(gk.x, gk.targetX, 0.08);
+
+            if (ball.progress >= 1) {
+                // Check: is ball inside goal?
+                const inGoal = ball.x > goalLeft + 5 && ball.x < goalRight - 5 &&
+                               ball.y > goalTop + 5 && ball.y < goalBottom - 5;
+                // Check: did GK catch it?
+                const gkDist = Math.hypot(ball.x - gk.x, ball.y - gk.y);
+                const caught = gkDist < 55;
+
+                if (inGoal && !caught) {
+                    ball.scored = true;
+                    score++;
+                    document.getElementById('scoreDisp').textContent = score;
+                    showMessage('GOAL! ⚽', '#4cff4c');
+                    playSound('goal');
+                    updateDot(kicks, 'scored');
+                    results.push('scored');
+                } else {
+                    ball.saved = true;
+                    showMessage(inGoal ? 'SAVED! 🧤' : 'MISSED! ❌', '#ff4c4c');
+                    playSound('save');
+                    updateDot(kicks, 'missed');
+                    results.push('missed');
+                }
+
+                state = 'result';
+                kicks++;
+                setTimeout(() => {
+                    if (kicks >= 5) {
+                        endGame();
+                    } else {
+                        resetBall();
+                    }
+                }, 1400);
+            }
+        }
+    }
+
+    function resetBall() {
+        ball.x = ballStart.x; ball.y = ballStart.y;
+        ball.flying = false; ball.progress = 0;
+        ball.scored = false; ball.saved = false;
+        gk.x = canvas.width/2; gk.targetX = canvas.width/2;
+        gk.diving = false;
+        state = 'waiting';
+        document.getElementById('instruction').style.display = 'block';
+    }
+
+    function endGame() {
+        state = 'done';
+        const el = document.getElementById('gameOver');
+        document.getElementById('finalResult').textContent = `You scored ${score} / 5`;
+        const grades = ['😬 Terrible!','😅 Poor','🙂 Not bad!','😎 Great!','🔥 Excellent!','🏆 PERFECT!'];
+        document.getElementById('finalGrade').textContent = grades[score];
+        document.getElementById('resultEmoji').textContent = score === 5 ? '🏆' : score >= 3 ? '⚽' : '😬';
+        el.style.display = 'block';
+    }
+
+    // --- DRAW ---
+    function draw() {
+        ctx.fillStyle = '#1a5c1a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Field lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(canvas.width/2, canvas.height*0.72, canvas.height*0.22, 0, Math.PI*2);
+        ctx.stroke();
+
+        // Penalty spot
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath();
+        ctx.arc(canvas.width/2, canvas.height*0.72, 4, 0, Math.PI*2);
+        ctx.fill();
+
+        // Goal back shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.fillRect(goalLeft+4, goalTop+4, goalW-8, goalH-8);
+
+        // Goal net
+        ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+        ctx.lineWidth = 1;
+        for (let x = goalLeft; x <= goalRight; x += 18) {
+            ctx.beginPath(); ctx.moveTo(x, goalTop); ctx.lineTo(x, goalBottom); ctx.stroke();
+        }
+        for (let y = goalTop; y <= goalBottom; y += 18) {
+            ctx.beginPath(); ctx.moveTo(goalLeft, y); ctx.lineTo(goalRight, y); ctx.stroke();
+        }
+
+        // Goal frame
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 5;
+        ctx.shadowBlur = 10; ctx.shadowColor = 'rgba(255,255,255,0.4)';
+        ctx.strokeRect(goalLeft, goalTop, goalW, goalH);
+        ctx.shadowBlur = 0;
+
+        // Goal posts (3D top)
+        ctx.fillStyle = '#e0e0e0';
+        ctx.fillRect(goalLeft-4, goalTop-4, 8, goalH+4);
+        ctx.fillRect(goalRight-4, goalTop-4, 8, goalH+4);
+        ctx.fillRect(goalLeft-4, goalTop-4, goalW+8, 8);
+
+        // Draw GK
+        drawGK();
+
+        // Draw Ball
+        drawBall();
+
+        // Aim zone when waiting
+        if (state === 'waiting') {
+            ctx.strokeStyle = 'rgba(255,255,0,0.25)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 4]);
+            ctx.strokeRect(goalLeft+6, goalTop+6, goalW-12, goalH-12);
+            ctx.setLineDash([]);
+
+            // Zone labels
+            ctx.fillStyle = 'rgba(255,255,255,0.18)';
+            ctx.font = 'bold 13px Courier New';
+            ctx.textAlign = 'center';
+        }
+    }
+
+    function drawGK() {
+        const x = gk.x, y = gk.y;
+
+        // Body
+        ctx.fillStyle = '#ff9900';
+        ctx.shadowBlur = 8; ctx.shadowColor = '#ff9900';
+        ctx.beginPath();
+        ctx.roundRect(x - gk.w/2, y - gk.h/2, gk.w, gk.h * 0.55, 6);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Shorts
+        ctx.fillStyle = '#003399';
+        ctx.fillRect(x - gk.w/2 + 4, y - gk.h/2 + gk.h*0.52, gk.w - 8, gk.h*0.22);
+
+        // Legs
+        ctx.fillStyle = '#f5c0a0';
+        ctx.fillRect(x - gk.w/2 + 4, y - gk.h/2 + gk.h*0.72, 18, gk.h*0.25);
+        ctx.fillRect(x + gk.w/2 - 22, y - gk.h/2 + gk.h*0.72, 18, gk.h*0.25);
+
+        // Head
+        ctx.fillStyle = '#f5c0a0';
+        ctx.beginPath();
+        ctx.arc(x, y - gk.h/2 - 14, 15, 0, Math.PI*2);
+        ctx.fill();
+
+        // Arms (spread)
+        ctx.fillStyle = '#ff9900';
+        ctx.fillRect(x - gk.w/2 - 16, y - gk.h/2 + 8, 18, 10);
+        ctx.fillRect(x + gk.w/2 - 2, y - gk.h/2 + 8, 18, 10);
+
+        // Gloves
+        ctx.fillStyle = '#ffdd00';
+        ctx.beginPath(); ctx.arc(x - gk.w/2 - 16, y - gk.h/2 + 13, 9, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x + gk.w/2 + 16, y - gk.h/2 + 13, 9, 0, Math.PI*2); ctx.fill();
+    }
+
+    function drawBall() {
+        const x = ball.x, y = ball.y, r = ball.r;
+
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath();
+        ctx.ellipse(x, y + r + 2, r * 0.9, r * 0.4, 0, 0, Math.PI*2);
+        ctx.fill();
+
+        // Ball
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = ball.flying ? 15 : 0;
+        ctx.shadowColor = '#fff';
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Pentagons
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.arc(x, y, r*0.3, 0, Math.PI*2); ctx.fill();
+        for (let i = 0; i < 5; i++) {
+            const a = (i / 5) * Math.PI*2 - Math.PI/2;
+            ctx.beginPath(); ctx.arc(x + Math.cos(a)*r*0.62, y + Math.sin(a)*r*0.62, r*0.22, 0, Math.PI*2); ctx.fill();
+        }
+    }
+
+    function gameLoop() {
+        update();
+        draw();
+        animId = requestAnimationFrame(gameLoop);
+    }
+
+    canvas.addEventListener('click', (e) => {
+        if (state !== 'waiting') return;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const rect = canvas.getBoundingClientRect();
+        const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+        if (y < goalTop - 20 || y > goalBottom + 30) return; // only shoot toward goal area
+        shootBall(x, Math.max(goalTop + 10, Math.min(y, goalBottom - 10)));
+    });
+
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (state !== 'waiting') return;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const rect = canvas.getBoundingClientRect();
+        const t = e.touches[0];
+        const x = (t.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (t.clientY - rect.top) * (canvas.height / rect.height);
+        shootBall(x, Math.max(goalTop + 10, Math.min(y, goalBottom - 10)));
+    }, { passive: false });
+
+    document.getElementById('restartBtn').addEventListener('click', () => {
+        score = 0; kicks = 0; results = [];
+        document.getElementById('scoreDisp').textContent = 0;
+        document.getElementById('gameOver').style.display = 'none';
+        document.getElementById('instruction').style.display = 'block';
+        buildKickDots();
+        resetBall();
+    });
+
+    buildKickDots();
+    gameLoop();
+    </script>
+</body>
+</html>

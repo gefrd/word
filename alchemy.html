@@ -1,0 +1,1920 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Alchemy 1000</title>
+<style>
+    :root {
+        --bg-top: #2f2115;
+        --bg-bottom: #120d09;
+        --panel: rgba(37, 24, 14, 0.96);
+        --panel-strong: rgba(53, 35, 21, 0.98);
+        --card: rgba(84, 56, 34, 0.92);
+        --card-soft: rgba(63, 42, 26, 0.92);
+        --accent: #f0b24f;
+        --accent-strong: #dd7b2d;
+        --line: rgba(240, 178, 79, 0.22);
+        --text: #fff3e0;
+        --muted: #d2b894;
+        --danger: #ff8f70;
+    }
+
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    input {
+        user-select: text;
+        -webkit-user-select: text;
+    }
+
+    body {
+        min-height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        font-family: "Trebuchet MS", Verdana, sans-serif;
+        color: var(--text);
+        background:
+            radial-gradient(circle at top, rgba(255, 198, 110, 0.16), transparent 34%),
+            linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+        touch-action: manipulation;
+    }
+
+    body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background:
+            linear-gradient(135deg, rgba(255, 224, 176, 0.04), transparent 55%),
+            repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 24px,
+                rgba(255, 219, 148, 0.025) 24px,
+                rgba(255, 219, 148, 0.025) 25px
+            );
+        opacity: 0.8;
+    }
+
+    #header {
+        position: relative;
+        z-index: 3;
+        display: grid;
+        gap: 8px;
+        padding: 12px 14px 10px;
+        background: linear-gradient(180deg, rgba(58, 39, 24, 0.98), rgba(31, 20, 12, 0.98));
+        border-bottom: 1px solid var(--line);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+        transition: background 0.22s ease, box-shadow 0.22s ease;
+    }
+
+    .header-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+    }
+
+    #title {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+    }
+
+    #title strong {
+        font-size: 22px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--accent);
+    }
+
+    #title span {
+        font-size: 11px;
+        color: var(--muted);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    #scoreboard {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
+
+    .stat {
+        min-width: 92px;
+        padding: 7px 10px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        text-align: right;
+    }
+
+    .stat-label {
+        display: block;
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .stat-value {
+        display: block;
+        margin-top: 2px;
+        font-size: 16px;
+        font-weight: 700;
+    }
+
+    #quest-strip {
+        display: flex;
+    }
+
+    #quest-card {
+        position: relative;
+        width: 100%;
+        display: grid;
+        gap: 6px;
+        padding: 9px 11px 10px;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 193, 101, 0.16);
+        background: linear-gradient(180deg, rgba(86, 59, 34, 0.7), rgba(42, 28, 19, 0.82));
+        box-shadow: inset 0 1px 0 rgba(255, 236, 205, 0.04);
+        overflow: hidden;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, transform 0.2s ease;
+    }
+
+    #quest-card::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 2px;
+        background: linear-gradient(90deg, rgba(240, 178, 79, 0), rgba(240, 178, 79, 0.7), rgba(240, 178, 79, 0));
+        opacity: 0.75;
+    }
+
+    #quest-card.riddle-mode {
+        border-color: rgba(132, 205, 255, 0.2);
+        background: linear-gradient(180deg, rgba(63, 61, 91, 0.68), rgba(35, 28, 39, 0.84));
+    }
+
+    #quest-card.fever {
+        border-color: rgba(255, 144, 96, 0.42);
+        background: linear-gradient(180deg, rgba(99, 46, 32, 0.82), rgba(50, 22, 16, 0.92));
+        box-shadow: 0 0 0 1px rgba(255, 151, 82, 0.12), 0 10px 26px rgba(87, 20, 10, 0.22);
+    }
+
+    .quest-head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .quest-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 22px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 214, 155, 0.12);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        white-space: nowrap;
+    }
+
+    #quest-badge {
+        color: var(--text);
+        background: rgba(240, 178, 79, 0.16);
+        border-color: rgba(240, 178, 79, 0.2);
+    }
+
+    #quest-card.riddle-mode #quest-badge {
+        background: rgba(121, 174, 255, 0.18);
+        border-color: rgba(121, 174, 255, 0.22);
+    }
+
+    #combo-chip.ready {
+        color: #ffe2a8;
+        border-color: rgba(255, 205, 126, 0.4);
+        box-shadow: inset 0 0 0 1px rgba(255, 205, 126, 0.12);
+    }
+
+    #fever-chip {
+        color: #ffd6bf;
+        background: rgba(255, 118, 72, 0.2);
+        border-color: rgba(255, 153, 102, 0.34);
+    }
+
+    #quest-text,
+    #quest-subtext {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    #quest-text {
+        -webkit-line-clamp: 2;
+        font-size: 14px;
+        line-height: 1.25;
+        font-weight: 700;
+        color: var(--text);
+    }
+
+    #quest-subtext {
+        -webkit-line-clamp: 2;
+        font-size: 11px;
+        line-height: 1.3;
+        color: var(--muted);
+    }
+
+    .quest-pulse {
+        animation: questPulse 0.52s ease-out;
+    }
+
+    @keyframes questPulse {
+        0% {
+            transform: scale(1);
+        }
+        35% {
+            transform: scale(1.02);
+        }
+        100% {
+            transform: scale(1);
+        }
+    }
+
+    #workspace {
+        position: relative;
+        flex: 1;
+        overflow: hidden;
+        touch-action: none;
+        background:
+            radial-gradient(circle at top center, rgba(255, 197, 112, 0.14), transparent 36%),
+            linear-gradient(180deg, rgba(53, 34, 20, 0.45), rgba(18, 13, 9, 0.08));
+        transition: background 0.22s ease;
+    }
+
+    #workspace::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+            radial-gradient(circle at 20% 20%, rgba(255, 178, 79, 0.07), transparent 18%),
+            radial-gradient(circle at 80% 24%, rgba(221, 123, 45, 0.06), transparent 14%),
+            radial-gradient(circle at 50% 80%, rgba(255, 255, 255, 0.02), transparent 22%);
+    }
+
+    #workspace::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0;
+        background: radial-gradient(circle at center, rgba(255, 226, 158, 0.26), rgba(255, 151, 100, 0.08) 28%, transparent 55%);
+        z-index: 1;
+    }
+
+    #workspace.flash::after {
+        animation: workspaceFlash 0.42s ease-out forwards;
+    }
+
+    @keyframes workspaceFlash {
+        0% {
+            opacity: 0;
+        }
+        25% {
+            opacity: 0.95;
+        }
+        100% {
+            opacity: 0;
+        }
+    }
+
+    #workspace-hint {
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2;
+        padding: 7px 12px;
+        border-radius: 999px;
+        background: rgba(25, 17, 11, 0.7);
+        border: 1px solid rgba(255, 196, 111, 0.15);
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        text-align: center;
+        pointer-events: none;
+        white-space: nowrap;
+    }
+
+    #toast {
+        position: absolute;
+        left: 50%;
+        bottom: 18px;
+        transform: translate(-50%, 10px);
+        z-index: 30;
+        max-width: min(90vw, 360px);
+        padding: 10px 14px;
+        border-radius: 16px;
+        background: rgba(20, 14, 9, 0.92);
+        border: 1px solid rgba(255, 193, 101, 0.18);
+        color: var(--text);
+        text-align: center;
+        font-size: 13px;
+        opacity: 0;
+        transition: opacity 0.16s ease, transform 0.16s ease;
+        pointer-events: none;
+    }
+
+    #toast.show {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+
+    #inventory-panel {
+        position: relative;
+        z-index: 3;
+        display: grid;
+        gap: 10px;
+        padding: 10px;
+        background: linear-gradient(180deg, var(--panel-strong), var(--panel));
+        border-top: 1px solid var(--line);
+    }
+
+    #inventory-tools {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    #inventory-search {
+        flex: 1;
+        min-width: 0;
+        height: 42px;
+        padding: 0 14px;
+        border: 1px solid rgba(255, 196, 111, 0.18);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        font: inherit;
+        outline: none;
+    }
+
+    #inventory-search::placeholder {
+        color: rgba(255, 243, 224, 0.48);
+    }
+
+    #inventory-meta {
+        min-width: 110px;
+        text-align: right;
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.25;
+    }
+
+    #inventory {
+        min-height: 186px;
+        display: grid;
+        grid-auto-flow: column;
+        grid-template-rows: repeat(2, 86px);
+        gap: 10px;
+        align-items: start;
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding-bottom: 4px;
+        touch-action: pan-x;
+        scroll-behavior: smooth;
+    }
+
+    #inventory::-webkit-scrollbar {
+        height: 6px;
+    }
+
+    #inventory::-webkit-scrollbar-thumb {
+        background: rgba(240, 178, 79, 0.5);
+        border-radius: 999px;
+    }
+
+    .inv-item {
+        width: 86px;
+        height: 86px;
+        padding: 7px 6px;
+        border-radius: 18px;
+        border: 1px solid rgba(255, 193, 101, 0.13);
+        background: linear-gradient(180deg, rgba(90, 60, 36, 0.92), rgba(53, 35, 22, 0.96));
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        cursor: pointer;
+    }
+
+    .inv-item:active {
+        transform: scale(0.96);
+    }
+
+    .inv-icon {
+        font-size: 28px;
+        line-height: 1;
+    }
+
+    .inv-name {
+        margin-top: 6px;
+        font-size: 10px;
+        line-height: 1.15;
+        font-weight: 700;
+        color: var(--text);
+    }
+
+    .element {
+        position: absolute;
+        width: 74px;
+        height: 74px;
+        padding: 6px;
+        border-radius: 22px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        transform: translate(-50%, -50%);
+        border: 1px solid rgba(255, 202, 129, 0.2);
+        background: linear-gradient(180deg, rgba(88, 58, 35, 0.92), rgba(42, 29, 19, 0.94));
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
+        touch-action: none;
+        cursor: grab;
+        z-index: 5;
+    }
+
+    .element.dragging {
+        z-index: 20;
+        cursor: grabbing;
+        transform: translate(-50%, -50%) scale(1.05);
+        border-color: rgba(255, 206, 112, 0.46);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+    }
+
+    .element.magnetized {
+        border-color: rgba(255, 174, 101, 0.58);
+        box-shadow: 0 0 0 1px rgba(255, 187, 120, 0.2), 0 0 24px rgba(255, 141, 87, 0.2);
+    }
+
+    .element.reward-pulse {
+        animation: rewardPulse 0.62s ease-out;
+    }
+
+    @keyframes rewardPulse {
+        0% {
+            transform: translate(-50%, -50%) scale(1);
+        }
+        35% {
+            transform: translate(-50%, -50%) scale(1.12);
+        }
+        100% {
+            transform: translate(-50%, -50%) scale(1);
+        }
+    }
+
+    .el-icon {
+        font-size: 31px;
+        line-height: 1;
+        pointer-events: none;
+    }
+
+    .el-name {
+        margin-top: 4px;
+        max-width: 60px;
+        font-size: 9px;
+        line-height: 1.1;
+        font-weight: 700;
+        color: var(--text);
+        pointer-events: none;
+    }
+
+    .pop-anim {
+        animation: pop 0.22s ease-out;
+    }
+
+    @keyframes pop {
+        0% {
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.7);
+        }
+        100% {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+    }
+
+    .merge-effect {
+        position: absolute;
+        transform: translate(-50%, -50%);
+        font-size: 26px;
+        line-height: 1;
+        pointer-events: none;
+        z-index: 25;
+        animation: burst 0.45s ease-out forwards;
+    }
+
+    @keyframes burst {
+        0% {
+            opacity: 0.95;
+            transform: translate(-50%, -50%) scale(0.8);
+        }
+        100% {
+            opacity: 0;
+            transform: translate(-50%, -95%) scale(1.22);
+        }
+    }
+
+    .firework-effect {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        transform: translate(-50%, -50%);
+        background: var(--spark-color, #ffd27f);
+        box-shadow: 0 0 10px var(--spark-color, #ffd27f);
+        pointer-events: none;
+        z-index: 26;
+        animation: firework 0.58s ease-out forwards;
+    }
+
+    @keyframes firework {
+        0% {
+            opacity: 0.98;
+            transform: translate(-50%, -50%) scale(0.45);
+        }
+        100% {
+            opacity: 0;
+            transform: translate(calc(-50% + var(--dx, 0px)), calc(-50% + var(--dy, 0px))) scale(1.08);
+        }
+    }
+
+    body.fever-mode {
+        background:
+            radial-gradient(circle at top, rgba(255, 114, 76, 0.2), transparent 36%),
+            linear-gradient(180deg, #3a2018, #140c09);
+    }
+
+    body.fever-mode #header {
+        background: linear-gradient(180deg, rgba(81, 37, 24, 0.98), rgba(39, 17, 12, 0.98));
+        box-shadow: 0 10px 24px rgba(74, 19, 9, 0.24);
+    }
+
+    body.fever-mode #workspace {
+        background:
+            radial-gradient(circle at top center, rgba(255, 148, 110, 0.2), transparent 38%),
+            linear-gradient(180deg, rgba(76, 32, 20, 0.52), rgba(20, 10, 8, 0.1));
+    }
+
+    @media (max-width: 640px) {
+        #header {
+            padding: 10px 10px 8px;
+        }
+
+        .header-row {
+            align-items: flex-start;
+        }
+
+        #title strong {
+            font-size: 19px;
+        }
+
+        .stat {
+            min-width: 78px;
+            padding: 6px 8px;
+        }
+
+        .stat-value {
+            font-size: 14px;
+        }
+
+        #quest-card {
+            padding: 8px 9px 9px;
+            border-radius: 16px;
+        }
+
+        #quest-text {
+            font-size: 13px;
+        }
+
+        #quest-subtext {
+            -webkit-line-clamp: 1;
+            font-size: 10px;
+        }
+
+        #workspace-hint {
+            top: 10px;
+            max-width: calc(100% - 24px);
+            white-space: normal;
+        }
+
+        #inventory-tools {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        #inventory-meta {
+            min-width: 0;
+            text-align: left;
+        }
+
+        #inventory {
+            min-height: 178px;
+            grid-template-rows: repeat(2, 82px);
+        }
+
+        .inv-item {
+            width: 82px;
+            height: 82px;
+        }
+    }
+</style>
+</head>
+<body>
+    <div id="header">
+        <div class="header-row">
+            <div id="title">
+                <strong>Alchemy 1000</strong>
+                <span>Light build for low-end phones</span>
+            </div>
+            <div id="scoreboard">
+                <div class="stat">
+                    <span class="stat-label">Found</span>
+                    <span class="stat-value"><span id="discovered-count">4</span><span id="total-count">/1000</span></span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">On Field</span>
+                    <span class="stat-value" id="field-count">0/18</span>
+                </div>
+            </div>
+        </div>
+        <div id="quest-strip" aria-live="polite">
+            <div id="quest-card">
+                <div class="quest-head">
+                    <span id="quest-badge" class="quest-chip">Goal</span>
+                    <span id="quest-progress" class="quest-chip">1/11</span>
+                    <span id="combo-chip" class="quest-chip">Combo 0/3</span>
+                    <span id="fever-chip" class="quest-chip" hidden>Fever x3</span>
+                </div>
+                <div id="quest-text">Create Swamp</div>
+                <div id="quest-subtext">Mix mud with plant.</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="workspace">
+        <div id="workspace-hint" hidden></div>
+        <div id="toast"></div>
+    </div>
+
+    <div id="inventory-panel">
+        <div id="inventory-tools">
+            <input id="inventory-search" type="search" placeholder="Search elements" autocomplete="off" spellcheck="false">
+            <div id="inventory-meta">
+                <div id="inventory-count">4 unlocked</div>
+                <div>Newest first</div>
+            </div>
+        </div>
+        <div id="inventory"></div>
+    </div>
+
+<script>
+    const TARGET_TOTAL_ELEMENTS = 1000;
+    const SAVE_KEY = "alchemy-1000-lite-v1";
+    const BASE_DISCOVERED = ["water", "fire", "earth", "air"];
+    const MAX_ACTIVE_ELEMENTS = 18;
+    const ELEMENT_SIZE = 74;
+    const MERGE_DISTANCE = 58;
+    const NUDGE_DISTANCE = 18;
+    const FEVER_TRIGGER_DISCOVERIES = 3;
+    const FEVER_DISCOVERY_WINDOW = 10000;
+    const FEVER_CHARGES = 3;
+    const FEVER_MERGE_BONUS = 26;
+    const FEVER_ATTRACT_DISTANCE = 128;
+    const FEVER_PULL_STRENGTH = 0.16;
+    const QUEST_CHAIN = [
+        { target: "swamp", type: "goal", title: "Create Swamp", hint: "Mix mud with plant." },
+        { target: "life", type: "goal", title: "Create Life", hint: "Feed swamp with energy." },
+        { target: "animal", type: "goal", title: "Create Animal", hint: "Earth can shape life into something wild." },
+        { target: "human", type: "goal", title: "Create Human", hint: "Let animal spend enough time." },
+        { target: "glass", type: "riddle", title: "What becomes clear after meeting fire and sand?", hint: "Heat can turn grains into a window." },
+        { target: "electricity", type: "goal", title: "Create Electricity", hint: "Push raw energy through metal." },
+        { target: "lightbulb", type: "riddle", title: "What glows when glass learns electricity?", hint: "A bright answer needs both pieces." },
+        { target: "computer", type: "goal", title: "Create Computer", hint: "A tool becomes smarter with electricity." },
+        { target: "robot", type: "riddle", title: "What wakes up when life enters a computer?", hint: "Think machine, then animate it." },
+        { target: "space", type: "goal", title: "Create Space", hint: "Let sky absorb a star." },
+        { target: "astronaut", type: "goal", title: "Create Astronaut", hint: "Send a human into space." }
+    ];
+
+    function makeRecipeKey(a, b) {
+        return [a, b].sort().join("+");
+    }
+
+    const elementsData = {
+        "water": { icon: "💧", name: "Water" },
+        "fire": { icon: "🔥", name: "Fire" },
+        "earth": { icon: "🌍", name: "Earth" },
+        "air": { icon: "💨", name: "Air" },
+        "steam": { icon: "♨️", name: "Steam" },
+        "mud": { icon: "🟤", name: "Mud" },
+        "lava": { icon: "🌋", name: "Lava" },
+        "rain": { icon: "🌧️", name: "Rain" },
+        "sand": { icon: "🏜️", name: "Sand" },
+        "glass": { icon: "🪟", name: "Glass" },
+        "time": { icon: "⏳", name: "Time" },
+        "stone": { icon: "🪨", name: "Stone" },
+        "metal": { icon: "⚙️", name: "Metal" },
+        "energy": { icon: "⚡", name: "Energy" },
+        "electricity": { icon: "🔌", name: "Electricity" },
+        "plant": { icon: "🌱", name: "Plant" },
+        "tree": { icon: "🌲", name: "Tree" },
+        "wood": { icon: "🪵", name: "Wood" },
+        "swamp": { icon: "🏞️", name: "Swamp" },
+        "life": { icon: "🧬", name: "Life" },
+        "bacteria": { icon: "🦠", name: "Bacteria" },
+        "fish": { icon: "🐟", name: "Fish" },
+        "animal": { icon: "🐒", name: "Animal" },
+        "bird": { icon: "🦅", name: "Bird" },
+        "human": { icon: "🧑", name: "Human" },
+        "tool": { icon: "🔨", name: "Tool" },
+        "blood": { icon: "🩸", name: "Blood" },
+        "corpse": { icon: "💀", name: "Corpse" },
+        "zombie": { icon: "🧟", name: "Zombie" },
+        "vampire": { icon: "🧛", name: "Vampire" },
+        "brick": { icon: "🧱", name: "Brick" },
+        "house": { icon: "🏠", name: "House" },
+        "village": { icon: "🏘️", name: "Village" },
+        "city": { icon: "🏙️", name: "City" },
+        "boat": { icon: "🛶", name: "Boat" },
+        "ship": { icon: "🚢", name: "Ship" },
+        "campfire": { icon: "🏕️", name: "Campfire" },
+        "ash": { icon: "🌪️", name: "Ash" },
+        "coal": { icon: "⬛", name: "Coal" },
+        "smoke": { icon: "🌫️", name: "Smoke" },
+        "cloud": { icon: "☁️", name: "Cloud" },
+        "sky": { icon: "🌌", name: "Sky" },
+        "sun": { icon: "☀️", name: "Sun" },
+        "moon": { icon: "🌙", name: "Moon" },
+        "star": { icon: "⭐", name: "Star" },
+        "ocean": { icon: "🌊", name: "Ocean" },
+        "beach": { icon: "🏖️", name: "Beach" },
+        "desert": { icon: "🐪", name: "Desert" },
+        "salt": { icon: "🧂", name: "Salt" },
+        "lightbulb": { icon: "💡", name: "Lightbulb" },
+        "computer": { icon: "💻", name: "Computer" },
+        "robot": { icon: "🤖", name: "Robot" },
+        "space": { icon: "🪐", name: "Space" },
+        "universe": { icon: "🌌", name: "Universe" },
+        "galaxy": { icon: "🌀", name: "Galaxy" },
+        "alien": { icon: "👽", name: "Alien" },
+        "astronaut": { icon: "🚀", name: "Astronaut" },
+        "spaceship": { icon: "🛸", name: "Spaceship" },
+        "meteor": { icon: "☄️", name: "Meteor" },
+        "planet": { icon: "🌎", name: "Planet" },
+        "telescope": { icon: "🔭", name: "Telescope" },
+        "blackhole": { icon: "🕳️", name: "Black Hole" },
+        "gravity": { icon: "🍎", name: "Gravity" },
+        "dust": { icon: "🌫️", name: "Dust" },
+        "gunpowder": { icon: "🧨", name: "Gunpowder" },
+        "explosion": { icon: "💥", name: "Explosion" },
+        "bomb": { icon: "💣", name: "Bomb" },
+        "radiation": { icon: "☢️", name: "Radiation" },
+        "mutant": { icon: "🧟‍♂️", name: "Mutant" },
+        "superhero": { icon: "🦸", name: "Superhero" },
+        "cyborg": { icon: "🦾", name: "Cyborg" },
+        "ai": { icon: "🧠", name: "AI" },
+        "internet": { icon: "🌐", name: "Internet" },
+        "hacker": { icon: "🥷", name: "Hacker" },
+        "virus": { icon: "☣️", name: "Virus" },
+        "disease": { icon: "🤒", name: "Disease" },
+        "medicine": { icon: "💊", name: "Medicine" },
+        "hospital": { icon: "🏥", name: "Hospital" },
+        "doctor": { icon: "👨‍⚕️", name: "Doctor" },
+        "ambulance": { icon: "🚑", name: "Ambulance" },
+        "wheel": { icon: "☸️", name: "Wheel" },
+        "car": { icon: "🚗", name: "Car" },
+        "train": { icon: "🚂", name: "Train" },
+        "airplane": { icon: "✈️", name: "Airplane" },
+        "airport": { icon: "🛫", name: "Airport" },
+        "rocket": { icon: "🚀", name: "Rocket" },
+        "satellite": { icon: "🛰️", name: "Satellite" },
+        "gold": { icon: "🥇", name: "Gold" },
+        "silver": { icon: "🥈", name: "Silver" },
+        "diamond": { icon: "💎", name: "Diamond" },
+        "ring": { icon: "💍", name: "Ring" },
+        "king": { icon: "👑", name: "King" },
+        "castle": { icon: "🏰", name: "Castle" },
+        "sword": { icon: "🗡️", name: "Sword" },
+        "knight": { icon: "🤺", name: "Knight" },
+        "dragon": { icon: "🐉", name: "Dragon" },
+        "magic": { icon: "🪄", name: "Magic" },
+        "wizard": { icon: "🧙", name: "Wizard" },
+        "wand": { icon: "🦯", name: "Wand" },
+        "potion": { icon: "🧪", name: "Potion" },
+        "witch": { icon: "🧙‍♀️", name: "Witch" },
+        "broom": { icon: "🧹", name: "Broom" },
+        "fairy_tale": { icon: "🦄", name: "Fairy Tale" },
+        "paper": { icon: "📄", name: "Paper" },
+        "book": { icon: "📖", name: "Book" },
+        "library": { icon: "📚", name: "Library" },
+        "knowledge": { icon: "💡", name: "Knowledge" },
+        "scientist": { icon: "👨‍🔬", name: "Scientist" },
+        "university": { icon: "🏫", name: "University" },
+        "sound": { icon: "🔊", name: "Sound" },
+        "music": { icon: "🎵", name: "Music" },
+        "instrument": { icon: "🎻", name: "Instrument" },
+        "guitar": { icon: "🎸", name: "Guitar" },
+        "piano": { icon: "🎹", name: "Piano" },
+        "rainbow": { icon: "🌈", name: "Rainbow" },
+        "paint": { icon: "🎨", name: "Paint" },
+        "art": { icon: "🎭", name: "Art" },
+        "picture": { icon: "🖼️", name: "Picture" },
+        "museum": { icon: "🏛️", name: "Museum" },
+        "sculpture": { icon: "🗿", name: "Sculpture" },
+        "statue": { icon: "🗽", name: "Statue" },
+        "religion": { icon: "🛐", name: "Religion" },
+        "god": { icon: "👁️", name: "God" },
+        "angel": { icon: "👼", name: "Angel" },
+        "demon": { icon: "👿", name: "Demon" },
+        "hell": { icon: "👹", name: "Hell" },
+        "heaven": { icon: "🌤️", name: "Heaven" },
+        "soul": { icon: "🪬", name: "Soul" },
+        "ghost": { icon: "👻", name: "Ghost" },
+        "skeleton": { icon: "☠️", name: "Skeleton" },
+        "bone": { icon: "🦴", name: "Bone" },
+        "dog": { icon: "🐕", name: "Dog" },
+        "cat": { icon: "🐈", name: "Cat" },
+        "grass": { icon: "🌿", name: "Grass" },
+        "cow": { icon: "🐄", name: "Cow" },
+        "milk": { icon: "🥛", name: "Milk" },
+        "cheese": { icon: "🧀", name: "Cheese" },
+        "mouse": { icon: "🐁", name: "Mouse" },
+        "rat": { icon: "🐀", name: "Rat" },
+        "plague": { icon: "☣️", name: "Plague" },
+        "pig": { icon: "🐖", name: "Pig" },
+        "bacon": { icon: "🥓", name: "Bacon" },
+        "meat": { icon: "🍖", name: "Meat" },
+        "steak": { icon: "🥩", name: "Steak" },
+        "egg": { icon: "🥚", name: "Egg" },
+        "omelet": { icon: "🍳", name: "Omelet" },
+        "lizard": { icon: "🦎", name: "Lizard" },
+        "dinosaur": { icon: "🦖", name: "Dinosaur" },
+        "fossil": { icon: "🐚", name: "Fossil" },
+        "petroleum": { icon: "🛢️", name: "Petroleum" },
+        "plastic": { icon: "🛍️", name: "Plastic" },
+        "pollution": { icon: "🏭", name: "Pollution" },
+        "global_warming": { icon: "🌡️", name: "Global Warming" },
+        "volcano": { icon: "🌋", name: "Volcano" },
+        "island": { icon: "🏝️", name: "Island" },
+        "wind": { icon: "💨", name: "Wind" },
+        "cold": { icon: "❄️", name: "Cold" },
+        "ice": { icon: "🧊", name: "Ice" },
+        "snowman": { icon: "⛄", name: "Snowman" },
+        "avalanche": { icon: "🏔️", name: "Avalanche" },
+        "oasis": { icon: "🏝️", name: "Oasis" },
+        "savanna": { icon: "🦁", name: "Savanna" },
+        "baobab": { icon: "🌳", name: "Baobab" },
+        "acacia": { icon: "🌴", name: "Acacia" },
+        "camel": { icon: "🐫", name: "Camel" },
+        "caravan": { icon: "🐫", name: "Caravan" },
+        "reed": { icon: "🎋", name: "Reed" },
+        "basket": { icon: "🧺", name: "Basket" },
+        "clay": { icon: "🟠", name: "Clay" },
+        "pottery": { icon: "🏺", name: "Pottery" },
+        "well": { icon: "🪣", name: "Well" },
+        "drum": { icon: "🥁", name: "Drum" },
+        "festival": { icon: "🎉", name: "Festival" },
+        "market": { icon: "🧺", name: "Market" },
+        "solar": { icon: "🔆", name: "Solar" },
+        "solar_farm": { icon: "🔋", name: "Solar Farm" },
+        "coral": { icon: "🪸", name: "Coral" },
+        "mosaic": { icon: "🟦", name: "Mosaic" },
+        "mask": { icon: "🎭", name: "Mask" },
+        "story": { icon: "📜", name: "Story" }
+    };
+
+    const baseRecipes = [
+        ["fire", "water", "steam"],
+        ["earth", "water", "mud"],
+        ["earth", "fire", "lava"],
+        ["air", "water", "rain"],
+        ["air", "earth", "sand"],
+        ["fire", "sand", "glass"],
+        ["glass", "sand", "time"],
+        ["lava", "water", "stone"],
+        ["fire", "stone", "metal"],
+        ["air", "fire", "energy"],
+        ["energy", "metal", "electricity"],
+        ["earth", "rain", "plant"],
+        ["plant", "time", "tree"],
+        ["mud", "plant", "swamp"],
+        ["energy", "swamp", "life"],
+        ["life", "swamp", "bacteria"],
+        ["life", "water", "fish"],
+        ["earth", "life", "animal"],
+        ["air", "life", "bird"],
+        ["animal", "time", "human"],
+        ["human", "metal", "tool"],
+        ["tool", "tree", "wood"],
+        ["fire", "wood", "campfire"],
+        ["air", "campfire", "smoke"],
+        ["campfire", "time", "ash"],
+        ["campfire", "earth", "coal"],
+        ["fire", "mud", "brick"],
+        ["brick", "human", "house"],
+        ["house", "house", "village"],
+        ["village", "village", "city"],
+        ["tool", "wood", "boat"],
+        ["boat", "wood", "ship"],
+        ["air", "steam", "cloud"],
+        ["air", "cloud", "sky"],
+        ["fire", "sky", "sun"],
+        ["sky", "stone", "moon"],
+        ["energy", "sky", "star"],
+        ["water", "water", "ocean"],
+        ["ocean", "sun", "salt"],
+        ["sand", "water", "beach"],
+        ["sand", "sand", "desert"],
+        ["human", "stone", "blood"],
+        ["human", "time", "corpse"],
+        ["corpse", "life", "zombie"],
+        ["blood", "human", "vampire"],
+        ["electricity", "glass", "lightbulb"],
+        ["electricity", "tool", "computer"],
+        ["computer", "life", "robot"],
+        ["sky", "star", "space"],
+        ["star", "star", "universe"],
+        ["star", "universe", "galaxy"],
+        ["life", "space", "alien"],
+        ["human", "space", "astronaut"],
+        ["astronaut", "ship", "spaceship"],
+        ["space", "stone", "meteor"],
+        ["earth", "space", "planet"],
+        ["glass", "space", "telescope"],
+        ["space", "time", "blackhole"],
+        ["planet", "planet", "gravity"],
+        ["air", "ash", "dust"],
+        ["ash", "coal", "gunpowder"],
+        ["fire", "gunpowder", "explosion"],
+        ["explosion", "metal", "bomb"],
+        ["bomb", "energy", "radiation"],
+        ["radiation", "zombie", "mutant"],
+        ["human", "radiation", "superhero"],
+        ["human", "robot", "cyborg"],
+        ["computer", "computer", "ai"],
+        ["ai", "computer", "internet"],
+        ["human", "internet", "hacker"],
+        ["bacteria", "computer", "virus"],
+        ["bacteria", "human", "disease"],
+        ["disease", "plant", "medicine"],
+        ["house", "medicine", "hospital"],
+        ["hospital", "human", "doctor"],
+        ["car", "hospital", "ambulance"],
+        ["metal", "tool", "wheel"],
+        ["metal", "wheel", "car"],
+        ["car", "metal", "train"],
+        ["bird", "metal", "airplane"],
+        ["airplane", "house", "airport"],
+        ["airplane", "space", "rocket"],
+        ["rocket", "telescope", "satellite"],
+        ["metal", "sun", "gold"],
+        ["metal", "moon", "silver"],
+        ["coal", "time", "diamond"],
+        ["diamond", "gold", "ring"],
+        ["human", "ring", "king"],
+        ["house", "king", "castle"],
+        ["metal", "wood", "sword"],
+        ["human", "sword", "knight"],
+        ["animal", "fire", "dragon"],
+        ["energy", "life", "magic"],
+        ["human", "magic", "wizard"],
+        ["magic", "wood", "wand"],
+        ["magic", "water", "potion"],
+        ["potion", "wizard", "witch"],
+        ["witch", "wood", "broom"],
+        ["dragon", "magic", "fairy_tale"],
+        ["plant", "tool", "paper"],
+        ["paper", "paper", "book"],
+        ["book", "house", "library"],
+        ["book", "human", "knowledge"],
+        ["human", "knowledge", "scientist"],
+        ["house", "scientist", "university"],
+        ["air", "metal", "sound"],
+        ["human", "sound", "music"],
+        ["music", "tool", "instrument"],
+        ["instrument", "wood", "guitar"],
+        ["instrument", "music", "piano"],
+        ["rain", "sun", "rainbow"],
+        ["rainbow", "water", "paint"],
+        ["human", "paint", "art"],
+        ["art", "paper", "picture"],
+        ["house", "picture", "museum"],
+        ["art", "stone", "sculpture"],
+        ["human", "sculpture", "statue"],
+        ["human", "star", "religion"],
+        ["human", "religion", "god"],
+        ["bird", "god", "angel"],
+        ["fire", "god", "demon"],
+        ["demon", "lava", "hell"],
+        ["angel", "cloud", "heaven"],
+        ["corpse", "magic", "soul"],
+        ["corpse", "soul", "ghost"],
+        ["corpse", "time", "skeleton"],
+        ["skeleton", "tool", "bone"],
+        ["animal", "bone", "dog"],
+        ["animal", "house", "cat"],
+        ["earth", "plant", "grass"],
+        ["animal", "grass", "cow"],
+        ["cow", "human", "milk"],
+        ["milk", "time", "cheese"],
+        ["animal", "cheese", "mouse"],
+        ["house", "mouse", "rat"],
+        ["bacteria", "rat", "plague"],
+        ["animal", "mud", "pig"],
+        ["fire", "pig", "bacon"],
+        ["animal", "tool", "meat"],
+        ["fire", "meat", "steak"],
+        ["bird", "bird", "egg"],
+        ["egg", "fire", "omelet"],
+        ["egg", "swamp", "lizard"],
+        ["lizard", "time", "dinosaur"],
+        ["dinosaur", "earth", "fossil"],
+        ["fossil", "time", "petroleum"],
+        ["petroleum", "tool", "plastic"],
+        ["city", "smoke", "pollution"],
+        ["earth", "pollution", "global_warming"],
+        ["earth", "lava", "volcano"],
+        ["ocean", "volcano", "island"],
+        ["air", "energy", "wind"],
+        ["water", "wind", "cold"],
+        ["cold", "water", "ice"],
+        ["human", "ice", "snowman"],
+        ["gravity", "ice", "avalanche"],
+        ["desert", "water", "oasis"],
+        ["grass", "sun", "savanna"],
+        ["sun", "tree", "baobab"],
+        ["savanna", "tree", "acacia"],
+        ["animal", "desert", "camel"],
+        ["camel", "human", "caravan"],
+        ["plant", "water", "reed"],
+        ["reed", "tool", "basket"],
+        ["earth", "sun", "clay"],
+        ["clay", "fire", "pottery"],
+        ["pottery", "water", "well"],
+        ["sound", "wood", "drum"],
+        ["drum", "music", "festival"],
+        ["festival", "village", "market"],
+        ["sun", "tool", "solar"],
+        ["house", "solar", "solar_farm"],
+        ["fish", "ocean", "coral"],
+        ["art", "pottery", "mosaic"],
+        ["art", "wood", "mask"],
+        ["festival", "human", "story"]
+    ];
+
+    const recipes = {};
+    for (const [a, b, result] of baseRecipes) {
+        recipes[makeRecipeKey(a, b)] = result;
+    }
+
+    function buildGeneratedExpansion() {
+        const familyThemes = [
+            { name: "Savanna Line", icon: "🦁" },
+            { name: "Oasis Route", icon: "🏝️" },
+            { name: "Delta Flow", icon: "🌊" },
+            { name: "Baobab Memory", icon: "🌳" },
+            { name: "Kora Echo", icon: "🎶" },
+            { name: "Caravan Trail", icon: "🐫" },
+            { name: "Monsoon Grid", icon: "🌧️" },
+            { name: "Copper Forge", icon: "🟠" },
+            { name: "Solar Rise", icon: "🔆" },
+            { name: "Lagoon Pulse", icon: "🪸" },
+            { name: "Acacia Shade", icon: "🌴" },
+            { name: "Mango Field", icon: "🥭" },
+            { name: "Cocoa Works", icon: "🍫" },
+            { name: "Indigo Arc", icon: "🟦" },
+            { name: "Coral Ring", icon: "🪸" },
+            { name: "Dune Circuit", icon: "🏜️" },
+            { name: "Mirage Story", icon: "✨" },
+            { name: "Nomad Signal", icon: "📡" },
+            { name: "Clay Archive", icon: "🏺" },
+            { name: "Granite Echo", icon: "🪨" },
+            { name: "Millet Garden", icon: "🌾" },
+            { name: "Palm Harbor", icon: "🌴" },
+            { name: "Drift Current", icon: "🌬️" },
+            { name: "Thunder Track", icon: "⚡" },
+            { name: "Horizon Camp", icon: "🌅" },
+            { name: "Ember Path", icon: "🔥" },
+            { name: "Tide Beacon", icon: "🌊" },
+            { name: "Lantern Market", icon: "🏮" },
+            { name: "Orbit Foundry", icon: "🪐" },
+            { name: "Pixel Grove", icon: "💠" },
+            { name: "Signal House", icon: "📶" },
+            { name: "Circuit Nest", icon: "🔌" },
+            { name: "Harvest Circle", icon: "🌾" },
+            { name: "Safari Trail", icon: "🦒" },
+            { name: "Atlas Gate", icon: "🗺️" },
+            { name: "Crater Lab", icon: "🌋" },
+            { name: "Canyon Drift", icon: "🏜️" },
+            { name: "Aurora Bridge", icon: "🌈" },
+            { name: "Nile Signal", icon: "🚣" },
+            { name: "Rift Engine", icon: "🛠️" },
+            { name: "Market Spark", icon: "🧺" },
+            { name: "Forge Rhythm", icon: "⚒️" },
+            { name: "Fiber Road", icon: "🧵" },
+            { name: "Summit Fire", icon: "⛰️" },
+            { name: "Rainwood Bay", icon: "🌲" },
+            { name: "Starlight Yard", icon: "⭐" },
+            { name: "Moontrail Port", icon: "🌙" },
+            { name: "Sandglass Deck", icon: "⌛" },
+            { name: "Rivergate Hub", icon: "🚤" },
+            { name: "Suntrack Loop", icon: "☀️" }
+        ];
+
+        const stageNames = [
+            "Spark",
+            "Trail",
+            "Camp",
+            "Craft",
+            "Forge",
+            "Rhythm",
+            "Signal",
+            "Market",
+            "Harbor",
+            "Beacon",
+            "Archive",
+            "Engine",
+            "Festival",
+            "Bridge",
+            "Tower",
+            "Orbit",
+            "Dream",
+            "Legend",
+            "Crown"
+        ];
+
+        const stageIcons = ["✨", "🧭", "⛺", "🛠️", "⚒️", "🎵", "📡", "🧺", "⚓", "🔆", "📚", "⚙️", "🎉", "🌉", "🏛️", "🪐", "🌠", "👑", "💎"];
+        const catalystCycle = ["fire", "water", "earth", "air", "energy", "time", "plant", "metal", "tool", "human", "sun", "moon", "stone", "cloud", "ocean", "sand", "glass", "life", "electricity"];
+        const seedSources = [
+            "water", "fire", "earth", "air", "steam", "mud", "lava", "rain", "sand", "glass",
+            "time", "stone", "metal", "energy", "electricity", "plant", "tree", "wood", "swamp", "life",
+            "animal", "bird", "human", "tool", "campfire", "cloud", "sky", "sun", "moon", "star",
+            "ocean", "desert", "lightbulb", "computer", "robot", "space", "planet", "medicine", "car", "airport",
+            "gold", "castle", "magic", "book", "music", "museum", "dog", "ice", "volcano", "savanna",
+            "oasis", "market", "solar", "coral", "story"
+        ];
+
+        const pairPool = [];
+        for (let i = 0; i < seedSources.length; i += 1) {
+            for (let j = i + 1; j < seedSources.length; j += 1) {
+                const key = makeRecipeKey(seedSources[i], seedSources[j]);
+                if (!recipes[key]) {
+                    pairPool.push([seedSources[i], seedSources[j]]);
+                }
+            }
+        }
+
+        const initialCount = Object.keys(elementsData).length;
+        const needed = TARGET_TOTAL_ELEMENTS - initialCount;
+        let created = 0;
+        let familyIndex = 0;
+        let pairIndex = 0;
+
+        while (created < needed && pairIndex < pairPool.length) {
+            const theme = familyThemes[familyIndex % familyThemes.length];
+            const repeat = Math.floor(familyIndex / familyThemes.length);
+            const familyName = repeat === 0 ? theme.name : theme.name + " " + (repeat + 2);
+            const seedId = "gen_" + familyIndex + "_0";
+            const [seedA, seedB] = pairPool[pairIndex];
+
+            elementsData[seedId] = { icon: theme.icon, name: familyName };
+            recipes[makeRecipeKey(seedA, seedB)] = seedId;
+
+            created += 1;
+            pairIndex += 1;
+
+            let previousId = seedId;
+            for (let stageIndex = 0; stageIndex < stageNames.length && created < needed; stageIndex += 1) {
+                const nextId = "gen_" + familyIndex + "_" + (stageIndex + 1);
+                const catalyst = catalystCycle[(familyIndex + stageIndex) % catalystCycle.length];
+                const icon = stageIcons[(familyIndex + stageIndex) % stageIcons.length];
+
+                elementsData[nextId] = {
+                    icon: icon,
+                    name: familyName + " " + stageNames[stageIndex]
+                };
+                recipes[makeRecipeKey(previousId, catalyst)] = nextId;
+
+                previousId = nextId;
+                created += 1;
+            }
+
+            familyIndex += 1;
+        }
+    }
+
+    buildGeneratedExpansion();
+
+    const totalElements = Object.keys(elementsData).length;
+
+    function validateData() {
+        const issues = [];
+        for (const key in recipes) {
+            const ids = key.split("+");
+            const result = recipes[key];
+            if (!elementsData[ids[0]] || !elementsData[ids[1]] || !elementsData[result]) {
+                issues.push(key + " -> " + result);
+            }
+        }
+        if (totalElements !== TARGET_TOTAL_ELEMENTS) {
+            issues.push("Expected " + TARGET_TOTAL_ELEMENTS + " elements, got " + totalElements);
+        }
+        if (issues.length) {
+            console.warn("Alchemy data issues:", issues.slice(0, 20));
+        }
+    }
+
+    validateData();
+
+    function loadDiscovered() {
+        const unique = BASE_DISCOVERED.slice();
+
+        try {
+            const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
+            if (Array.isArray(saved)) {
+                for (const id of saved) {
+                    if (elementsData[id] && !unique.includes(id)) {
+                        unique.push(id);
+                    }
+                }
+            }
+        } catch (error) {
+        }
+
+        return unique;
+    }
+
+    let discovered = loadDiscovered();
+    let activeElements = [];
+    let draggedElement = null;
+    let visibleInventoryIds = [];
+    let searchTerm = "";
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+    let lastWorkspaceTap = 0;
+    let toastTimer = null;
+    let currentQuest = null;
+    let recentDiscoveryTimes = [];
+    let feverCharges = 0;
+    let comboDecayTimer = null;
+    let magnetTarget = null;
+
+    const workspace = document.getElementById("workspace");
+    const inventory = document.getElementById("inventory");
+    const discoveredCountEl = document.getElementById("discovered-count");
+    const totalCountEl = document.getElementById("total-count");
+    const fieldCountEl = document.getElementById("field-count");
+    const inventoryCountEl = document.getElementById("inventory-count");
+    const inventorySearchEl = document.getElementById("inventory-search");
+    const toastEl = document.getElementById("toast");
+    const questCardEl = document.getElementById("quest-card");
+    const questBadgeEl = document.getElementById("quest-badge");
+    const questProgressEl = document.getElementById("quest-progress");
+    const comboChipEl = document.getElementById("combo-chip");
+    const feverChipEl = document.getElementById("fever-chip");
+    const questTextEl = document.getElementById("quest-text");
+    const questSubtextEl = document.getElementById("quest-subtext");
+
+    function saveDiscovered() {
+        try {
+            localStorage.setItem(SAVE_KEY, JSON.stringify(discovered));
+        } catch (error) {
+        }
+    }
+
+    function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    function getClampedPosition(x, y) {
+        const half = ELEMENT_SIZE / 2 + 4;
+        const maxX = Math.max(half, workspace.clientWidth - half);
+        const maxY = Math.max(half + 8, workspace.clientHeight - half);
+        return {
+            x: clamp(x, half, maxX),
+            y: clamp(y, half + 8, maxY)
+        };
+    }
+
+    function setElementPosition(element, x, y) {
+        const next = getClampedPosition(x, y);
+        element.style.left = next.x + "px";
+        element.style.top = next.y + "px";
+    }
+
+    function replayClass(element, className, duration = 620) {
+        if (!element) {
+            return;
+        }
+
+        element.classList.remove(className);
+        void element.offsetWidth;
+        element.classList.add(className);
+
+        clearTimeout(element.__classTimer);
+        element.__classTimer = setTimeout(() => {
+            element.classList.remove(className);
+        }, duration);
+    }
+
+    function getElementName(id) {
+        return elementsData[id] ? elementsData[id].name : id;
+    }
+
+    function buildAdaptiveQuest() {
+        for (const [firstId, secondId, resultId] of baseRecipes) {
+            if (discovered.includes(resultId)) {
+                continue;
+            }
+            if (!discovered.includes(firstId) || !discovered.includes(secondId)) {
+                continue;
+            }
+
+            const firstName = getElementName(firstId);
+            const secondName = getElementName(secondId);
+            const useRiddle = (resultId.length + discovered.length) % 2 === 0;
+
+            return {
+                target: resultId,
+                type: useRiddle ? "riddle" : "goal",
+                badge: "Bonus",
+                progressText: "Free Play",
+                title: useRiddle
+                    ? "What appears when " + firstName + " meets " + secondName + "?"
+                    : "Create " + getElementName(resultId),
+                hint: "Both ingredients are already unlocked."
+            };
+        }
+
+        if (discovered.length === totalElements) {
+            return {
+                target: null,
+                type: "goal",
+                badge: "Complete",
+                progressText: "100%",
+                title: "All 1000 elements discovered",
+                hint: "The guided chain is finished."
+            };
+        }
+
+        return {
+            target: null,
+            type: "goal",
+            badge: "Free Play",
+            progressText: "",
+            title: "Discover any new element",
+            hint: "The guided chain is complete. Keep experimenting."
+        };
+    }
+
+    function resolveCurrentQuest() {
+        const chainIndex = QUEST_CHAIN.findIndex((quest) => !discovered.includes(quest.target));
+
+        if (chainIndex !== -1) {
+            const quest = QUEST_CHAIN[chainIndex];
+            return {
+                target: quest.target,
+                type: quest.type,
+                badge: quest.type === "riddle" ? "Riddle" : "Goal",
+                progressText: (chainIndex + 1) + "/" + QUEST_CHAIN.length,
+                title: quest.title,
+                hint: quest.hint
+            };
+        }
+
+        return buildAdaptiveQuest();
+    }
+
+    function renderQuestPanel() {
+        currentQuest = resolveCurrentQuest();
+        questCardEl.classList.toggle("riddle-mode", currentQuest.type === "riddle");
+        questBadgeEl.textContent = currentQuest.badge;
+        questTextEl.textContent = currentQuest.title;
+
+        if (currentQuest.progressText) {
+            questProgressEl.hidden = false;
+            questProgressEl.textContent = currentQuest.progressText;
+        } else {
+            questProgressEl.hidden = true;
+            questProgressEl.textContent = "";
+        }
+
+        if (currentQuest.hint) {
+            questSubtextEl.hidden = false;
+            questSubtextEl.textContent = currentQuest.hint;
+        } else {
+            questSubtextEl.hidden = true;
+            questSubtextEl.textContent = "";
+        }
+    }
+
+    function pruneDiscoveryCombo() {
+        const cutoff = Date.now() - FEVER_DISCOVERY_WINDOW;
+        recentDiscoveryTimes = recentDiscoveryTimes.filter((stamp) => stamp >= cutoff);
+    }
+
+    function scheduleComboDecay() {
+        clearTimeout(comboDecayTimer);
+
+        if (feverCharges > 0 || recentDiscoveryTimes.length === 0) {
+            return;
+        }
+
+        const delay = Math.max(80, FEVER_DISCOVERY_WINDOW - (Date.now() - recentDiscoveryTimes[0]) + 50);
+        comboDecayTimer = setTimeout(() => {
+            pruneDiscoveryCombo();
+            renderComboState();
+            scheduleComboDecay();
+        }, delay);
+    }
+
+    function renderComboState() {
+        pruneDiscoveryCombo();
+
+        const comboCount = feverCharges > 0 ? FEVER_TRIGGER_DISCOVERIES : recentDiscoveryTimes.length;
+        comboChipEl.textContent = feverCharges > 0 ? "Combo Banked" : "Combo " + comboCount + "/" + FEVER_TRIGGER_DISCOVERIES;
+        comboChipEl.classList.toggle("ready", feverCharges === 0 && comboCount === FEVER_TRIGGER_DISCOVERIES - 1);
+
+        feverChipEl.hidden = feverCharges === 0;
+        if (feverCharges > 0) {
+            feverChipEl.textContent = "Fever x" + feverCharges;
+        }
+
+        questCardEl.classList.toggle("fever", feverCharges > 0);
+        document.body.classList.toggle("fever-mode", feverCharges > 0);
+    }
+
+    function activateFever() {
+        clearTimeout(comboDecayTimer);
+        recentDiscoveryTimes = [];
+        feverCharges = FEVER_CHARGES;
+        renderComboState();
+        replayClass(questCardEl, "quest-pulse", 520);
+        replayClass(workspace, "flash", 430);
+    }
+
+    function deactivateFever() {
+        clearTimeout(comboDecayTimer);
+        feverCharges = 0;
+        clearMagnetState();
+        renderComboState();
+    }
+
+    function registerDiscoveryCombo() {
+        if (feverCharges > 0) {
+            renderComboState();
+            return false;
+        }
+
+        recentDiscoveryTimes.push(Date.now());
+        pruneDiscoveryCombo();
+
+        if (recentDiscoveryTimes.length >= FEVER_TRIGGER_DISCOVERIES) {
+            activateFever();
+            return true;
+        }
+
+        renderComboState();
+        scheduleComboDecay();
+        return false;
+    }
+
+    function getCurrentMergeDistance() {
+        return feverCharges > 0 ? MERGE_DISTANCE + FEVER_MERGE_BONUS : MERGE_DISTANCE;
+    }
+
+    function updateCounts() {
+        discoveredCountEl.textContent = discovered.length;
+        totalCountEl.textContent = "/" + totalElements;
+        fieldCountEl.textContent = activeElements.length + "/" + MAX_ACTIVE_ELEMENTS;
+    }
+
+    function showToast(message) {
+        toastEl.textContent = message;
+        toastEl.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+            toastEl.classList.remove("show");
+        }, 1400);
+    }
+
+    function triggerQuestReward(element) {
+        replayClass(workspace, "flash", 430);
+        replayClass(questCardEl, "quest-pulse", 520);
+        replayClass(element, "reward-pulse", 620);
+    }
+
+    function renderInventory() {
+        const query = searchTerm.trim().toLowerCase();
+        visibleInventoryIds = discovered.filter((id) => {
+            const data = elementsData[id];
+            if (!data) {
+                return false;
+            }
+            if (!query) {
+                return true;
+            }
+            return data.name.toLowerCase().includes(query) || id.toLowerCase().includes(query);
+        });
+
+        inventory.innerHTML = "";
+        const fragment = document.createDocumentFragment();
+
+        for (let index = visibleInventoryIds.length - 1; index >= 0; index -= 1) {
+            const id = visibleInventoryIds[index];
+            const data = elementsData[id];
+            const card = document.createElement("div");
+
+            card.className = "inv-item";
+            card.dataset.id = id;
+            card.innerHTML = '<div class="inv-icon">' + data.icon + '</div><div class="inv-name">' + data.name + "</div>";
+            card.addEventListener("click", () => spawnElement(id));
+
+            fragment.appendChild(card);
+        }
+
+        inventory.appendChild(fragment);
+
+        if (query) {
+            inventoryCountEl.textContent = visibleInventoryIds.length + " matches";
+        } else {
+            inventoryCountEl.textContent = discovered.length + " unlocked";
+        }
+    }
+
+    function trimFieldIfNeeded() {
+        while (activeElements.length >= MAX_ACTIVE_ELEMENTS) {
+            const oldest = activeElements.shift();
+            if (oldest) {
+                oldest.remove();
+            }
+        }
+    }
+
+    function spawnElement(id, x = null, y = null) {
+        const data = elementsData[id];
+        if (!data) {
+            return null;
+        }
+
+        trimFieldIfNeeded();
+
+        const element = document.createElement("div");
+        const spawnX = x === null ? workspace.clientWidth * 0.5 + (Math.random() * 44 - 22) : x;
+        const spawnY = y === null ? workspace.clientHeight * 0.5 + (Math.random() * 44 - 22) : y;
+
+        element.className = "element pop-anim";
+        element.dataset.id = id;
+        element.innerHTML = '<div class="el-icon">' + data.icon + '</div><div class="el-name">' + data.name + "</div>";
+        setElementPosition(element, spawnX, spawnY);
+        element.addEventListener("pointerdown", startDrag);
+
+        workspace.appendChild(element);
+        activeElements.push(element);
+        updateCounts();
+        return element;
+    }
+
+    function checkDiscovery(id, sourceElement = null) {
+        const outcome = {
+            isNew: false,
+            completedQuest: null,
+            feverTriggered: false
+        };
+
+        if (discovered.includes(id)) {
+            return outcome;
+        }
+
+        const completedQuest = currentQuest && currentQuest.target === id ? currentQuest : null;
+
+        discovered.push(id);
+        outcome.isNew = true;
+        outcome.completedQuest = completedQuest;
+
+        saveDiscovered();
+        updateCounts();
+        renderInventory();
+        renderQuestPanel();
+
+        if (completedQuest) {
+            triggerQuestReward(sourceElement);
+        }
+
+        outcome.feverTriggered = registerDiscoveryCombo();
+
+        if (discovered.length === totalElements) {
+            showToast("All 1000 elements discovered");
+            return outcome;
+        }
+
+        if (outcome.feverTriggered) {
+            showToast("Fever mode: 3 boosted merges");
+        } else if (completedQuest) {
+            showToast((completedQuest.type === "riddle" ? "Riddle solved: " : "Goal cleared: ") + elementsData[id].name);
+        } else {
+            showToast("New element: " + elementsData[id].name);
+        }
+
+        return outcome;
+    }
+
+    function startDrag(event) {
+        draggedElement = event.currentTarget;
+        clearMagnetState(draggedElement);
+        const workspaceRect = workspace.getBoundingClientRect();
+        const currentX = parseFloat(draggedElement.style.left) || 0;
+        const currentY = parseFloat(draggedElement.style.top) || 0;
+
+        dragOffsetX = event.clientX - workspaceRect.left - currentX;
+        dragOffsetY = event.clientY - workspaceRect.top - currentY;
+
+        draggedElement.classList.add("dragging");
+        draggedElement.setPointerCapture(event.pointerId);
+        draggedElement.addEventListener("pointermove", onDrag);
+        draggedElement.addEventListener("pointerup", endDrag);
+        draggedElement.addEventListener("pointercancel", endDrag);
+    }
+
+    function onDrag(event) {
+        if (!draggedElement) {
+            return;
+        }
+
+        const workspaceRect = workspace.getBoundingClientRect();
+        const nextX = event.clientX - workspaceRect.left - dragOffsetX;
+        const nextY = event.clientY - workspaceRect.top - dragOffsetY;
+
+        setElementPosition(draggedElement, nextX, nextY);
+        applyFeverMagnet(draggedElement);
+    }
+
+    function endDrag(event) {
+        if (!draggedElement) {
+            return;
+        }
+
+        try {
+            draggedElement.releasePointerCapture(event.pointerId);
+        } catch (error) {
+        }
+
+        draggedElement.classList.remove("dragging");
+        draggedElement.removeEventListener("pointermove", onDrag);
+        draggedElement.removeEventListener("pointerup", endDrag);
+        draggedElement.removeEventListener("pointercancel", endDrag);
+
+        const current = draggedElement;
+        draggedElement = null;
+        clearMagnetState(current);
+        checkCollision(current);
+    }
+
+    function clearMagnetState(source = null) {
+        if (source) {
+            source.classList.remove("magnetized");
+        }
+        if (draggedElement && draggedElement !== source) {
+            draggedElement.classList.remove("magnetized");
+        }
+        if (magnetTarget) {
+            magnetTarget.classList.remove("magnetized");
+        }
+        magnetTarget = null;
+    }
+
+    function findBestMergeTarget(element, maxDistance, requireRecipe = false) {
+        const x1 = parseFloat(element.style.left) || 0;
+        const y1 = parseFloat(element.style.top) || 0;
+        let bestMatch = null;
+
+        for (const target of activeElements) {
+            if (target === element) {
+                continue;
+            }
+
+            const x2 = parseFloat(target.style.left) || 0;
+            const y2 = parseFloat(target.style.top) || 0;
+            const distance = Math.hypot(x1 - x2, y1 - y2);
+
+            if (distance > maxDistance) {
+                continue;
+            }
+            if (requireRecipe && !recipes[makeRecipeKey(element.dataset.id, target.dataset.id)]) {
+                continue;
+            }
+            if (!bestMatch || distance < bestMatch.distance) {
+                bestMatch = { target, distance, x1, y1, x2, y2 };
+            }
+        }
+
+        return bestMatch;
+    }
+
+    function applyFeverMagnet(element) {
+        clearMagnetState(element);
+
+        if (feverCharges <= 0) {
+            return;
+        }
+
+        const match = findBestMergeTarget(element, FEVER_ATTRACT_DISTANCE, true);
+        if (!match) {
+            return;
+        }
+
+        magnetTarget = match.target;
+        element.classList.add("magnetized");
+        magnetTarget.classList.add("magnetized");
+
+        if (match.distance <= getCurrentMergeDistance()) {
+            return;
+        }
+
+        const range = Math.max(1, FEVER_ATTRACT_DISTANCE - getCurrentMergeDistance());
+        const closeness = 1 - (match.distance - getCurrentMergeDistance()) / range;
+        const pull = clamp(closeness * FEVER_PULL_STRENGTH, 0.04, FEVER_PULL_STRENGTH);
+        const nextX = match.x1 + (match.x2 - match.x1) * pull;
+        const nextY = match.y1 + (match.y2 - match.y1) * pull;
+
+        setElementPosition(element, nextX, nextY);
+    }
+
+    function checkCollision(element) {
+        const validMatch = findBestMergeTarget(element, getCurrentMergeDistance(), true);
+        if (validMatch) {
+            mergeElements(element, validMatch.target);
+            return;
+        }
+
+        const nearbyMatch = findBestMergeTarget(element, MERGE_DISTANCE, false);
+        if (nearbyMatch) {
+            nudgeElements(element, nearbyMatch.target);
+        }
+    }
+
+    function nudgeElements(el1, el2) {
+        const x1 = (parseFloat(el1.style.left) || 0) - NUDGE_DISTANCE;
+        const y1 = parseFloat(el1.style.top) || 0;
+        const x2 = (parseFloat(el2.style.left) || 0) + NUDGE_DISTANCE;
+        const y2 = parseFloat(el2.style.top) || 0;
+
+        setElementPosition(el1, x1, y1);
+        setElementPosition(el2, x2, y2);
+    }
+
+    function createMergeEffect(x, y, icon) {
+        const effect = document.createElement("div");
+        effect.className = "merge-effect";
+        effect.textContent = icon || "✨";
+        effect.style.left = x + "px";
+        effect.style.top = y + "px";
+        workspace.appendChild(effect);
+
+        setTimeout(() => {
+            effect.remove();
+        }, 450);
+    }
+
+    function createFireworkBurst(x, y) {
+        const colors = ["#ffe39a", "#ffb06a", "#ff8f70", "#fff1d7", "#ffd27f"];
+
+        for (let index = 0; index < 8; index += 1) {
+            const particle = document.createElement("div");
+            const angle = (Math.PI * 2 * index) / 8 + Math.random() * 0.35;
+            const distance = 18 + Math.random() * 24;
+
+            particle.className = "firework-effect";
+            particle.style.left = x + "px";
+            particle.style.top = y + "px";
+            particle.style.setProperty("--dx", Math.cos(angle) * distance + "px");
+            particle.style.setProperty("--dy", Math.sin(angle) * distance + "px");
+            particle.style.setProperty("--spark-color", colors[index % colors.length]);
+            workspace.appendChild(particle);
+
+            setTimeout(() => {
+                particle.remove();
+            }, 580);
+        }
+    }
+
+    function mergeElements(first, second) {
+        const resultId = recipes[makeRecipeKey(first.dataset.id, second.dataset.id)];
+
+        if (!resultId) {
+            nudgeElements(first, second);
+            return;
+        }
+
+        const x = ((parseFloat(first.style.left) || 0) + (parseFloat(second.style.left) || 0)) / 2;
+        const y = ((parseFloat(first.style.top) || 0) + (parseFloat(second.style.top) || 0)) / 2;
+        const resultData = elementsData[resultId];
+        const wasFeverMerge = feverCharges > 0;
+
+        first.remove();
+        second.remove();
+        activeElements = activeElements.filter((item) => item !== first && item !== second);
+        clearMagnetState();
+
+        createMergeEffect(x, y, resultData.icon);
+        if (wasFeverMerge) {
+            createFireworkBurst(x, y);
+            feverCharges -= 1;
+            if (feverCharges <= 0) {
+                deactivateFever();
+            } else {
+                renderComboState();
+            }
+        }
+
+        const resultElement = spawnElement(resultId, x, y);
+        if (wasFeverMerge) {
+            replayClass(resultElement, "reward-pulse", 620);
+        }
+        checkDiscovery(resultId, resultElement);
+    }
+
+    function clearWorkspace() {
+        clearMagnetState();
+        for (const element of activeElements) {
+            element.remove();
+        }
+        activeElements = [];
+        updateCounts();
+        showToast("Field cleared");
+    }
+
+    function bindWorkspaceClear() {
+        workspace.addEventListener("pointerup", (event) => {
+            if (event.target !== workspace) {
+                return;
+            }
+
+            const now = Date.now();
+            if (now - lastWorkspaceTap < 320) {
+                clearWorkspace();
+                lastWorkspaceTap = 0;
+                return;
+            }
+
+            lastWorkspaceTap = now;
+        });
+    }
+
+    function bindSearch() {
+        inventorySearchEl.addEventListener("input", (event) => {
+            searchTerm = event.target.value || "";
+            renderInventory();
+        });
+
+        inventorySearchEl.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" && visibleInventoryIds.length > 0) {
+                spawnElement(visibleInventoryIds[visibleInventoryIds.length - 1]);
+            }
+        });
+    }
+
+    function init() {
+        updateCounts();
+        renderInventory();
+        renderQuestPanel();
+        renderComboState();
+        bindWorkspaceClear();
+        bindSearch();
+    }
+
+    init();
+</script>
+</body>
+</html>

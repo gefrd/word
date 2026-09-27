@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Spider Solitaire</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: #064e3b;
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 6px;
+    touch-action: manipulation;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 520px;
+    margin-bottom: 6px;
+    gap: 6px;
+  }
+  .title { font-size: 14px; font-weight: 800; color: #6ee7b7; white-space: nowrap; }
+  .actions { display: flex; gap: 5px; }
+  .btn {
+    background: #047857;
+    border: 1px solid #10b981;
+    color: #fff;
+    padding: 7px 11px;
+    min-height: 34px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .btn:active { background: #065f46; transform: scale(0.95); }
+  .btn[disabled] { opacity: 0.4; }
+  select.btn { padding: 7px 6px; }
+
+  .statbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 520px;
+    font-size: 10px;
+    color: rgba(167, 243, 208, 0.85);
+    margin-bottom: 5px;
+  }
+  .statbar b { color: #f8fafc; font-weight: 800; }
+
+  .hint {
+    width: 100%;
+    max-width: 520px;
+    font-size: 10px;
+    line-height: 1.35;
+    color: rgba(167, 243, 208, 0.7);
+    text-align: center;
+    margin-bottom: 6px;
+  }
+
+  .game-container {
+    width: 100%;
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+  }
+
+  .top-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+  }
+  .done-row { display: flex; gap: 3px; flex: 1; }
+  .done-slot {
+    flex: 1;
+    max-width: 34px;
+    aspect-ratio: 5 / 7;
+    background: rgba(0,0,0,0.22);
+    border: 1.5px dashed rgba(255,255,255,0.18);
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    color: rgba(255,255,255,0.22);
+  }
+  .done-slot.filled {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #1e293b;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+  }
+  .done-slot.filled.red { color: #dc2626; }
+
+  #stock {
+    width: 40px;
+    aspect-ratio: 5 / 7;
+    border-radius: 5px;
+    position: relative;
+    flex-shrink: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.22);
+    border: 1.5px dashed rgba(255,255,255,0.18);
+    font-size: 14px;
+    color: rgba(255,255,255,0.25);
+  }
+  #stock.has-cards {
+    background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+    background-image: repeating-linear-gradient(45deg, #1d4ed8 0, #1d4ed8 4px, #1e40af 4px, #1e40af 8px);
+    border: 2px solid #ffffff;
+    box-shadow: 2px -2px 0 -1px #1e40af, 3px -3px 0 -1px #ffffff;
+  }
+  #stock .deals {
+    font-size: 13px;
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  }
+  #stock:active { transform: scale(0.94); }
+
+  .tableau-row {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 3px;
+    width: 100%;
+    min-height: 300px;
+  }
+  .tableau-col { position: relative; min-height: 300px; }
+
+  .card {
+    position: absolute;
+    width: 100%;
+    aspect-ratio: 5 / 7;
+    background: #ffffff;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    border: 1px solid #cbd5e1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2px 2px;
+    cursor: grab;
+    transition: transform 0.1s;
+    touch-action: none;          /* иначе тач-драг превращается в скролл страницы */
+    overflow: hidden;
+  }
+  .card.back {
+    background: linear-gradient(135deg, #1e3a8a, #3b82f6);
+    border: 1.5px solid #ffffff;
+    background-image: repeating-linear-gradient(45deg, #1d4ed8 0, #1d4ed8 3px, #1e40af 3px, #1e40af 6px);
+  }
+  .card.red { color: #dc2626; }
+  .card.black { color: #1e293b; }
+  .card .row1 { display: flex; justify-content: space-between; align-items: center; line-height: 1; }
+  .card .val { font-size: 10px; font-weight: 900; line-height: 1; }
+  .card .suit { font-size: 8px; line-height: 1; }
+  .card .center-suit { align-self: center; font-size: 13px; line-height: 1; }
+  .card.selected {
+    outline: 2px solid #fbbf24;
+    transform: translateY(-3px);
+    box-shadow: 0 5px 10px rgba(251, 191, 36, 0.45);
+    z-index: 50 !important;
+  }
+
+  /* --- перетаскивание --- */
+  .card.dragging { visibility: hidden; }
+  .drag-ghost {
+    position: fixed;
+    left: 0; top: 0;
+    pointer-events: none;
+    z-index: 200;
+    will-change: transform;
+  }
+  .drag-ghost .card {
+    transition: none;
+    transform: none !important;
+    outline: none !important;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.45);
+  }
+  .tableau-col.drop-ok {
+    outline: 2px dashed rgba(110, 231, 183, 0.5);
+    outline-offset: 1px;
+    border-radius: 6px;
+  }
+  .tableau-col.drop-hover {
+    outline: 3px solid #34d399;
+    background: rgba(52, 211, 153, 0.12);
+  }
+
+  /* --- уезжающая наверх собранная последовательность --- */
+  .fly {
+    position: fixed;
+    left: 0; top: 0;
+    pointer-events: none;
+    z-index: 190;
+    transition: transform 480ms cubic-bezier(.34,.7,.3,1), opacity 480ms ease-in;
+  }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 22px;
+    transform: translateX(-50%);
+    background: rgba(4, 47, 34, 0.95);
+    border: 1px solid #10b981;
+    color: #d1fae5;
+    padding: 9px 14px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    z-index: 300;
+    opacity: 0;
+    transition: opacity 180ms ease;
+    pointer-events: none;
+    max-width: 88vw;
+    text-align: center;
+  }
+  .toast.show { opacity: 1; }
+
+  .win-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    z-index: 400;
+    padding: 20px;
+    text-align: center;
+  }
+  .win-modal.hidden { display: none; }
+  .win-modal h2 { font-size: 22px; color: #6ee7b7; }
+  .win-modal p { font-size: 13px; color: #d1fae5; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="title">🕷 SPIDER</div>
+  <div class="actions">
+    <select class="btn" id="suitSelect" onchange="changeDifficulty()">
+      <option value="1">1 suit — easy</option>
+      <option value="2">2 suits — medium</option>
+      <option value="4">4 suits — hard</option>
+    </select>
+    <button class="btn" onclick="undoMove()">↩ Undo</button>
+    <button class="btn" onclick="initGame()">🔄 New</button>
+  </div>
+</div>
+
+<div class="statbar">
+  <span>Score <b id="scoreVal">500</b></span>
+  <span>Moves <b id="movesVal">0</b></span>
+  <span>Runs <b id="doneVal">0</b>/8</span>
+  <span>Deals left <b id="dealsVal">5</b></span>
+</div>
+
+<div class="hint">Build descending runs of the <b>same suit</b>. Drag a card, or tap it then tap the target. A full K&rarr;A run of one suit flies up to the top. Tap the deck to deal 10 more.</div>
+
+<div class="game-container">
+  <div class="top-row">
+    <div class="done-row" id="doneRow"></div>
+    <div id="stock" onclick="dealRow()"></div>
+  </div>
+
+  <div class="tableau-row" id="tableau">
+    <div class="tableau-col" id="t0" onclick="colClick(0)"></div>
+    <div class="tableau-col" id="t1" onclick="colClick(1)"></div>
+    <div class="tableau-col" id="t2" onclick="colClick(2)"></div>
+    <div class="tableau-col" id="t3" onclick="colClick(3)"></div>
+    <div class="tableau-col" id="t4" onclick="colClick(4)"></div>
+    <div class="tableau-col" id="t5" onclick="colClick(5)"></div>
+    <div class="tableau-col" id="t6" onclick="colClick(6)"></div>
+    <div class="tableau-col" id="t7" onclick="colClick(7)"></div>
+    <div class="tableau-col" id="t8" onclick="colClick(8)"></div>
+    <div class="tableau-col" id="t9" onclick="colClick(9)"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="win-modal hidden" id="winModal">
+  <h2 id="winTitle">YOU WIN! 🎉</h2>
+  <p id="winDesc"></p>
+  <button class="btn" id="modalUndo" onclick="undoToPlayable()" style="display:none">&#8617; Undo</button>
+  <button class="btn" onclick="initGame()">Play Again</button>
+</div>
+
+<script>
+const SUIT_ICONS  = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' };
+const SUIT_COLORS = { spades: 'black', clubs: 'black', hearts: 'red', diamonds: 'red' };
+const VALUES = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const COLS = 10;
+const DEAL_SIZE = 10;
+
+let tableaus = [];        // 10 колонок
+let stock = [];           // остаток, раздаётся по 10 карт
+let completed = [];       // собранные последовательности, по 13 карт
+let suitCount = 1;        // 1 / 2 / 4 масти
+let selectedCard = null;  // { colIndex, cardIndex, card }
+let history = [];
+let moves = 0;
+let score = 500;
+
+/* ---------- звук ---------- */
+let audioCtx = null;
+function playSound(type) {
+  try {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      audioCtx = new AC();
+    }
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    const now = audioCtx.currentTime;
+    if (type === 'card')     { o.type = 'triangle'; o.frequency.value = 320; g.gain.setValueAtTime(0.05, now); }
+    else if (type === 'flip'){ o.type = 'square';   o.frequency.value = 520; g.gain.setValueAtTime(0.03, now); }
+    else if (type === 'deal'){ o.type = 'triangle'; o.frequency.value = 240; g.gain.setValueAtTime(0.05, now); }
+    else if (type === 'run') { o.type = 'sine';     o.frequency.setValueAtTime(520, now);
+                               o.frequency.linearRampToValueAtTime(1040, now + 0.28); g.gain.setValueAtTime(0.07, now); }
+    else if (type === 'win') { o.type = 'sine';     o.frequency.setValueAtTime(440, now);
+                               o.frequency.linearRampToValueAtTime(1320, now + 0.6); g.gain.setValueAtTime(0.09, now); }
+    else { o.type = 'square'; o.frequency.value = 160; g.gain.setValueAtTime(0.04, now); }
+    const dur = (type === 'win') ? 0.6 : (type === 'run' ? 0.3 : 0.09);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    o.start(now); o.stop(now + dur);
+  } catch (e) { /* без звука играть можно */ }
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove('show'), 1700);
+}
+
+/* ---------- правила ---------- */
+
+// последовательность можно поднять, только если она одной масти и убывает без пропусков
+function isValidRun(pile, startIdx) {
+  if (startIdx < 0 || startIdx >= pile.length) return false;
+  if (!pile[startIdx].faceUp) return false;
+  for (let i = startIdx; i < pile.length; i++) {
+    if (!pile[i].faceUp) return false;
+    if (i > startIdx) {
+      if (pile[i].suit !== pile[i - 1].suit) return false;
+      if (pile[i].rank !== pile[i - 1].rank - 1) return false;
+    }
+  }
+  return true;
+}
+
+// класть можно на карту на одну старше — масть при этом любая
+function canPlaceOn(card, targetPile) {
+  if (targetPile.length === 0) return true;
+  const top = targetPile[targetPile.length - 1];
+  if (!top.faceUp) return false;
+  return top.rank === card.rank + 1;
+}
+
+function anyEmptyColumn() {
+  return tableaus.some(p => p.length === 0);
+}
+function canDeal() {
+  return stock.length >= DEAL_SIZE && !anyEmptyColumn();
+}
+function dealsLeft() {
+  return Math.floor(stock.length / DEAL_SIZE);
+}
+
+/* ---------- состояние и откат ---------- */
+function saveState() {
+  history.push(JSON.stringify({ t: tableaus, s: stock, c: completed, m: moves, sc: score }));
+  if (history.length > 300) history.shift();
+}
+
+function undoMove() {
+  if (history.length === 0) { toast('Nothing to undo'); return; }
+  const st = JSON.parse(history.pop());
+  tableaus = st.t; stock = st.s; completed = st.c; moves = st.m; score = st.sc;
+  selectedCard = null;
+  document.getElementById('winModal').classList.add('hidden');
+  playSound('flip');
+  render();
+}
+
+function changeDifficulty() {
+  suitCount = parseInt(document.getElementById('suitSelect').value, 10) || 1;
+  initGame();
+}
+
+function initGame() {
+  document.getElementById('winModal').classList.add('hidden');
+  history = [];
+  selectedCard = null;
+  moves = 0;
+  score = 500;
+  completed = [];
+
+  // 104 карты: 8 наборов по 13, масти берутся по кругу из выбранного набора
+  const pool = suitCount === 1 ? ['spades']
+             : suitCount === 2 ? ['spades', 'hearts']
+             : ['spades', 'hearts', 'diamonds', 'clubs'];
+  const copiesPerSuit = 8 / pool.length;
+  const deck = [];
+  for (const s of pool) {
+    for (let c = 0; c < copiesPerSuit; c++) {
+      for (let v = 0; v < VALUES.length; v++) {
+        deck.push({ suit: s, val: VALUES[v], rank: v + 1, color: SUIT_COLORS[s], icon: SUIT_ICONS[s], faceUp: false });
+      }
+    }
+  }
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = deck[i]; deck[i] = deck[j]; deck[j] = t;
+  }
+
+  // раздача: первые 4 колонки по 6 карт, остальные 6 колонок по 5 => 54 карты, 50 в запасе
+  tableaus = [];
+  for (let c = 0; c < COLS; c++) tableaus.push([]);
+  for (let c = 0; c < COLS; c++) {
+    const n = c < 4 ? 6 : 5;
+    for (let k = 0; k < n; k++) {
+      const card = deck.pop();
+      card.faceUp = (k === n - 1);
+      tableaus[c].push(card);
+    }
+  }
+  stock = deck;
+  render();
+}
+
+function dealRow() {
+  if (stock.length < DEAL_SIZE) { toast('The deck is empty'); return; }
+  if (anyEmptyColumn()) { toast('Fill every empty column before dealing'); return; }
+  saveState();
+  selectedCard = null;
+  for (let c = 0; c < COLS; c++) {
+    const card = stock.pop();
+    card.faceUp = true;
+    tableaus[c].push(card);
+  }
+  moves++;
+  score--;
+  playSound('deal');
+  collectRuns();
+  render();
+}
+
+// снять со стола все готовые последовательности K..A одной масти
+function collectRuns() {
+  let found = true;
+  const taken = [];
+  while (found) {
+    found = false;
+    for (let c = 0; c < COLS; c++) {
+      const pile = tableaus[c];
+      if (pile.length < 13) continue;
+      const start = pile.length - 13;
+      if (pile[start].rank !== 13) continue;
+      if (!isValidRun(pile, start)) continue;
+      const run = pile.splice(start, 13);
+      if (pile.length > 0 && !pile[pile.length - 1].faceUp) pile[pile.length - 1].faceUp = true;
+      completed.push(run);
+      taken.push({ col: c, run, slot: completed.length - 1 });
+      score += 100;
+      found = true;
+      break;
+    }
+  }
+  if (taken.length) {
+    playSound('run');
+    for (const t of taken) animateRun(t);
+  }
+  return taken.length;
+}
+
+// косметика: собранная колода уезжает наверх в свой слот
+function animateRun(t) {
+  try {
+    const colEl = document.getElementById('t' + t.col);
+    const slotEl = document.getElementById('done' + t.slot);
+    if (!colEl || !slotEl) return;
+    const from = colEl.getBoundingClientRect();
+    const to = slotEl.getBoundingClientRect();
+    if (!from.width || !to.width) return;
+    const fly = document.createElement('div');
+    fly.className = 'fly';
+    fly.style.width = from.width + 'px';
+    t.run.forEach((card, i) => {
+      const el = createCardEl(card, false);
+      el.style.top = (i * 4) + 'px';
+      fly.appendChild(el);
+    });
+    fly.style.transform = 'translate(' + from.left + 'px, ' + from.top + 'px)';
+    document.body.appendChild(fly);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const k = to.width / from.width;
+        fly.style.transform = 'translate(' + to.left + 'px, ' + to.top + 'px) scale(' + k + ')';
+        fly.style.opacity = '0.25';
+      });
+    });
+    setTimeout(() => fly.remove(), 560);
+  } catch (e) { /* анимация не обязательна */ }
+}
+
+/* ---------- ходы ---------- */
+
+// вернуть true, если ход выполнен
+function moveRun(fromCol, fromIdx, toCol) {
+  if (fromCol === toCol) return false;
+  const src = tableaus[fromCol];
+  const dst = tableaus[toCol];
+  if (!isValidRun(src, fromIdx)) return false;
+  if (!canPlaceOn(src[fromIdx], dst)) return false;
+  saveState();
+  const group = src.splice(fromIdx);
+  dst.push(...group);
+  if (src.length > 0 && !src[src.length - 1].faceUp) {
+    src[src.length - 1].faceUp = true;
+    playSound('flip');
+  }
+  moves++;
+  score--;
+  playSound('card');
+  selectedCard = null;
+  collectRuns();
+  render();
+  return true;
+}
+
+// куда лучше всего отправить последовательность по двойному тапу
+function bestTargetFor(fromCol, fromIdx) {
+  const card = tableaus[fromCol][fromIdx];
+  let best = -1, bestScore = -1;
+  for (let c = 0; c < COLS; c++) {
+    if (c === fromCol) continue;
+    const dst = tableaus[c];
+    if (!canPlaceOn(card, dst)) continue;
+    let s;
+    if (dst.length === 0) s = 1;                                        // пустая колонка — последний вариант
+    else if (dst[dst.length - 1].suit === card.suit) s = 3;             // своя масть — лучший
+    else s = 2;
+    if (s > bestScore) { bestScore = s; best = c; }
+  }
+  return best;
+}
+
+function cardClick(colIdx, cardIdx) {
+  const pile = tableaus[colIdx];
+  const card = pile[cardIdx];
+  if (!card) return;
+
+  // закрытую карту можно только открыть, и только если она верхняя
+  if (!card.faceUp) {
+    if (cardIdx === pile.length - 1) {
+      saveState();
+      selectedCard = null;
+      card.faceUp = true;
+      playSound('flip');
+      collectRuns();
+      render();
+    }
+    return;
+  }
+
+  // повторный тап по той же карте снимает выделение
+  if (selectedCard && selectedCard.colIndex === colIdx && selectedCard.cardIndex === cardIdx) {
+    selectedCard = null;
+    render();
+    return;
+  }
+
+  if (selectedCard) {
+    // попытка положить выбранное в эту колонку
+    if (moveRun(selectedCard.colIndex, selectedCard.cardIndex, colIdx)) return;
+  }
+
+  if (isValidRun(pile, cardIdx)) {
+    selectedCard = { colIndex: colIdx, cardIndex: cardIdx, card };
+  } else {
+    selectedCard = null;
+  }
+  render();
+}
+
+function colClick(colIdx) {
+  if (!selectedCard) return;
+  if (!moveRun(selectedCard.colIndex, selectedCard.cardIndex, colIdx)) {
+    selectedCard = null;
+    render();
+  }
+}
+
+/* ---------- есть ли вообще ходы ---------- */
+function hasAnyMove() {
+  if (canDeal()) return true;
+  for (let c = 0; c < COLS; c++) {
+    const pile = tableaus[c];
+    if (pile.length && !pile[pile.length - 1].faceUp) return true;   // есть что открыть
+    for (let i = 0; i < pile.length; i++) {
+      if (!pile[i].faceUp) continue;
+      if (!isValidRun(pile, i)) continue;
+      for (let d = 0; d < COLS; d++) {
+        if (d === c) continue;
+        if (tableaus[d].length === 0 && i === 0) continue;            // просто переставить колонку целиком — не ход
+        if (canPlaceOn(pile[i], tableaus[d])) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/* ---------- отрисовка ---------- */
+function createCardEl(card, isSelected) {
+  const el = document.createElement('div');
+  if (!card.faceUp) {
+    el.className = 'card back';
+    return el;
+  }
+  el.className = 'card ' + card.color + (isSelected ? ' selected' : '');
+  el.innerHTML =
+    '<div class="row1"><span class="val">' + card.val + '</span><span class="suit">' + card.icon + '</span></div>' +
+    '<div class="center-suit">' + card.icon + '</div>' +
+    '<div class="row1" style="transform:rotate(180deg)"><span class="val">' + card.val + '</span><span class="suit">' + card.icon + '</span></div>';
+  return el;
+}
+
+function render() {
+  // собранные последовательности
+  const doneRow = document.getElementById('doneRow');
+  doneRow.innerHTML = '';
+  for (let i = 0; i < 8; i++) {
+    const slot = document.createElement('div');
+    slot.id = 'done' + i;
+    const run = completed[i];
+    if (run) {
+      slot.className = 'done-slot filled ' + run[0].color;
+      slot.textContent = run[0].icon;
+    } else {
+      slot.className = 'done-slot';
+      slot.textContent = '';
+    }
+    doneRow.appendChild(slot);
+  }
+
+  // запас
+  const stockEl = document.getElementById('stock');
+  stockEl.innerHTML = '';
+  if (stock.length >= DEAL_SIZE) {
+    stockEl.className = 'has-cards';
+    const n = document.createElement('div');
+    n.className = 'deals';
+    n.textContent = '×' + dealsLeft();
+    stockEl.appendChild(n);
+  } else {
+    stockEl.className = '';
+    stockEl.textContent = '—';
+  }
+
+  // колонки
+  for (let t = 0; t < COLS; t++) {
+    const tEl = document.getElementById('t' + t);
+    tEl.innerHTML = '';
+    const pile = tableaus[t];
+    const colW = tEl.getBoundingClientRect().width || 44;
+    const cardH = colW * 7 / 5;
+    // высота считается от реально доступного экрана, а не зашитым числом:
+    // иначе на коротком телефоне длинная колонка уезжает вниз, а touch-action:none
+    // на картах не даёт её доскроллить — карты становятся недоступны.
+    const rowTop = tEl.getBoundingClientRect().top || 0;
+    const vh = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 640;
+    const availH = Math.max(240, vh - rowTop - 10);
+    let offset = 18;
+    if (pile.length > 1) {
+      const fit = (availH - cardH - 4) / (pile.length - 1);   // столько влезает в экран
+      offset = Math.min(18, Math.max(5, fit));                // обычно не мельче 5px
+      if (offset > fit) offset = Math.max(2, fit);            // если и 5px не влезает — жмём сильнее,
+    }                                                        // лучше тесно, чем карты за экраном
+    tEl.style.minHeight = Math.max(Math.min(300, availH), cardH + offset * (pile.length - 1) + 4) + 'px';
+
+    pile.forEach((card, idx) => {
+      const isSel = selectedCard && selectedCard.colIndex === t && idx >= selectedCard.cardIndex;
+      const cardEl = createCardEl(card, isSel);
+      cardEl.style.top = (idx * offset) + 'px';
+      cardEl.style.zIndex = idx + 1;
+      cardEl.onclick = (e) => {
+        e.stopPropagation();
+        const now = Date.now();
+        if (card.faceUp && now - (card.lastTap || 0) < 300 && isValidRun(pile, idx)) {
+          const target = bestTargetFor(t, idx);
+          card.lastTap = 0;
+          if (target >= 0) { moveRun(t, idx, target); return; }
+        }
+        card.lastTap = now;
+        cardClick(t, idx);
+      };
+      if (card.faceUp) attachDrag(cardEl, t, idx);
+      tEl.appendChild(cardEl);
+    });
+  }
+
+  document.getElementById('scoreVal').textContent = score;
+  document.getElementById('movesVal').textContent = moves;
+  document.getElementById('doneVal').textContent = completed.length;
+  document.getElementById('dealsVal').textContent = dealsLeft();
+
+  checkEnd();
+}
+
+function checkEnd() {
+  const mu = document.getElementById('modalUndo');
+  if (mu) mu.style.display = 'none';
+  if (completed.length === 8) {
+    document.getElementById('winTitle').textContent = 'YOU WIN! 🎉';
+    document.getElementById('winDesc').textContent =
+      'All 8 runs assembled in ' + moves + ' moves. Score ' + score + '.';
+    playSound('win');
+    document.getElementById('winModal').classList.remove('hidden');
+    return;
+  }
+  if (!hasAnyMove()) {
+    document.getElementById('winTitle').textContent = 'NO MOVES LEFT';
+    document.getElementById('winDesc').textContent = history.length
+      ? 'Nothing else can be played. Runs assembled: ' + completed.length + '/8. You can undo and try another line.'
+      : 'Nothing else can be played. Runs assembled: ' + completed.length + '/8.';
+    if (mu && history.length) mu.style.display = '';
+    document.getElementById('winModal').classList.remove('hidden');
+  }
+}
+
+/* Тупик не должен быть приговором: откатываемся назад до позиции, где ход есть.
+   Один Undo часто возвращает в ту же безвыходную позицию, поэтому крутим до играбельной. */
+function undoToPlayable() {
+  let guard = 0;
+  while (history.length && guard++ < 400) {
+    undoMove();
+    if (hasAnyMove()) break;
+  }
+  document.getElementById('winModal').classList.add('hidden');
+  render();
+}
+
+/* ================= перетаскивание карт =================
+   Драг не содержит правил: он определяет только источник и цель,
+   а сам ход выполняет moveRun — та же функция, что и для тапов. */
+
+let dragState = null;
+let dragBlockClick = false;
+
+document.addEventListener('click', (e) => {
+  if (dragBlockClick) {
+    dragBlockClick = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }
+}, true);
+
+function attachDrag(el, colIdx, cardIdx) {
+  el.addEventListener('pointerdown', (ev) => {
+    if (ev.button != null && ev.button !== 0) return;
+    dragBlockClick = false;
+    if (!isValidRun(tableaus[colIdx], cardIdx)) return;
+    const r = el.getBoundingClientRect();
+    dragState = {
+      colIdx, cardIdx, el, pointerId: ev.pointerId,
+      startX: ev.clientX, startY: ev.clientY,
+      grabDX: ev.clientX - r.left,
+      grabDY: ev.clientY - r.top,
+      width: r.width,
+      active: false, ghost: null, zones: null, hoverZone: null
+    };
+  });
+}
+
+function startGhost(d) {
+  d.active = true;
+  const colEl = document.getElementById('t' + d.colIdx);
+  const srcEls = Array.prototype.slice.call(colEl.children, d.cardIdx);
+  if (!srcEls.length) { d.active = false; dragState = null; return; }
+  const firstTop = parseFloat(srcEls[0].style.top || '0');
+  const ghost = document.createElement('div');
+  ghost.className = 'drag-ghost';
+  ghost.style.width = d.width + 'px';
+  for (const se of srcEls) {
+    const clone = se.cloneNode(true);
+    clone.classList.remove('selected');
+    clone.style.top = (parseFloat(se.style.top || '0') - firstTop) + 'px';
+    clone.style.zIndex = '';
+    ghost.appendChild(clone);
+    se.classList.add('dragging');
+  }
+  document.body.appendChild(ghost);
+  d.ghost = ghost;
+
+  const card = tableaus[d.colIdx][d.cardIdx];
+  d.zones = [];
+  for (let c = 0; c < COLS; c++) {
+    const el = document.getElementById('t' + c);
+    const ok = c !== d.colIdx && canPlaceOn(card, tableaus[c]);
+    d.zones.push({ i: c, rect: el.getBoundingClientRect(), ok });
+    if (ok) el.classList.add('drop-ok');
+  }
+  // снять старое выделение от тапа, не вызывая render (он уничтожил бы тащимый элемент)
+  for (const c of document.querySelectorAll('.card.selected')) {
+    if (!ghost.contains(c)) c.classList.remove('selected');
+  }
+  selectedCard = null;
+}
+
+function pickZone(d, px, py) {
+  const ok = d.zones.filter(z => z.ok);
+  for (const z of ok) {
+    const r = z.rect;
+    if (px >= r.left && px <= r.right && py >= r.top && py <= r.bottom) return z;
+  }
+  // палец мимо — берём цель с наибольшим перекрытием самой карты
+  const g = d.ghost.firstChild.getBoundingClientRect();
+  let best = null, bestArea = 0;
+  for (const z of ok) {
+    const r = z.rect;
+    const w = Math.min(g.right, r.right) - Math.max(g.left, r.left);
+    const h = Math.min(g.bottom, r.bottom) - Math.max(g.top, r.top);
+    if (w > 0 && h > 0 && w * h > bestArea) { bestArea = w * h; best = z; }
+  }
+  return best;
+}
+
+function moveGhost(d, px, py) {
+  d.ghost.style.transform = 'translate(' + (px - d.grabDX) + 'px, ' + (py - d.grabDY - 6) + 'px)';
+  const z = pickZone(d, px, py);
+  if (z !== d.hoverZone) {
+    if (d.hoverZone) document.getElementById('t' + d.hoverZone.i).classList.remove('drop-hover');
+    d.hoverZone = z;
+    if (z) document.getElementById('t' + z.i).classList.add('drop-hover');
+  }
+}
+
+function cleanupDrag(d) {
+  if (d.ghost) d.ghost.remove();
+  for (let c = 0; c < COLS; c++) {
+    const el = document.getElementById('t' + c);
+    el.classList.remove('drop-ok');
+    el.classList.remove('drop-hover');
+  }
+  for (const c of document.querySelectorAll('.card.dragging')) c.classList.remove('dragging');
+}
+
+window.addEventListener('pointermove', (ev) => {
+  const d = dragState;
+  if (!d || ev.pointerId !== d.pointerId) return;
+  if (!d.active) {
+    // порог, чтобы дрожание пальца не превращало тап в перетаскивание
+    if (Math.abs(ev.clientX - d.startX) + Math.abs(ev.clientY - d.startY) < 8) return;
+    startGhost(d);
+    if (!dragState) return;
+  }
+  moveGhost(d, ev.clientX, ev.clientY);
+  ev.preventDefault();
+}, { passive: false });
+
+window.addEventListener('pointerup', (ev) => {
+  const d = dragState;
+  if (!d || ev.pointerId !== d.pointerId) return;
+  dragState = null;
+  if (!d.active) return;          // это был тап, пусть срабатывает onclick
+  dragBlockClick = true;
+  const zone = d.hoverZone;
+  cleanupDrag(d);
+  if (zone) {
+    if (!moveRun(d.colIdx, d.cardIdx, zone.i)) { selectedCard = null; render(); }
+  } else {
+    selectedCard = null;
+    render();
+  }
+});
+
+window.addEventListener('pointercancel', (ev) => {
+  const d = dragState;
+  if (!d || ev.pointerId !== d.pointerId) return;
+  dragState = null;
+  if (d.active) { cleanupDrag(d); selectedCard = null; render(); }
+});
+
+initGame();
+</script>
+</body>
+</html>

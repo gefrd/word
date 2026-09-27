@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="created-date" content="2026-03-25">
+    <meta name="game-engine" content="threejs">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .game-header {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 12px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            flex-shrink: 0;
+        }
+        .game-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0 0 4px 0;
+            color: #fff;
+        }
+        .game-info {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            margin: 0;
+        }
+        .game-description {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.9);
+            margin: 8px 0 0 0;
+            line-height: 1.4;
+        }
+        .game-engine {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            margin-left: 8px;
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+        #gameContainer {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 0;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            max-width: 100vw;
+            max-height: 100vh;
+            width: auto;
+            height: auto;
+        }
+        body > canvas {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1;
+        }
+        .ludo-footer {
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.7);
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 11px;
+            text-decoration: none;
+            border-top-left-radius: 4px;
+            transition: all 0.2s ease;
+            z-index: 1000;
+        }
+        .ludo-footer:hover {
+            background: rgba(0, 0, 0, 0.9);
+            color: rgba(255, 255, 255, 0.9);
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer"></div>
+    <script type="importmap" crossorigin="anonymous">{"imports": {"three": "https://unpkg.com/three@0.176.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.176.0/examples/jsm/"}}</script>
+    <script type="module">
+       
+        // Generated on: 2026-03-25
+        // Engine: threejs
+        // Title: 3D Lane Runer
+        
+        // Monitor for canvas elements and move them to gameContainer
+        const gameContainer = document.getElementById('gameContainer');
+        
+        // Function to move canvas elements to gameContainer
+        function moveCanvasToContainer() {
+            const canvases = document.querySelectorAll('body > canvas');
+            canvases.forEach(canvas => {
+                if (canvas.parentElement === document.body) {
+                    gameContainer.appendChild(canvas);
+                }
+            });
+        }
+        
+        // Monitor for new canvas elements
+        const observer = new MutationObserver(() => {
+            moveCanvasToContainer();
+        });
+        observer.observe(document.body, { childList: true });
+        
+        // Initial check
+        setTimeout(moveCanvasToContainer, 100);
+        
+        import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+class Game {
+    constructor() {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setClearColor(0x0a0a0a);
+        document.body.appendChild(this.renderer.domElement);
+        this.gameState = 'start';
+        this.score = 0;
+        this.distance = 0;
+        this.baseSpeed = 0.08;
+        this.currentSpeed = this.baseSpeed;
+        this.speedBoostTimer = 0;
+        this.laneWidth = 4;
+        this.playerLane = 1;
+        this.targetLane = 1;
+        this.laneTransition = 0;
+        this.obstacles = [];
+        this.speedBoosts = [];
+        this.obstacleSpawnTimer = 0;
+        this.boostSpawnTimer = 0;
+        this.init();
+    }
+    init() {
+        this.setupLights();
+        this.createHighway();
+        this.createPlayer();
+        this.setupCamera();
+        this.setupInput();
+        this.createUI();
+        this.animate();
+    }
+    setupLights() {
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.3);
+        this.scene.add(ambientLight);
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        directionalLight.position.set(0, 10, -10);
+        this.scene.add(directionalLight);
+        this.playerLight = new THREE.PointLight(0xff00ff, 2, 15);
+        this.playerLight.position.set(0, 2, 5);
+        this.scene.add(this.playerLight);
+        const fog = new THREE.Fog(0x0a0a0a, 10, 100);
+        this.scene.fog = fog;
+    }
+    createHighway() {
+        this.highwayPieces = [];
+        this.laneLines = [];
+        const numPieces = 3;
+        for (let piece = 0; piece < numPieces; piece++) {
+            const highwayGeometry = new THREE.BoxGeometry(20, 0.5, 200);
+            const highwayMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x1a1a2e,
+                emissive: 0x0a0a1e,
+                emissiveIntensity: 0.5
+            });
+            const highwayPiece = new THREE.Mesh(highwayGeometry, highwayMaterial);
+            highwayPiece.position.y = -1;
+            highwayPiece.position.z = piece * 200 - 200;
+            this.scene.add(highwayPiece);
+            this.highwayPieces.push(highwayPiece);
+        }
+        for (let i = -1; i <= 1; i++) {
+            for (let piece = 0; piece < numPieces; piece++) {
+                for (let segment = 0; segment < 20; segment++) {
+                    const laneGeometry = new THREE.BoxGeometry(0.2, 0.12, 4);
+                    const laneMaterial = new THREE.MeshPhongMaterial({ 
+                        color: 0x00ffff,
+                        emissive: 0x00ffff,
+                        emissiveIntensity: 1
+                    });
+                    const lane = new THREE.Mesh(laneGeometry, laneMaterial);
+                    lane.position.set(i * this.laneWidth, -0.8, piece * 200 - 200 + segment * 10);
+                    this.scene.add(lane);
+                    this.laneLines.push(lane);
+                }
+            }
+        }
+    }
+    createPlayer() {
+        const carGroup = new THREE.Group();
+        const bodyGeometry = new THREE.BoxGeometry(2, 1, 4);
+        const bodyMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0xff00ff,
+            emissive: 0xff00ff,
+            emissiveIntensity: 0.8,
+            metalness: 0.5,
+            roughness: 0.2
+        });
+        const carBody = new THREE.Mesh(bodyGeometry, bodyMaterial);
+        carBody.position.y = 0.5;
+        carGroup.add(carBody);
+        const cabinGeometry = new THREE.BoxGeometry(1.6, 0.8, 2);
+        const cabinMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x8800ff,
+            emissive: 0x440088,
+            emissiveIntensity: 0.5,
+            metalness: 0.7,
+            roughness: 0.1
+        });
+        const cabin = new THREE.Mesh(cabinGeometry, cabinMaterial);
+        cabin.position.y = 1.2;
+        cabin.position.z = 0.2;
+        carGroup.add(cabin);
+        const wheelGeometry = new THREE.CylinderGeometry(0.3, 0.3, 0.2);
+        const wheelMaterial = new THREE.MeshPhongMaterial({ 
+            color: 0x222222,
+            metalness: 0.8,
+            roughness: 0.2
+        });
+        const wheelPositions = [
+            [-0.8, 0, 1.2],
+            [0.8, 0, 1.2],
+            [-0.8, 0, -1.2],
+            [0.8, 0, -1.2]
+        ];
+        this.wheels = [];
+        wheelPositions.forEach(pos => {
+            const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+            wheel.position.set(...pos);
+            wheel.rotation.z = Math.PI / 2;
+            carGroup.add(wheel);
+            this.wheels.push(wheel);
+        });
+        const headlightGeometry = new THREE.SphereGeometry(0.2);
+        const headlightMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xffffff,
+            emissive: 0xffffff,
+            emissiveIntensity: 2
+        });
+        const leftHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
+        leftHeadlight.position.set(-0.6, 0.5, 2.2);
+        carGroup.add(leftHeadlight);
+        const rightHeadlight = new THREE.Mesh(headlightGeometry, headlightMaterial);
+        rightHeadlight.position.set(0.6, 0.5, 2.2);
+        carGroup.add(rightHeadlight);
+        const leftHeadlightLight = new THREE.SpotLight(0xffffff, 1, 20, Math.PI / 6);
+        leftHeadlightLight.position.copy(leftHeadlight.position);
+        leftHeadlightLight.target.position.z = 10;
+        carGroup.add(leftHeadlightLight);
+        carGroup.add(leftHeadlightLight.target);
+        const rightHeadlightLight = new THREE.SpotLight(0xffffff, 1, 20, Math.PI / 6);
+        rightHeadlightLight.position.copy(rightHeadlight.position);
+        rightHeadlightLight.target.position.z = 10;
+        carGroup.add(rightHeadlightLight);
+        carGroup.add(rightHeadlightLight.target);
+        const taillightGeometry = new THREE.SphereGeometry(0.2);
+        const taillightMaterial = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 2
+        });
+        const leftTaillight = new THREE.Mesh(taillightGeometry, taillightMaterial);
+        leftTaillight.position.set(-0.6, 0.5, -2.2);
+        carGroup.add(leftTaillight);
+        const rightTaillight = new THREE.Mesh(taillightGeometry, taillightMaterial);
+        rightTaillight.position.set(0.6, 0.5, -2.2);
+        carGroup.add(rightTaillight);
+        this.player = carGroup;
+        this.player.position.set(0, 0, 5);
+        this.scene.add(this.player);
+        const playerGlowGeometry = new THREE.BoxGeometry(2.5, 2, 5);
+        const glowMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xff00ff,
+            transparent: true,
+            opacity: 0.2
+        });
+        this.playerGlow = new THREE.Mesh(playerGlowGeometry, glowMaterial);
+        this.player.add(this.playerGlow);
+    }
+    setupCamera() {
+        this.camera.position.set(0, 8, 25);
+        this.camera.lookAt(0, 0, 5);
+    }
+    setupInput() {
+        let touchStartX = null;
+        const handleKeyDown = (e) => {
+            if (this.gameState !== 'playing') return;
+            if (e.key === 'ArrowLeft' && this.playerLane > 0) {
+                this.targetLane--;
+            } else if (e.key === 'ArrowRight' && this.playerLane < 2) {
+                this.targetLane++;
+            }
+        };
+        const handleTouchStart = (e) => {
+            touchStartX = e.touches[0].clientX;
+        };
+        const handleTouchEnd = (e) => {
+            if (this.gameState !== 'playing' || touchStartX === null) return;
+            const touchEndX = e.changedTouches[0].clientX;
+            const diff = touchEndX - touchStartX;
+            if (diff > 50 && this.playerLane > 0) {
+                this.targetLane--;
+            } else if (diff < -50 && this.playerLane < 2) {
+                this.targetLane++;
+            }
+            touchStartX = null;
+        };
+        const handleMouseDown = (e) => {
+            if (this.gameState === 'start' && this.startButton.contains(e.target)) {
+                this.startGame();
+            } else if (this.gameState === 'gameOver' && this.restartButton.contains(e.target)) {
+                this.restart();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('touchstart', handleTouchStart);
+        window.addEventListener('touchend', handleTouchEnd);
+        window.addEventListener('mousedown', handleMouseDown);
+        window.addEventListener('resize', () => this.onWindowResize());
+    }
+    createUI() {
+        this.scoreElement = document.createElement('div');
+        this.scoreElement.style.position = 'absolute';
+        this.scoreElement.style.top = '20px';
+        this.scoreElement.style.left = '20px';
+        this.scoreElement.style.color = '#00ffff';
+        this.scoreElement.style.fontSize = '24px';
+        this.scoreElement.style.fontFamily = 'monospace';
+        this.scoreElement.textContent = 'SCORE: 0';
+        document.body.appendChild(this.scoreElement);
+        this.speedElement = document.createElement('div');
+        this.speedElement.style.position = 'absolute';
+        this.speedElement.style.top = '50px';
+        this.speedElement.style.left = '20px';
+        this.speedElement.style.color = '#ff00ff';
+        this.speedElement.style.fontSize = '18px';
+        this.speedElement.style.fontFamily = 'monospace';
+        this.speedElement.textContent = 'SPEED: 1.0x';
+        document.body.appendChild(this.speedElement);
+        this.startScreen = document.createElement('div');
+        this.startScreen.style.position = 'absolute';
+        this.startScreen.style.top = '50%';
+        this.startScreen.style.left = '50%';
+        this.startScreen.style.transform = 'translate(-50%, -50%)';
+        this.startScreen.style.textAlign = 'center';
+        this.startScreen.style.color = '#00ffff';
+        const title = document.createElement('h1');
+        title.textContent = '3D Lane Runner';
+        title.style.fontSize = '48px';
+        title.style.marginBottom = '20px';
+        title.style.textShadow = '0 0 20px #00ffff';
+        this.startScreen.appendChild(title);
+        const instructions = document.createElement('p');
+        instructions.textContent = 'Swipe to move lanes, avoid obstacles, collect boosts';
+        instructions.style.fontSize = '18px';
+        instructions.style.marginBottom = '30px';
+        this.startScreen.appendChild(instructions);
+        this.startButton = document.createElement('button');
+        this.startButton.textContent = 'PLAY';
+        this.startButton.style.padding = '15px 40px';
+        this.startButton.style.fontSize = '24px';
+        this.startButton.style.backgroundColor = '#ff00ff';
+        this.startButton.style.color = '#0a0a0a';
+        this.startButton.style.border = 'none';
+        this.startButton.style.cursor = 'pointer';
+        this.startButton.style.boxShadow = '0 0 20px #ff00ff';
+        this.startScreen.appendChild(this.startButton);
+        document.body.appendChild(this.startScreen);
+        this.gameOverScreen = document.createElement('div');
+        this.gameOverScreen.style.position = 'absolute';
+        this.gameOverScreen.style.top = '50%';
+        this.gameOverScreen.style.left = '50%';
+        this.gameOverScreen.style.transform = 'translate(-50%, -50%)';
+        this.gameOverScreen.style.textAlign = 'center';
+        this.gameOverScreen.style.color = '#ff00ff';
+        this.gameOverScreen.style.display = 'none';
+        const gameOverTitle = document.createElement('h2');
+        gameOverTitle.textContent = 'GAME OVER';
+        gameOverTitle.style.fontSize = '48px';
+        gameOverTitle.style.marginBottom = '20px';
+        gameOverTitle.style.textShadow = '0 0 20px #ff00ff';
+        this.gameOverScreen.appendChild(gameOverTitle);
+        this.finalScore = document.createElement('p');
+        this.finalScore.textContent = 'FINAL SCORE: 0';
+        this.finalScore.style.fontSize = '24px';
+        this.finalScore.style.marginBottom = '20px';
+        this.gameOverScreen.appendChild(this.finalScore);
+        this.restartButton = document.createElement('button');
+        this.restartButton.textContent = 'RESTART';
+        this.restartButton.style.padding = '15px 40px';
+        this.restartButton.style.fontSize = '24px';
+        this.restartButton.style.backgroundColor = '#00ffff';
+        this.restartButton.style.color = '#0a0a0a';
+        this.restartButton.style.border = 'none';
+        this.restartButton.style.cursor = 'pointer';
+        this.restartButton.style.boxShadow = '0 0 20px #00ffff';
+        this.gameOverScreen.appendChild(this.restartButton);
+        document.body.appendChild(this.gameOverScreen);
+    }
+    startGame() {
+        this.gameState = 'playing';
+        this.startScreen.style.display = 'none';
+        this.score = 0;
+        this.distance = 0;
+        this.currentSpeed = this.baseSpeed;
+        this.playerLane = 1;
+        this.targetLane = 1;
+    }
+    restart() {
+        this.obstacles.forEach(obs => this.scene.remove(obs));
+        this.speedBoosts.forEach(boost => this.scene.remove(boost));
+        this.obstacles = [];
+        this.speedBoosts = [];
+        this.gameOverScreen.style.display = 'none';
+        this.startGame();
+    }
+    update(deltaTime) {
+        if (this.gameState !== 'playing') return;
+        this.distance += this.currentSpeed * deltaTime;
+        this.score = Math.floor(this.distance * 10);
+        if (this.distance > 0 && this.distance % 100 < deltaTime) {
+            this.baseSpeed = Math.min(this.baseSpeed * 1.1, 0.5);
+        }
+        if (this.speedBoostTimer > 0) {
+            this.speedBoostTimer -= deltaTime;
+            this.currentSpeed = this.baseSpeed * 2;
+            this.playerGlow.scale.setScalar(1.2 + Math.sin(this.speedBoostTimer * 10) * 0.2);
+        } else {
+            this.currentSpeed = this.baseSpeed;
+            this.playerGlow.scale.setScalar(1);
+        }
+        if (this.wheels) {
+            const wheelRotation = this.currentSpeed * deltaTime * 10;
+            this.wheels.forEach(wheel => {
+                wheel.rotation.x += wheelRotation;
+            });
+        }
+        if (this.laneTransition < 1) {
+            this.laneTransition = Math.min(this.laneTransition + deltaTime * 5, 1);
+            const currentX = (this.playerLane - 1) * this.laneWidth;
+            const targetX = (this.targetLane - 1) * this.laneWidth;
+            this.player.position.x = THREE.MathUtils.lerp(currentX, targetX, this.laneTransition);
+        } else {
+            if (this.playerLane !== this.targetLane) {
+                this.playerLane = this.targetLane;
+                this.laneTransition = 0;
+            }
+        }
+        this.obstacleSpawnTimer += deltaTime;
+        if (this.obstacleSpawnTimer > 2 / (1 + this.currentSpeed * 2)) {
+            this.spawnObstacle();
+            this.obstacleSpawnTimer = 0;
+        }
+        this.boostSpawnTimer += deltaTime;
+        if (this.boostSpawnTimer > 3 / (1 + this.currentSpeed)) {
+            this.spawnSpeedBoost();
+            this.boostSpawnTimer = 0;
+        }
+        this.highwayPieces.forEach((piece, index) => {
+            piece.position.z -= this.currentSpeed * deltaTime * 60;
+            if (piece.position.z < -300) {
+                const furthestZ = Math.max(...this.highwayPieces.map(p => p.position.z));
+                piece.position.z = furthestZ + 200;
+            }
+        });
+        this.laneLines.forEach((line) => {
+            line.position.z -= this.currentSpeed * deltaTime * 60;
+            if (line.position.z < -310) {
+                line.position.z += 400;
+            }
+        });
+        this.playerLight.position.copy(this.player.position);
+        this.playerLight.position.y = 2;
+        this.updateObstacles(deltaTime);
+        this.updateSpeedBoosts(deltaTime);
+        this.checkCollisions();
+        this.scoreElement.textContent = `SCORE: ${this.score}`;
+        this.speedElement.textContent = `SPEED: ${(this.currentSpeed / this.baseSpeed).toFixed(1)}x`;
+    }
+    spawnObstacle() {
+        const lane = Math.floor(Math.random() * 3);
+        const geometry = new THREE.BoxGeometry(2, 2, 2);
+        const material = new THREE.MeshPhongMaterial({ 
+            color: 0xff0000,
+            emissive: 0xff0000,
+            emissiveIntensity: 0.5
+        });
+        const obstacle = new THREE.Mesh(geometry, material);
+        obstacle.position.set((lane - 1) * this.laneWidth, 0, 30);
+        obstacle.userData.lane = lane;
+        obstacle.userData.pulsePhase = 0;
+        this.scene.add(obstacle);
+        this.obstacles.push(obstacle);
+        const warningLight = new THREE.PointLight(0xff0000, 1, 8);
+        warningLight.position.copy(obstacle.position);
+        warningLight.position.y = 1;
+        obstacle.add(warningLight);
+    }
+    spawnSpeedBoost() {
+        const lane = Math.floor(Math.random() * 3);
+        const geometry = new THREE.OctahedronGeometry(1);
+        const material = new THREE.MeshPhongMaterial({ 
+            color: 0x00ff00,
+            emissive: 0x00ff00,
+            emissiveIntensity: 1
+        });
+        const boost = new THREE.Mesh(geometry, material);
+        boost.position.set((lane - 1) * this.laneWidth, 0, 30);
+        boost.userData.lane = lane;
+        boost.userData.rotation = 0;
+        this.scene.add(boost);
+        this.speedBoosts.push(boost);
+        const light = new THREE.PointLight(0x00ff00, 1, 5);
+        light.position.copy(boost.position);
+        boost.add(light);
+    }
+    updateObstacles(deltaTime) {
+        for (let i = this.obstacles.length - 1; i >= 0; i--) {
+            const obstacle = this.obstacles[i];
+            obstacle.position.z -= this.currentSpeed * deltaTime * 60;
+            obstacle.userData.pulsePhase += deltaTime * 5;
+            const pulseScale = 1 + Math.sin(obstacle.userData.pulsePhase) * 0.2;
+            obstacle.scale.setScalar(pulseScale);
+            if (obstacle.position.z < -10) {
+                this.scene.remove(obstacle);
+                this.obstacles.splice(i, 1);
+            }
+        }
+    }
+    updateSpeedBoosts(deltaTime) {
+        for (let i = this.speedBoosts.length - 1; i >= 0; i--) {
+            const boost = this.speedBoosts[i];
+            boost.position.z -= this.currentSpeed * deltaTime * 60;
+            boost.userData.rotation += deltaTime * 5;
+            boost.rotation.x = boost.userData.rotation;
+            boost.rotation.y = boost.userData.rotation;
+            boost.position.y = Math.sin(boost.userData.rotation * 2) * 0.5;
+            if (boost.position.z < -10) {
+                this.scene.remove(boost);
+                this.speedBoosts.splice(i, 1);
+            }
+        }
+    }
+    checkCollisions() {
+        const playerPos = this.player.position;
+        for (let i = this.obstacles.length - 1; i >= 0; i--) {
+            const obstacle = this.obstacles[i];
+            const dist = playerPos.distanceTo(obstacle.position);
+            if (dist < 2 && Math.abs(obstacle.userData.lane - this.playerLane) < 0.5) {
+                this.gameOver();
+                return;
+            }
+        }
+        for (let i = this.speedBoosts.length - 1; i >= 0; i--) {
+            const boost = this.speedBoosts[i];
+            const dist = playerPos.distanceTo(boost.position);
+            if (dist < 2 && Math.abs(boost.userData.lane - this.playerLane) < 0.5) {
+                this.speedBoostTimer = 3;
+                this.score += 50;
+                this.createCollectEffect(boost.position);
+                this.scene.remove(boost);
+                this.speedBoosts.splice(i, 1);
+            }
+        }
+    }
+    gameOver() {
+        this.gameState = 'gameOver';
+        this.finalScore.textContent = `FINAL SCORE: ${this.score}`;
+        this.gameOverScreen.style.display = 'block';
+    }
+    onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    animate(currentTime = 0) {
+        requestAnimationFrame((time) => this.animate(time));
+        const deltaTime = Math.min((currentTime - this.lastTime) / 1000, 0.1);
+        this.lastTime = currentTime;
+        this.update(deltaTime);
+        this.renderer.render(this.scene, this.camera);
+    }
+    createCollectEffect(position) {
+        const particleCount = 20;
+        for (let i = 0; i < particleCount; i++) {
+            const geometry = new THREE.SphereGeometry(0.1, 8, 8);
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0x00ff00,
+                transparent: true,
+                opacity: 1
+            });
+            const particle = new THREE.Mesh(geometry, material);
+            particle.position.copy(position);
+            particle.userData = {
+                velocity: new THREE.Vector3(
+                    (Math.random() - 0.5) * 10,
+                    Math.random() * 10,
+                    (Math.random() - 0.5) * 10
+                ),
+                life: 1
+            };
+            this.scene.add(particle);
+            this.animateParticle(particle);
+        }
+    }
+    animateParticle(particle) {
+        const animate = () => {
+            if (particle.userData.life <= 0) {
+                this.scene.remove(particle);
+                return;
+            }
+            particle.userData.life -= 0.02;
+            particle.position.add(particle.userData.velocity.clone().multiplyScalar(0.016));
+            particle.userData.velocity.y -= 0.3;
+            particle.material.opacity = particle.userData.life;
+            requestAnimationFrame(animate);
+        };
+        animate();
+    }
+}
+const game = new Game();
+    </script>
+</body>
+</html>

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Fruit Slash Fury</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        body { font-family: 'Comic Sans MS', cursive, sans-serif; background: linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%); overflow: hidden; touch-action: none; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        #gameContainer { position: relative; width: 100vw; max-width: 480px; height: 100vh; background: linear-gradient(180deg, #87ceeb 0%, #ffffff 100%); overflow: hidden; }
+        #gameCanvas { display: block; width: 100%; height: 100%; cursor: none; }
+        #ui { position: absolute; top: 20px; left: 20px; right: 20px; display: flex; justify-content: space-between; color: #fff; font-size: 24px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); z-index: 10; }
+        #lives { display: flex; gap: 10px; }
+        .heart { font-size: 28px; animation: heartbeat 1s infinite; }
+        @keyframes heartbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+        #comboDisplay { position: absolute; top: 80px; left: 50%; transform: translateX(-50%); color: #ff6b00; font-size: 42px; font-weight: bold; text-shadow: 0 0 10px #ff6b00, 2px 2px 4px rgba(0,0,0,0.5); opacity: 0; transition: opacity 0.3s; z-index: 10; pointer-events: none; }
+        #gameOver { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95); padding: 40px; border-radius: 20px; text-align: center; display: none; box-shadow: 0 10px 50px rgba(0,0,0,0.7); z-index: 100; min-width: 300px; }
+        #gameOver h1 { color: #ff4444; font-size: 44px; margin-bottom: 20px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        #gameOver p { color: #fff; font-size: 22px; margin: 12px 0; }
+        #restartBtn { margin-top: 25px; padding: 15px 45px; background: linear-gradient(135deg, #ff6b00 0%, #ff9500 100%); color: #fff; border: none; font-size: 22px; font-weight: bold; cursor: pointer; border-radius: 50px; box-shadow: 0 5px 20px rgba(255, 107, 0, 0.4); }
+        #restartBtn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui">
+            <div>SCORE: <span id="score">0</span></div>
+            <div id="lives"></div>
+        </div>
+        <div id="comboDisplay">COMBO!</div>
+        <div id="gameOver">
+            <h1>GAME OVER!</h1>
+            <p>FINAL SCORE: <span id="finalScore">0</span></p>
+            <p>BEST COMBO: <span id="bestCombo">0</span></p>
+            <p>FRUITS SLICED: <span id="fruitsSliced">0</span></p>
+            <button id="restartBtn">PLAY AGAIN</button>
+        </div>
+    </div>
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = Math.min(window.innerWidth, 480);
+        canvas.height = window.innerHeight;
+        let gameActive = false, score = 0, lives = 3, combo = 0, bestCombo = 0, fruitsSliced = 0;
+        let spawnRate = 1500, lastSpawn = 0, fruitCount = 1, spawnBatchCount = 0;
+        let swipePoints = [], currentSwipe = [];
+        let fruits = [];
+        const fruitTypes = [
+            { emoji: '🍎', color: '#ff0000', points: 10 },
+            { emoji: '🍊', color: '#ff8800', points: 10 },
+            { emoji: '🍋', color: '#ffff00', points: 10 },
+            { emoji: '🍌', color: '#ffff88', points: 10 },
+            { emoji: '🍉', color: '#ff4444', points: 15 },
+            { emoji: '🍇', color: '#8844ff', points: 12 },
+            { emoji: '🍓', color: '#ff2244', points: 10 }
+        ];
+        const bombType = { emoji: '💣', color: '#333', points: -50 };
+        let particles = [];
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playSound(type, pitch = 1) {
+            try {
+                const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                if (type === 'slice') { osc.frequency.value = 600 * pitch; gain.gain.value = 0.1; osc.start(); osc.stop(audioCtx.currentTime + 0.1); }
+                else if (type === 'combo') { osc.type = 'sine'; osc.frequency.value = 800; gain.gain.value = 0.15; osc.start(); osc.stop(audioCtx.currentTime + 0.2); }
+                else if (type === 'explosion') { osc.type = 'sawtooth'; osc.frequency.value = 150; gain.gain.setValueAtTime(0.3, audioCtx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.4); osc.start(); osc.stop(audioCtx.currentTime + 0.4); }
+                else if (type === 'perfect') { osc.type = 'triangle'; osc.frequency.value = 1000; gain.gain.value = 0.2; osc.start(); osc.stop(audioCtx.currentTime + 0.3); }
+            } catch(e) {}
+        }
+        function init() {
+            gameActive = true; score = 0; lives = 3; combo = 0; bestCombo = 0; fruitsSliced = 0;
+            spawnRate = 1500; lastSpawn = Date.now(); fruitCount = 1; spawnBatchCount = 0;
+            fruits = []; particles = []; swipePoints = []; currentSwipe = [];
+            document.getElementById('gameOver').style.display = 'none';
+            updateUI(); gameLoop();
+        }
+        function spawnFruit() {
+            const isBomb = Math.random() < 0.12;
+            const type = isBomb ? bombType : fruitTypes[Math.floor(Math.random() * fruitTypes.length)];
+            const x = Math.random() * (canvas.width - 100) + 50;
+            const vx = (Math.random() - 0.5) * (canvas.width * 0.008);
+
+            const peakFraction = 0.7 + Math.random() * 0.25; 
+            const peakPixels   = canvas.height * peakFraction;
+            const vy = -Math.sqrt(2 * 0.18 * peakPixels);
+            fruits.push({ x, y: canvas.height + 50, vx, vy, rotation: 0, rotationSpeed: (Math.random() - 0.5) * 0.2, size: 40, type, sliced: false, isBomb });
+        }
+        function createParticles(x, y, color, count = 20) {
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2, speed = Math.random() * 6 + 2;
+                particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 2, life: 1, color, size: Math.random() * 8 + 4 });
+            }
+        }
+        function checkSwipeCollision(fruit, swipe) {
+            if (swipe.length < 2) return false;
+            for (let i = 0; i < swipe.length - 1; i++) {
+                const p1 = swipe[i], p2 = swipe[i + 1];
+                const dx = fruit.x - p1.x, dy = fruit.y - p1.y, distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance < fruit.size) return true;
+            }
+            return false;
+        }
+        function sliceFruit(fruit) {
+            if (fruit.sliced) return;
+            fruit.sliced = true;
+            if (fruit.isBomb) {
+                lives--; createParticles(fruit.x, fruit.y, '#ff4444', 30);
+                playSound('explosion'); combo = 0;
+                if (lives <= 0) gameOver();
+            } else {
+                const points = fruit.type.points * (combo + 1);
+                score += points; fruitsSliced++; combo++;
+                if (combo > bestCombo) bestCombo = combo;
+                createParticles(fruit.x, fruit.y, fruit.type.color, 25);
+                playSound('slice', 1 + combo * 0.1);
+                if (combo >= 3) { showCombo(); if (combo === 5) playSound('perfect'); else if (combo >= 3) playSound('combo'); }
+            }
+            updateUI();
+        }
+        function showCombo() {
+            const comboEl = document.getElementById('comboDisplay');
+            comboEl.textContent = `${combo}X COMBO!`; comboEl.style.opacity = '1';
+            setTimeout(() => comboEl.style.opacity = '0', 800);
+        }
+        function gameOver() {
+            gameActive = false;
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('bestCombo').textContent = bestCombo;
+            document.getElementById('fruitsSliced').textContent = fruitsSliced;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+        function updateUI() {
+            document.getElementById('score').textContent = score;
+            const livesEl = document.getElementById('lives');
+            livesEl.innerHTML = '';
+            for (let i = 0; i < lives; i++) {
+                const heart = document.createElement('span');
+                heart.className = 'heart'; heart.textContent = '❤️';
+                livesEl.appendChild(heart);
+            }
+        }
+        function update() {
+            if (!gameActive) return;
+            const now = Date.now();
+            if (now - lastSpawn > spawnRate) {
+                spawnBatchCount++;
+                for (let s = 0; s < fruitCount; s++) { setTimeout(() => spawnFruit(), s * 200); }
+                lastSpawn = now;
+                if (spawnBatchCount % 6 === 0) fruitCount = Math.min(6, fruitCount + 1);
+                spawnRate = Math.max(1100, spawnRate - 5);
+            }
+            fruits.forEach((fruit, index) => {
+                fruit.x += fruit.vx; fruit.y += fruit.vy; fruit.vy += 0.18;
+                fruit.rotation += fruit.rotationSpeed;
+                if (currentSwipe.length > 0 && !fruit.sliced) {
+                    if (checkSwipeCollision(fruit, currentSwipe)) sliceFruit(fruit);
+                }
+                if (fruit.y > canvas.height + 100) {
+                    if (!fruit.sliced && !fruit.isBomb) {
+                        lives--; combo = 0;
+                        if (lives <= 0) gameOver();
+                        updateUI();
+                    }
+                    fruits.splice(index, 1);
+                }
+                if (fruit.sliced && fruit.y > canvas.height + 100) fruits.splice(index, 1);
+            });
+            particles = particles.filter(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.3; p.life -= 0.02; return p.life > 0; });
+            swipePoints = swipePoints.filter(p => { p.life -= 0.05; return p.life > 0; });
+        }
+        function draw() {
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87ceeb'); gradient.addColorStop(1, '#ffffff');
+            ctx.fillStyle = gradient; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            for (let i = 0; i < 3; i++) {
+                const x = (Date.now() * 0.01 + i * 200) % (canvas.width + 100);
+                ctx.beginPath(); ctx.arc(x, 100 + i * 80, 40, 0, Math.PI * 2);
+                ctx.arc(x + 30, 100 + i * 80, 50, 0, Math.PI * 2);
+                ctx.arc(x + 60, 100 + i * 80, 40, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            fruits.forEach(fruit => {
+                ctx.save(); ctx.translate(fruit.x, fruit.y); ctx.rotate(fruit.rotation);
+                ctx.font = `${fruit.size}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                ctx.fillText(fruit.type.emoji, 0, 0);
+                if (fruit.sliced) {
+                    ctx.globalAlpha = 0.5;
+                    ctx.fillText(fruit.type.emoji, -10, 5);
+                    ctx.fillText(fruit.type.emoji, 10, -5);
+                }
+                ctx.restore();
+            });
+            particles.forEach(p => {
+                ctx.fillStyle = p.color; ctx.globalAlpha = p.life;
+                ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+            if (swipePoints.length > 1) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                ctx.shadowBlur = 10; ctx.shadowColor = '#fff';
+                ctx.beginPath();
+                swipePoints.forEach((point, i) => {
+                    ctx.globalAlpha = point.life;
+                    if (i === 0) ctx.moveTo(point.x, point.y);
+                    else ctx.lineTo(point.x, point.y);
+                });
+                ctx.stroke(); ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+            }
+        }
+        function gameLoop() {
+            update(); draw();
+            if (gameActive || particles.length > 0 || fruits.length > 0) requestAnimationFrame(gameLoop);
+        }
+        let touching = false;
+        canvas.addEventListener('touchstart', e => {
+            e.preventDefault(); touching = true; currentSwipe = [];
+        });
+        canvas.addEventListener('touchmove', e => {
+            e.preventDefault();
+            if (!touching || !gameActive) return;
+            const rect = canvas.getBoundingClientRect(), touch = e.touches[0];
+            const x = (touch.clientX - rect.left) * (canvas.width / rect.width), y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+            currentSwipe.push({ x, y }); swipePoints.push({ x, y, life: 1 });
+            if (currentSwipe.length > 20) currentSwipe.shift();
+        });
+        canvas.addEventListener('touchend', () => { touching = false; currentSwipe = []; });
+        let mouseDown = false;
+        canvas.addEventListener('mousedown', e => { mouseDown = true; currentSwipe = []; });
+        canvas.addEventListener('mousemove', e => {
+            if (!mouseDown || !gameActive) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left) * (canvas.width / rect.width), y = (e.clientY - rect.top) * (canvas.height / rect.height);
+            currentSwipe.push({ x, y }); swipePoints.push({ x, y, life: 1 });
+            if (currentSwipe.length > 20) currentSwipe.shift();
+        });
+        canvas.addEventListener('mouseup', () => { mouseDown = false; currentSwipe = []; });
+        document.getElementById('restartBtn').addEventListener('click', init);
+        init();
+    </script>
+</body>
+</html>

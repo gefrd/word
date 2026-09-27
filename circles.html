@@ -1,0 +1,1524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Circles Arena</title>
+    <style>
+        :root {
+            --bg: #0b1018;
+            --panel: rgba(10, 16, 24, 0.72);
+            --line: rgba(255, 255, 255, 0.08);
+            --text: #f4f7fb;
+            --muted: #99a6bb;
+            --accent: #5de2b5;
+            --danger: #ff6b7a;
+            --control: rgba(255, 255, 255, 0.08);
+            --control-strong: rgba(255, 255, 255, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            position: fixed;
+            inset: 0;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: #0a0f16;
+        }
+
+        .hud {
+            position: fixed;
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .panel {
+            min-width: 126px;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: var(--panel);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+        }
+
+        .score {
+            top: 12px;
+            left: 12px;
+        }
+
+        .leaderboard {
+            top: 12px;
+            right: 12px;
+            width: min(180px, calc(100vw - 24px));
+        }
+
+        .overlay {
+            left: 50%;
+            top: 14px;
+            transform: translateX(-50%);
+        }
+
+        .title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--muted);
+        }
+
+        .value {
+            margin-top: 4px;
+            font-size: 22px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .sub {
+            margin-top: 5px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .leader-list {
+            margin: 8px 0 0;
+            padding: 0;
+            list-style: none;
+            font-size: 13px;
+        }
+
+        .leader-list li {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 3px 0;
+            color: var(--text);
+        }
+
+        .leader-list .you {
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        .message {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 40px;
+            padding: 10px 14px;
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            background: var(--panel);
+            font-size: 13px;
+            color: var(--text);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+        }
+
+        .controls {
+            position: fixed;
+            inset: 0;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .joystick {
+            position: absolute;
+            left: 16px;
+            bottom: 16px;
+            width: 132px;
+            height: 132px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+            pointer-events: auto;
+            touch-action: none;
+        }
+
+        .joystick::before {
+            content: "";
+            position: absolute;
+            inset: 18px;
+            border-radius: 50%;
+            border: 1px dashed rgba(255, 255, 255, 0.06);
+        }
+
+        .stick {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 60px;
+            height: 60px;
+            margin-left: -30px;
+            margin-top: -30px;
+            border-radius: 50%;
+            background: var(--control-strong);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            transform: translate3d(0, 0, 0);
+        }
+
+        .action {
+            position: absolute;
+            right: 18px;
+            bottom: 26px;
+            width: 86px;
+            height: 86px;
+            border: 0;
+            border-radius: 50%;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.02));
+            color: var(--text);
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            pointer-events: auto;
+            touch-action: manipulation;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
+        }
+
+        .action:active {
+            transform: scale(0.97);
+        }
+
+        .action .hint {
+            display: block;
+            margin-top: 3px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        @media (max-width: 640px) {
+            .leaderboard {
+                width: 156px;
+            }
+
+            .panel {
+                padding: 9px 10px;
+            }
+
+            .value {
+                font-size: 20px;
+            }
+
+            .joystick {
+                width: 118px;
+                height: 118px;
+            }
+
+            .stick {
+                width: 54px;
+                height: 54px;
+                margin-left: -27px;
+                margin-top: -27px;
+            }
+
+            .action {
+                width: 78px;
+                height: 78px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game"></canvas>
+
+    <div class="hud score">
+        <div class="panel">
+            <div class="title">Score</div>
+            <div class="value" id="scoreValue">0</div>
+            <div class="sub" id="pieceValue">1 piece</div>
+        </div>
+    </div>
+
+    <div class="hud leaderboard">
+        <div class="panel">
+            <div class="title">Top 5</div>
+            <ol class="leader-list" id="leaderList"></ol>
+        </div>
+    </div>
+
+    <div class="hud overlay">
+        <div class="message" id="messageBox"></div>
+    </div>
+
+    <div class="controls">
+        <div class="joystick" id="joystick">
+            <div class="stick" id="stick"></div>
+        </div>
+        <button class="action" id="splitBtn" type="button" aria-label="Split">
+            Split
+            <span class="hint">Max 8</span>
+        </button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("game");
+        const ctx = canvas.getContext("2d", { alpha: false });
+
+        const scoreValue = document.getElementById("scoreValue");
+        const pieceValue = document.getElementById("pieceValue");
+        const leaderList = document.getElementById("leaderList");
+        const messageBox = document.getElementById("messageBox");
+        const joystick = document.getElementById("joystick");
+        const stick = document.getElementById("stick");
+        const splitBtn = document.getElementById("splitBtn");
+
+        // Tuned for weak mobile hardware: fixed counts, capped splits, light HUD updates.
+        const CONFIG = {
+            worldSize: 4200,
+            foodCount: 650,
+            virusCount: 16,
+            botCount: 22,
+            maxPieces: 8,
+            startRadius: 22,
+            startBotRadius: 21,
+            foodRadius: 4,
+            foodMass: 16,
+            virusRadius: 34,
+            gridSize: 210,
+            mergeDelay: 7000,
+            splitCooldown: 1200,
+            botThinkMin: 180,
+            botThinkMax: 340,
+            leaderboardRate: 280,
+            messageRate: 120,
+            respawnDelay: 2200
+        };
+
+        const FOOD_COLORS = ["#5de2b5", "#64cfff", "#ffcf5e", "#ff7d7d", "#c48bff"];
+        const BOT_COLORS = ["#4cc8ff", "#ff7171", "#8df06d", "#ffb84f", "#bb85ff", "#ff6cd2", "#3ae0b8", "#7da3ff", "#ffe36a", "#ff875d", "#74f0ff", "#7dfc99"];
+        const BOT_NAMES = ["Nova", "Dash", "Moss", "Kite", "Bolt", "Rex", "Tide", "Bloom", "Flux", "Vibe", "Echo", "Comet"];
+        const MIN_PIECE_MASS = getMassFromRadius(CONFIG.startRadius);
+
+        const worldHalf = CONFIG.worldSize / 2;
+        const foodBins = new Map();
+        const foods = [];
+        const viruses = [];
+        const entities = [];
+        const activeRefs = [];
+
+        let pieceIdCounter = 1;
+        let player = null;
+        let camera = { x: 0, y: 0, zoom: 1 };
+        let canvasWidth = 0;
+        let canvasHeight = 0;
+        let lastFrame = performance.now();
+        let hudTimer = 0;
+        let messageTimer = 0;
+        let respawnMessageUntil = 0;
+
+        const input = {
+            x: 0,
+            y: 0,
+            usingMouse: false
+        };
+
+        const joystickState = {
+            active: false,
+            pointerId: null,
+            baseX: 0,
+            baseY: 0,
+            radius: 0
+        };
+
+        function clamp(value, min, max) {
+            return value < min ? min : (value > max ? max : value);
+        }
+
+        function rand(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function distSq(ax, ay, bx, by) {
+            const dx = ax - bx;
+            const dy = ay - by;
+            return (dx * dx) + (dy * dy);
+        }
+
+        function getMassFromRadius(radius) {
+            return radius * radius;
+        }
+
+        function getRadiusFromMass(mass) {
+            return Math.sqrt(Math.max(1, mass));
+        }
+
+        function formatMass(value) {
+            return Math.round(value).toString();
+        }
+
+        function getFoodKey(binX, binY) {
+            return `${binX},${binY}`;
+        }
+
+        function worldToScreenX(x) {
+            return ((x - camera.x) * camera.zoom) + (canvasWidth * 0.5);
+        }
+
+        function worldToScreenY(y) {
+            return ((y - camera.y) * camera.zoom) + (canvasHeight * 0.5);
+        }
+
+        function getEntityMass(entity) {
+            let total = 0;
+            for (let index = 0; index < entity.pieces.length; index += 1) {
+                const piece = entity.pieces[index];
+                if (!piece.dead) {
+                    total += piece.mass;
+                }
+            }
+            return total;
+        }
+
+        function getLargestPiece(entity) {
+            let best = null;
+            for (let index = 0; index < entity.pieces.length; index += 1) {
+                const piece = entity.pieces[index];
+                if (!piece.dead && (!best || piece.mass > best.mass)) {
+                    best = piece;
+                }
+            }
+            return best;
+        }
+
+        function getEntityCenter(entity) {
+            let totalMass = 0;
+            let sumX = 0;
+            let sumY = 0;
+
+            for (let index = 0; index < entity.pieces.length; index += 1) {
+                const piece = entity.pieces[index];
+                if (piece.dead) {
+                    continue;
+                }
+                totalMass += piece.mass;
+                sumX += piece.x * piece.mass;
+                sumY += piece.y * piece.mass;
+            }
+
+            if (totalMass <= 0) {
+                return { x: 0, y: 0 };
+            }
+
+            return {
+                x: sumX / totalMass,
+                y: sumY / totalMass
+            };
+        }
+
+        function resize() {
+            const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+            canvasWidth = window.innerWidth;
+            canvasHeight = window.innerHeight;
+            canvas.width = Math.round(canvasWidth * dpr);
+            canvas.height = Math.round(canvasHeight * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        function addFoodToBin(food) {
+            const binX = Math.floor(food.x / CONFIG.gridSize);
+            const binY = Math.floor(food.y / CONFIG.gridSize);
+            const key = getFoodKey(binX, binY);
+            let bucket = foodBins.get(key);
+
+            if (!bucket) {
+                bucket = [];
+                foodBins.set(key, bucket);
+            }
+
+            food.binX = binX;
+            food.binY = binY;
+            bucket.push(food);
+        }
+
+        function removeFoodFromBin(food) {
+            const key = getFoodKey(food.binX, food.binY);
+            const bucket = foodBins.get(key);
+
+            if (!bucket) {
+                return;
+            }
+
+            const index = bucket.indexOf(food);
+            if (index !== -1) {
+                bucket.splice(index, 1);
+            }
+
+            if (bucket.length === 0) {
+                foodBins.delete(key);
+            }
+        }
+
+        function placeFood(food, x, y) {
+            if (food.binX !== undefined) {
+                removeFoodFromBin(food);
+            }
+
+            food.x = clamp(x, 8, CONFIG.worldSize - 8);
+            food.y = clamp(y, 8, CONFIG.worldSize - 8);
+            addFoodToBin(food);
+        }
+
+        function recycleFood(food) {
+            placeFood(food, rand(0, CONFIG.worldSize), rand(0, CONFIG.worldSize));
+        }
+
+        // Static food lives inside simple grid buckets to keep searches cheap.
+        function createFoods() {
+            foods.length = 0;
+            foodBins.clear();
+
+            for (let index = 0; index < CONFIG.foodCount; index += 1) {
+                const food = {
+                    x: 0,
+                    y: 0,
+                    r: CONFIG.foodRadius,
+                    color: FOOD_COLORS[index % FOOD_COLORS.length]
+                };
+                foods.push(food);
+                placeFood(food, rand(0, CONFIG.worldSize), rand(0, CONFIG.worldSize));
+            }
+        }
+
+        function forEachFoodInArea(x1, y1, x2, y2, callback) {
+            const startX = Math.floor(x1 / CONFIG.gridSize);
+            const endX = Math.floor(x2 / CONFIG.gridSize);
+            const startY = Math.floor(y1 / CONFIG.gridSize);
+            const endY = Math.floor(y2 / CONFIG.gridSize);
+
+            for (let binY = startY; binY <= endY; binY += 1) {
+                for (let binX = startX; binX <= endX; binX += 1) {
+                    const bucket = foodBins.get(getFoodKey(binX, binY));
+                    if (!bucket) {
+                        continue;
+                    }
+
+                    for (let index = bucket.length - 1; index >= 0; index -= 1) {
+                        callback(bucket[index]);
+                    }
+                }
+            }
+        }
+
+        function findNearestFood(x, y, range) {
+            let bestFood = null;
+            let bestDist = range * range;
+
+            forEachFoodInArea(x - range, y - range, x + range, y + range, function (food) {
+                const d2 = distSq(x, y, food.x, food.y);
+                if (d2 < bestDist) {
+                    bestDist = d2;
+                    bestFood = food;
+                }
+            });
+
+            return bestFood;
+        }
+
+        function createViruses() {
+            viruses.length = 0;
+
+            for (let index = 0; index < CONFIG.virusCount; index += 1) {
+                viruses.push({
+                    x: rand(140, CONFIG.worldSize - 140),
+                    y: rand(140, CONFIG.worldSize - 140),
+                    r: CONFIG.virusRadius
+                });
+            }
+        }
+
+        function makePiece(x, y, mass, color, now) {
+            return {
+                id: pieceIdCounter += 1,
+                x,
+                y,
+                vx: 0,
+                vy: 0,
+                mass,
+                r: getRadiusFromMass(mass),
+                color,
+                mergeAt: now + CONFIG.mergeDelay,
+                splitUntil: now + CONFIG.splitCooldown,
+                safeUntil: now + 1400,
+                virusUntil: 0,
+                dead: false
+            };
+        }
+
+        // Every entity owns a small list of pieces, never more than 4.
+        function makeEntity(name, color, isPlayer) {
+            return {
+                id: name.toLowerCase(),
+                name,
+                color,
+                isPlayer,
+                pieces: [],
+                alive: false,
+                respawnAt: 0,
+                ai: isPlayer ? null : {
+                    mode: "idle",
+                    targetX: 0,
+                    targetY: 0,
+                    thinkAt: 0,
+                    wanderAt: 0,
+                    splitAt: 0
+                }
+            };
+        }
+
+        function randomSpawnPoint() {
+            for (let tries = 0; tries < 18; tries += 1) {
+                const x = rand(100, CONFIG.worldSize - 100);
+                const y = rand(100, CONFIG.worldSize - 100);
+                let valid = true;
+
+                for (let entityIndex = 0; entityIndex < entities.length; entityIndex += 1) {
+                    const entity = entities[entityIndex];
+                    if (!entity.alive) {
+                        continue;
+                    }
+                    const main = getLargestPiece(entity);
+                    if (!main) {
+                        continue;
+                    }
+                    if (distSq(x, y, main.x, main.y) < 220 * 220) {
+                        valid = false;
+                        break;
+                    }
+                }
+
+                if (valid) {
+                    return { x, y };
+                }
+            }
+
+            return {
+                x: rand(100, CONFIG.worldSize - 100),
+                y: rand(100, CONFIG.worldSize - 100)
+            };
+        }
+
+        function spawnEntity(entity, now) {
+            const spawn = randomSpawnPoint();
+            const baseRadius = entity.isPlayer ? CONFIG.startRadius : (CONFIG.startBotRadius + rand(-2, 3));
+            const piece = makePiece(spawn.x, spawn.y, getMassFromRadius(baseRadius), entity.color, now);
+            entity.pieces = [piece];
+            entity.alive = true;
+            entity.respawnAt = 0;
+            if (entity.ai) {
+                entity.ai.targetX = spawn.x;
+                entity.ai.targetY = spawn.y;
+                entity.ai.mode = "idle";
+                entity.ai.wanderAt = now + rand(700, 1800);
+                entity.ai.thinkAt = now + rand(200, 500);
+                entity.ai.splitAt = 0;
+            }
+        }
+
+        function scheduleRespawn(entity, now) {
+            entity.pieces = [];
+            entity.alive = false;
+            entity.respawnAt = now + CONFIG.respawnDelay;
+
+            if (entity.isPlayer) {
+                respawnMessageUntil = now + CONFIG.respawnDelay;
+            }
+        }
+
+        function buildEntities(now) {
+            entities.length = 0;
+
+            player = makeEntity("You", "#76d9ff", true);
+            entities.push(player);
+            spawnEntity(player, now);
+
+            for (let index = 0; index < CONFIG.botCount; index += 1) {
+                const bot = makeEntity(BOT_NAMES[index] || `Bot ${index + 1}`, BOT_COLORS[index % BOT_COLORS.length], false);
+                entities.push(bot);
+                spawnEntity(bot, now);
+            }
+        }
+
+        function getMoveVector(entity) {
+            if (entity.isPlayer) {
+                return { x: input.x, y: input.y };
+            }
+
+            const center = getEntityCenter(entity);
+            const dx = entity.ai.targetX - center.x;
+            const dy = entity.ai.targetY - center.y;
+            const length = Math.hypot(dx, dy) || 1;
+
+            return {
+                x: dx / length,
+                y: dy / length
+            };
+        }
+
+        function getPieceSpeed(piece) {
+            return clamp((600 / Math.pow(piece.r, 0.52)) + 12, 42, 170);
+        }
+
+        function keepPieceInWorld(piece) {
+            if (piece.x < piece.r) {
+                piece.x = piece.r;
+                piece.vx *= -0.2;
+            } else if (piece.x > CONFIG.worldSize - piece.r) {
+                piece.x = CONFIG.worldSize - piece.r;
+                piece.vx *= -0.2;
+            }
+
+            if (piece.y < piece.r) {
+                piece.y = piece.r;
+                piece.vy *= -0.2;
+            } else if (piece.y > CONFIG.worldSize - piece.r) {
+                piece.y = CONFIG.worldSize - piece.r;
+                piece.vy *= -0.2;
+            }
+        }
+
+        function updateEntityMovement(entity, dt) {
+            if (!entity.alive) {
+                return;
+            }
+
+            const direction = getMoveVector(entity);
+
+            for (let index = 0; index < entity.pieces.length; index += 1) {
+                const piece = entity.pieces[index];
+                if (piece.dead) {
+                    continue;
+                }
+
+                const speed = getPieceSpeed(piece);
+                piece.x += ((direction.x * speed) + piece.vx) * dt;
+                piece.y += ((direction.y * speed) + piece.vy) * dt;
+
+                const drag = Math.pow(0.18, dt);
+                piece.vx *= drag;
+                piece.vy *= drag;
+
+                keepPieceInWorld(piece);
+            }
+        }
+
+        function combinePieces(entity, indexA, indexB) {
+            const a = entity.pieces[indexA];
+            const b = entity.pieces[indexB];
+
+            if (!a || !b || a.dead || b.dead) {
+                return;
+            }
+
+            const totalMass = a.mass + b.mass;
+            a.x = ((a.x * a.mass) + (b.x * b.mass)) / totalMass;
+            a.y = ((a.y * a.mass) + (b.y * b.mass)) / totalMass;
+            a.vx = ((a.vx * a.mass) + (b.vx * b.mass)) / totalMass;
+            a.vy = ((a.vy * a.mass) + (b.vy * b.mass)) / totalMass;
+            a.mass = totalMass;
+            a.r = getRadiusFromMass(totalMass);
+            a.mergeAt = Math.max(a.mergeAt, b.mergeAt);
+            b.dead = true;
+        }
+
+        function resolveFriendlyPieces(entity, now) {
+            if (!entity.alive || entity.pieces.length < 2) {
+                return;
+            }
+
+            for (let i = 0; i < entity.pieces.length; i += 1) {
+                const a = entity.pieces[i];
+                if (a.dead) {
+                    continue;
+                }
+
+                for (let j = i + 1; j < entity.pieces.length; j += 1) {
+                    const b = entity.pieces[j];
+                    if (b.dead) {
+                        continue;
+                    }
+
+                    const dx = b.x - a.x;
+                    const dy = b.y - a.y;
+                    const distance = Math.hypot(dx, dy) || 0.0001;
+                    const nx = dx / distance;
+                    const ny = dy / distance;
+                    const canMerge = now >= a.mergeAt && now >= b.mergeAt;
+
+                    if (!canMerge) {
+                        const minDist = (a.r + b.r) * 0.9;
+                        if (distance < minDist) {
+                            const push = (minDist - distance) * 0.5;
+                            a.x -= nx * push;
+                            a.y -= ny * push;
+                            b.x += nx * push;
+                            b.y += ny * push;
+                        }
+                    } else {
+                        const mergeDist = Math.max(a.r, b.r) * 0.5;
+                        if (distance < mergeDist) {
+                            combinePieces(entity, i, j);
+                        }
+                    }
+                }
+            }
+
+            entity.pieces = entity.pieces.filter(function (piece) {
+                return !piece.dead;
+            });
+        }
+
+        function collectFood(piece) {
+            const range = piece.r + 16;
+            forEachFoodInArea(piece.x - range, piece.y - range, piece.x + range, piece.y + range, function (food) {
+                const eatRadius = piece.r - 1;
+                if (distSq(piece.x, piece.y, food.x, food.y) <= eatRadius * eatRadius) {
+                    piece.mass += CONFIG.foodMass;
+                    piece.r = getRadiusFromMass(piece.mass);
+                    recycleFood(food);
+                }
+            });
+        }
+
+        function canSplitPiece(piece) {
+            return !piece.dead && piece.mass >= MIN_PIECE_MASS * 2;
+        }
+
+        function findLargestSplittablePiece(pieces) {
+            let best = null;
+
+            for (let index = 0; index < pieces.length; index += 1) {
+                const piece = pieces[index];
+                if (canSplitPiece(piece) && (!best || piece.mass > best.mass)) {
+                    best = piece;
+                }
+            }
+
+            return best;
+        }
+
+        function hitVirus(entity, piece, now) {
+            if (piece.virusUntil > now || piece.r < CONFIG.virusRadius * 1.15 || !canSplitPiece(piece)) {
+                return false;
+            }
+
+            const burstGroup = [piece];
+            const targetCount = Math.min(4, 1 + (CONFIG.maxPieces - entity.pieces.length));
+
+            while (burstGroup.length < targetCount) {
+                const target = findLargestSplittablePiece(burstGroup);
+                if (!target) {
+                    break;
+                }
+
+                const angle = ((Math.PI * 2) / Math.max(4, targetCount)) * burstGroup.length;
+                const child = splitPiece(entity, target, Math.cos(angle), Math.sin(angle), now, {
+                    launchSpeed: 220,
+                    pushBack: 24,
+                    spacing: 0.58
+                });
+
+                if (!child) {
+                    break;
+                }
+
+                burstGroup.push(child);
+            }
+
+            if (burstGroup.length <= 1) {
+                return false;
+            }
+
+            for (let index = 0; index < burstGroup.length; index += 1) {
+                burstGroup[index].virusUntil = now + 1200;
+            }
+            return true;
+        }
+
+        function collectFoodAndViruses(entity, now) {
+            if (!entity.alive) {
+                return;
+            }
+
+            for (let pieceIndex = 0; pieceIndex < entity.pieces.length; pieceIndex += 1) {
+                const piece = entity.pieces[pieceIndex];
+                if (piece.dead) {
+                    continue;
+                }
+
+                collectFood(piece);
+
+                for (let virusIndex = 0; virusIndex < viruses.length; virusIndex += 1) {
+                    const virus = viruses[virusIndex];
+                    const touchDist = piece.r + virus.r;
+                    if (distSq(piece.x, piece.y, virus.x, virus.y) <= touchDist * touchDist) {
+                        if (hitVirus(entity, piece, now)) {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        function pushSplitVelocity(piece, dx, dy, speed) {
+            piece.vx += dx * speed;
+            piece.vy += dy * speed;
+        }
+
+        function splitPiece(entity, piece, dirX, dirY, now, options) {
+            const piecesLeft = CONFIG.maxPieces - entity.pieces.length;
+            if (piecesLeft <= 0 || !canSplitPiece(piece)) {
+                return null;
+            }
+
+            const splitMass = piece.mass * 0.5;
+            piece.mass *= 0.5;
+            piece.r = getRadiusFromMass(piece.mass);
+            piece.mergeAt = now + CONFIG.mergeDelay;
+            piece.splitUntil = now + CONFIG.splitCooldown;
+
+            const angleX = dirX || 0;
+            const angleY = dirY || 0;
+            const fallbackAngle = Math.random() * Math.PI * 2;
+            const nx = (angleX === 0 && angleY === 0) ? Math.cos(fallbackAngle) : angleX;
+            const ny = (angleX === 0 && angleY === 0) ? Math.sin(fallbackAngle) : angleY;
+            const settings = options || {};
+            const pieceDistance = piece.r * (settings.spacing || 0.72);
+            const child = makePiece(piece.x + (nx * pieceDistance), piece.y + (ny * pieceDistance), splitMass, entity.color, now);
+
+            child.mergeAt = now + CONFIG.mergeDelay;
+            child.splitUntil = now + CONFIG.splitCooldown;
+            child.safeUntil = piece.safeUntil;
+
+            pushSplitVelocity(child, nx, ny, settings.launchSpeed || 255);
+            pushSplitVelocity(piece, -nx, -ny, settings.pushBack || 30);
+
+            entity.pieces.push(child);
+            return child;
+        }
+
+        function splitEntity(entity, count, aim, forceRadial, now) {
+            if (!entity.alive) {
+                return;
+            }
+
+            const direction = aim || getMoveVector(entity);
+            let created = 0;
+            let guard = 0;
+
+            while (created < count && entity.pieces.length < CONFIG.maxPieces && guard < 12) {
+                guard += 1;
+                const piece = findLargestSplittablePiece(entity.pieces);
+
+                if (!piece) {
+                    break;
+                }
+
+                let dirX = direction.x;
+                let dirY = direction.y;
+
+                if (forceRadial) {
+                    const angle = ((Math.PI * 2) / Math.max(2, count)) * created + (Math.random() * 0.35);
+                    dirX = Math.cos(angle);
+                    dirY = Math.sin(angle);
+                }
+
+                if (splitPiece(entity, piece, dirX, dirY, now)) {
+                    created += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        function markPieceDead(piece) {
+            piece.dead = true;
+            piece.mass = 0;
+        }
+
+        function cleanupDeadEntities(now) {
+            for (let entityIndex = 0; entityIndex < entities.length; entityIndex += 1) {
+                const entity = entities[entityIndex];
+                entity.pieces = entity.pieces.filter(function (piece) {
+                    return !piece.dead;
+                });
+
+                if (entity.alive && entity.pieces.length === 0) {
+                    scheduleRespawn(entity, now);
+                }
+
+                if (!entity.alive && entity.respawnAt > 0 && now >= entity.respawnAt) {
+                    spawnEntity(entity, now);
+                }
+            }
+        }
+
+        function refreshActiveRefs() {
+            activeRefs.length = 0;
+
+            for (let entityIndex = 0; entityIndex < entities.length; entityIndex += 1) {
+                const entity = entities[entityIndex];
+                if (!entity.alive) {
+                    continue;
+                }
+
+                for (let pieceIndex = 0; pieceIndex < entity.pieces.length; pieceIndex += 1) {
+                    const piece = entity.pieces[pieceIndex];
+                    if (!piece.dead) {
+                        activeRefs.push({
+                            entity,
+                            piece
+                        });
+                    }
+                }
+            }
+        }
+
+        function handleCellEating(now) {
+            refreshActiveRefs();
+
+            for (let i = 0; i < activeRefs.length; i += 1) {
+                const aRef = activeRefs[i];
+                const a = aRef.piece;
+
+                if (a.dead) {
+                    continue;
+                }
+
+                for (let j = i + 1; j < activeRefs.length; j += 1) {
+                    const bRef = activeRefs[j];
+                    const b = bRef.piece;
+
+                    if (b.dead || aRef.entity === bRef.entity) {
+                        continue;
+                    }
+
+                    let eater = null;
+                    let prey = null;
+
+                    if (a.r > b.r * 1.12) {
+                        eater = a;
+                        prey = b;
+                    } else if (b.r > a.r * 1.12) {
+                        eater = b;
+                        prey = a;
+                    } else {
+                        continue;
+                    }
+
+                    if (prey.safeUntil > now) {
+                        continue;
+                    }
+
+                    const eatDistance = eater.r - (prey.r * 0.32);
+                    if (distSq(eater.x, eater.y, prey.x, prey.y) <= eatDistance * eatDistance) {
+                        eater.mass += prey.mass * 0.96;
+                        eater.r = getRadiusFromMass(eater.mass);
+                        markPieceDead(prey);
+                    }
+                }
+            }
+        }
+
+        function pickThreatOrPrey(bot) {
+            const main = getLargestPiece(bot);
+            if (!main) {
+                return null;
+            }
+
+            let nearestThreat = null;
+            let threatDist = Infinity;
+            let nearestPrey = null;
+            let preyDist = Infinity;
+
+            for (let entityIndex = 0; entityIndex < entities.length; entityIndex += 1) {
+                const other = entities[entityIndex];
+                if (!other.alive || other === bot) {
+                    continue;
+                }
+
+                for (let pieceIndex = 0; pieceIndex < other.pieces.length; pieceIndex += 1) {
+                    const piece = other.pieces[pieceIndex];
+                    if (piece.dead) {
+                        continue;
+                    }
+
+                    const d2 = distSq(main.x, main.y, piece.x, piece.y);
+
+                    if (piece.r > main.r * 1.15 && d2 < threatDist && d2 < 520 * 520) {
+                        threatDist = d2;
+                        nearestThreat = piece;
+                    } else if (main.r > piece.r * 1.18 && d2 < preyDist && d2 < 420 * 420) {
+                        preyDist = d2;
+                        nearestPrey = piece;
+                    }
+                }
+            }
+
+            return {
+                threat: nearestThreat,
+                prey: nearestPrey
+            };
+        }
+
+        function maybeBotSplit(bot, now, targetPiece) {
+            if (!targetPiece || bot.pieces.length >= CONFIG.maxPieces || bot.ai.splitAt > now) {
+                return;
+            }
+
+            const main = getLargestPiece(bot);
+            if (!main || !canSplitPiece(main) || main.r < targetPiece.r * 1.3) {
+                return;
+            }
+
+            const distance = Math.hypot(targetPiece.x - main.x, targetPiece.y - main.y);
+            if (distance > 220) {
+                return;
+            }
+
+            const dx = (targetPiece.x - main.x) / Math.max(1, distance);
+            const dy = (targetPiece.y - main.y) / Math.max(1, distance);
+            splitEntity(bot, 1, { x: dx, y: dy }, false, now);
+            bot.ai.splitAt = now + 2400;
+        }
+
+        // Bots only rethink a few times per second to save CPU.
+        function updateBotAI(bot, now) {
+            if (!bot.alive || now < bot.ai.thinkAt) {
+                return;
+            }
+
+            const main = getLargestPiece(bot);
+            if (!main) {
+                return;
+            }
+
+            bot.ai.thinkAt = now + rand(CONFIG.botThinkMin, CONFIG.botThinkMax);
+            const scan = pickThreatOrPrey(bot);
+
+            if (scan.threat) {
+                bot.ai.mode = "flee";
+                const dx = main.x - scan.threat.x;
+                const dy = main.y - scan.threat.y;
+                const len = Math.hypot(dx, dy) || 1;
+                bot.ai.targetX = main.x + ((dx / len) * 360);
+                bot.ai.targetY = main.y + ((dy / len) * 360);
+                return;
+            }
+
+            if (scan.prey) {
+                bot.ai.mode = "hunt";
+                bot.ai.targetX = scan.prey.x;
+                bot.ai.targetY = scan.prey.y;
+                maybeBotSplit(bot, now, scan.prey);
+                return;
+            }
+
+            const food = findNearestFood(main.x, main.y, 420);
+            if (food) {
+                bot.ai.mode = "idle";
+                bot.ai.targetX = food.x;
+                bot.ai.targetY = food.y;
+                return;
+            }
+
+            if (now >= bot.ai.wanderAt) {
+                bot.ai.wanderAt = now + rand(900, 1800);
+                bot.ai.targetX = clamp(main.x + rand(-260, 260), 60, CONFIG.worldSize - 60);
+                bot.ai.targetY = clamp(main.y + rand(-260, 260), 60, CONFIG.worldSize - 60);
+            }
+        }
+
+        function updateBots(now) {
+            for (let index = 1; index < entities.length; index += 1) {
+                updateBotAI(entities[index], now);
+            }
+        }
+
+        function updateCamera(dt) {
+            if (!player || !player.alive) {
+                return;
+            }
+
+            const center = getEntityCenter(player);
+            const mass = getEntityMass(player);
+            const targetZoom = clamp(76 / (Math.sqrt(mass) + 40), 0.34, 1.08);
+            const lerp = 1 - Math.pow(0.001, dt);
+
+            camera.x += (center.x - camera.x) * lerp;
+            camera.y += (center.y - camera.y) * lerp;
+            camera.zoom += (targetZoom - camera.zoom) * lerp;
+        }
+
+        function updateHud() {
+            if (!player) {
+                return;
+            }
+
+            const mass = getEntityMass(player);
+            scoreValue.textContent = formatMass(mass);
+            pieceValue.textContent = `${player.pieces.length} ${player.pieces.length === 1 ? "piece" : "pieces"}`;
+        }
+
+        function updateLeaderboard() {
+            const others = entities.filter(function (entity) {
+                return !entity.isPlayer;
+            }).sort(function (a, b) {
+                return getEntityMass(b) - getEntityMass(a);
+            }).slice(0, 4);
+
+            const ranked = [player].concat(others).sort(function (a, b) {
+                return getEntityMass(b) - getEntityMass(a);
+            });
+
+            leaderList.innerHTML = ranked.map(function (entity, index) {
+                const cls = entity.isPlayer ? "you" : "";
+                return `<li class="${cls}"><span>${index + 1}. ${entity.name}</span><span>${formatMass(getEntityMass(entity))}</span></li>`;
+            }).join("");
+        }
+
+        function updateMessage(now) {
+            if (!player.alive && now < respawnMessageUntil) {
+                messageBox.textContent = "You were eaten. Respawning...";
+                return;
+            }
+
+            const main = getLargestPiece(player);
+            if (!main) {
+                messageBox.textContent = "Respawning...";
+                return;
+            }
+
+            if (player.pieces.length < CONFIG.maxPieces && canSplitPiece(main)) {
+                messageBox.textContent = "";
+            } else if (player.pieces.length > 1) {
+                messageBox.textContent = "";
+            } else {
+                messageBox.textContent = "";
+            }
+        }
+
+        function drawGrid() {
+            const spacing = 70 * camera.zoom;
+            const offsetX = (-camera.x * camera.zoom) % spacing;
+            const offsetY = (-camera.y * camera.zoom) % spacing;
+
+            ctx.strokeStyle = "rgba(255,255,255,0.04)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+
+            for (let x = offsetX; x <= canvasWidth; x += spacing) {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvasHeight);
+            }
+
+            for (let y = offsetY; y <= canvasHeight; y += spacing) {
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvasWidth, y);
+            }
+
+            ctx.stroke();
+        }
+
+        function drawWorldBorder() {
+            const x = worldToScreenX(0);
+            const y = worldToScreenY(0);
+            const size = CONFIG.worldSize * camera.zoom;
+
+            ctx.strokeStyle = "rgba(255,255,255,0.14)";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, size, size);
+        }
+
+        function drawFood() {
+            const margin = 20 / camera.zoom;
+            const left = camera.x - ((canvasWidth * 0.5) / camera.zoom) - margin;
+            const top = camera.y - ((canvasHeight * 0.5) / camera.zoom) - margin;
+            const right = camera.x + ((canvasWidth * 0.5) / camera.zoom) + margin;
+            const bottom = camera.y + ((canvasHeight * 0.5) / camera.zoom) + margin;
+
+            forEachFoodInArea(left, top, right, bottom, function (food) {
+                const sx = worldToScreenX(food.x);
+                const sy = worldToScreenY(food.y);
+                const radius = Math.max(2, food.r * camera.zoom);
+
+                ctx.fillStyle = food.color;
+                ctx.beginPath();
+                ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function drawVirus(virus) {
+            const sx = worldToScreenX(virus.x);
+            const sy = worldToScreenY(virus.y);
+            const radius = virus.r * camera.zoom;
+            const spikes = 16;
+
+            ctx.fillStyle = "#38c96f";
+            ctx.strokeStyle = "#229751";
+            ctx.lineWidth = Math.max(1.4, 2 * camera.zoom);
+            ctx.beginPath();
+
+            for (let i = 0; i <= spikes; i += 1) {
+                const angle = (i / spikes) * Math.PI * 2;
+                const spikeRadius = radius * (i % 2 === 0 ? 1.08 : 0.76);
+                const x = sx + Math.cos(angle) * spikeRadius;
+                const y = sy + Math.sin(angle) * spikeRadius;
+
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            }
+
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        function drawViruses() {
+            const margin = 50 / camera.zoom;
+            const left = camera.x - ((canvasWidth * 0.5) / camera.zoom) - margin;
+            const top = camera.y - ((canvasHeight * 0.5) / camera.zoom) - margin;
+            const right = camera.x + ((canvasWidth * 0.5) / camera.zoom) + margin;
+            const bottom = camera.y + ((canvasHeight * 0.5) / camera.zoom) + margin;
+
+            for (let index = 0; index < viruses.length; index += 1) {
+                const virus = viruses[index];
+                if (virus.x < left || virus.x > right || virus.y < top || virus.y > bottom) {
+                    continue;
+                }
+                drawVirus(virus);
+            }
+        }
+
+        function drawPiece(piece, isPlayer) {
+            const sx = worldToScreenX(piece.x);
+            const sy = worldToScreenY(piece.y);
+            const radius = piece.r * camera.zoom;
+
+            ctx.fillStyle = piece.color;
+            ctx.beginPath();
+            ctx.arc(sx, sy, radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = "rgba(255,255,255,0.18)";
+            ctx.lineWidth = Math.max(1, radius * 0.06);
+            ctx.stroke();
+
+            if (isPlayer && radius > 18) {
+                ctx.fillStyle = "rgba(255,255,255,0.16)";
+                ctx.beginPath();
+                ctx.arc(sx - (radius * 0.25), sy - (radius * 0.28), radius * 0.34, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawCells() {
+            const drawList = [];
+
+            for (let entityIndex = 0; entityIndex < entities.length; entityIndex += 1) {
+                const entity = entities[entityIndex];
+                if (!entity.alive) {
+                    continue;
+                }
+
+                for (let pieceIndex = 0; pieceIndex < entity.pieces.length; pieceIndex += 1) {
+                    const piece = entity.pieces[pieceIndex];
+                    if (!piece.dead) {
+                        drawList.push({
+                            piece,
+                            isPlayer: entity.isPlayer
+                        });
+                    }
+                }
+            }
+
+            drawList.sort(function (a, b) {
+                return a.piece.r - b.piece.r;
+            });
+
+            for (let index = 0; index < drawList.length; index += 1) {
+                drawPiece(drawList[index].piece, drawList[index].isPlayer);
+            }
+        }
+
+        // Drawing order stays simple and cheap.
+        function render() {
+            ctx.fillStyle = "#0a0f16";
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+            drawGrid();
+            drawWorldBorder();
+            drawFood();
+            drawViruses();
+            drawCells();
+        }
+
+        function applyPointerMove(clientX, clientY) {
+            if (joystickState.pointerId === null) {
+                return;
+            }
+
+            const dx = clientX - joystickState.baseX;
+            const dy = clientY - joystickState.baseY;
+            const distance = Math.hypot(dx, dy);
+            const limit = joystickState.radius;
+            const scale = distance > limit ? (limit / distance) : 1;
+            const clampedX = dx * scale;
+            const clampedY = dy * scale;
+
+            stick.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
+            input.x = clamp(clampedX / limit, -1, 1);
+            input.y = clamp(clampedY / limit, -1, 1);
+        }
+
+        function resetJoystick() {
+            joystickState.active = false;
+            joystickState.pointerId = null;
+            input.x = 0;
+            input.y = 0;
+            stick.style.transform = "translate3d(0, 0, 0)";
+        }
+
+        joystick.addEventListener("pointerdown", function (event) {
+            const rect = joystick.getBoundingClientRect();
+            joystickState.active = true;
+            joystickState.pointerId = event.pointerId;
+            joystickState.baseX = rect.left + (rect.width * 0.5);
+            joystickState.baseY = rect.top + (rect.height * 0.5);
+            joystickState.radius = rect.width * 0.32;
+            input.usingMouse = false;
+            joystick.setPointerCapture(event.pointerId);
+            applyPointerMove(event.clientX, event.clientY);
+        });
+
+        joystick.addEventListener("pointermove", function (event) {
+            if (joystickState.pointerId === event.pointerId) {
+                applyPointerMove(event.clientX, event.clientY);
+            }
+        });
+
+        joystick.addEventListener("pointerup", function (event) {
+            if (joystickState.pointerId === event.pointerId) {
+                resetJoystick();
+            }
+        });
+
+        joystick.addEventListener("pointercancel", resetJoystick);
+
+        canvas.addEventListener("mousemove", function (event) {
+            if ("ontouchstart" in window) {
+                return;
+            }
+
+            input.usingMouse = true;
+            const dx = event.clientX - (canvasWidth * 0.5);
+            const dy = event.clientY - (canvasHeight * 0.5);
+            const distance = Math.hypot(dx, dy) || 1;
+            const limit = Math.min(canvasWidth, canvasHeight) * 0.25;
+            const strength = clamp(distance / limit, 0, 1);
+            input.x = (dx / distance) * strength;
+            input.y = (dy / distance) * strength;
+        });
+
+        canvas.addEventListener("mouseleave", function () {
+            if (input.usingMouse) {
+                input.x = 0;
+                input.y = 0;
+            }
+        });
+
+        splitBtn.addEventListener("pointerdown", function (event) {
+            event.preventDefault();
+            if (player && player.alive) {
+                splitEntity(player, 1, getMoveVector(player), false, performance.now());
+            }
+        });
+
+        document.addEventListener("visibilitychange", function () {
+            lastFrame = performance.now();
+        });
+
+        function gameStep(now) {
+            const dt = Math.min((now - lastFrame) / 1000, 0.05);
+            lastFrame = now;
+
+            updateBots(now);
+
+            for (let index = 0; index < entities.length; index += 1) {
+                updateEntityMovement(entities[index], dt);
+            }
+
+            for (let index = 0; index < entities.length; index += 1) {
+                resolveFriendlyPieces(entities[index], now);
+            }
+
+            for (let index = 0; index < entities.length; index += 1) {
+                collectFoodAndViruses(entities[index], now);
+            }
+
+            handleCellEating(now);
+            cleanupDeadEntities(now);
+            updateCamera(dt);
+
+            hudTimer += (dt * 1000);
+            if (hudTimer >= CONFIG.leaderboardRate) {
+                hudTimer = 0;
+                updateHud();
+                updateLeaderboard();
+            }
+
+            messageTimer += (dt * 1000);
+            if (messageTimer >= CONFIG.messageRate) {
+                messageTimer = 0;
+                updateMessage(now);
+            }
+
+            render();
+            requestAnimationFrame(gameStep);
+        }
+
+        function init() {
+            const now = performance.now();
+            resize();
+            createFoods();
+            createViruses();
+            buildEntities(now);
+            camera.x = CONFIG.worldSize * 0.5;
+            camera.y = CONFIG.worldSize * 0.5;
+            camera.zoom = 1;
+            updateHud();
+            updateLeaderboard();
+            updateMessage(now);
+            requestAnimationFrame(gameStep);
+        }
+
+        window.addEventListener("resize", resize);
+        init();
+    </script>
+</body>
+</html>

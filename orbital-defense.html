@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Orbital Defense</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000;
+            overflow: hidden;
+            touch-action: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100vw;
+            max-width: 480px;
+            height: 100vh;
+            background: #000;
+            overflow: hidden;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            color: #0f0;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 0 0 5px #0f0;
+            z-index: 10;
+        }
+
+        #shieldBar {
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            right: 20px;
+            height: 25px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #0ff;
+            border-radius: 5px;
+            overflow: hidden;
+            box-shadow: 0 0 10px #0ff;
+        }
+
+        #shieldFill {
+            height: 100%;
+            background: linear-gradient(90deg, #0ff 0%, #0f0 50%, #ff0 100%);
+            transition: width 0.3s;
+            box-shadow: 0 0 10px #0ff;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            padding: 40px;
+            border: 3px solid #f00;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+            box-shadow: 0 0 30px #f00;
+            z-index: 100;
+        }
+
+        #gameOver h1 {
+            color: #f00;
+            font-size: 40px;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #f00;
+        }
+
+        #gameOver p {
+            color: #0f0;
+            font-size: 20px;
+            margin: 10px 0;
+            text-shadow: 0 0 5px #0f0;
+        }
+
+        #restartBtn {
+            margin-top: 25px;
+            padding: 15px 40px;
+            background: #0f0;
+            color: #000;
+            border: none;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+            box-shadow: 0 0 20px #0f0;
+            transition: all 0.1s;
+        }
+
+        #restartBtn:active {
+            background: #0ff;
+            transform: scale(0.95);
+        }
+
+        #tapHint {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(0, 255, 0, 0.7);
+            font-size: 16px;
+            text-align: center;
+            text-shadow: 0 0 5px #0f0;
+            animation: blink 2s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div id="ui">
+            <div>SCORE: <span id="score">0</span></div>
+            <div>WAVE: <span id="wave">1</span></div>
+        </div>
+
+        <div id="shieldBar">
+            <div id="shieldFill"></div>
+        </div>
+
+        <div id="tapHint">TAP MISSILES TO DESTROY THEM!</div>
+
+        <div id="gameOver">
+            <h1>PLANET DESTROYED</h1>
+            <p>FINAL SCORE: <span id="finalScore">0</span></p>
+            <p>WAVES SURVIVED: <span id="finalWave">0</span></p>
+            <p>MISSILES DESTROYED: <span id="destroyed">0</span></p>
+            <button id="restartBtn">DEFEND AGAIN</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Set canvas size
+        canvas.width = Math.min(window.innerWidth, 480);
+        canvas.height = window.innerHeight;
+
+        // Game variables
+        let gameActive = false;
+        let score = 0;
+        let wave = 1;
+        let shield = 100;
+        let missilesDestroyed = 0;
+        let spawnRate = 2000;
+        let lastSpawn = 0;
+
+        // Planet
+        const planet = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            radius: 50
+        };
+
+        // Missiles
+        let missiles = [];
+
+        // Explosions
+        let explosions = [];
+
+        // Stars
+        let stars = [];
+
+        // Sound effects
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playSound(type) {
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            switch(type) {
+                case 'lock':
+                    oscillator.frequency.value = 800;
+                    gainNode.gain.value = 0.05;
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.05);
+                    break;
+                case 'explosion':
+                    oscillator.type = 'sawtooth';
+                    oscillator.frequency.value = 200;
+                    gainNode.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.3);
+                    break;
+                case 'shield':
+                    oscillator.type = 'sine';
+                    oscillator.frequency.value = 300;
+                    gainNode.gain.value = 0.15;
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.2);
+                    break;
+                case 'alert':
+                    oscillator.type = 'square';
+                    oscillator.frequency.value = 500;
+                    gainNode.gain.value = 0.1;
+                    oscillator.start();
+                    oscillator.stop(audioCtx.currentTime + 0.1);
+                    break;
+            }
+        }
+
+        function init() {
+            gameActive = true;
+            score = 0;
+            wave = 1;
+            shield = 100;
+            missilesDestroyed = 0;
+            spawnRate = 2000;
+            lastSpawn = Date.now();
+            missiles = [];
+            explosions = [];
+            
+            // Create stars
+            stars = [];
+            for (let i = 0; i < 100; i++) {
+                stars.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 2,
+                    brightness: Math.random()
+                });
+            }
+            
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('tapHint').style.display = 'block';
+            
+            updateUI();
+            gameLoop();
+        }
+
+        function spawnMissile() {
+            const angle = Math.random() * Math.PI * 2;
+            const distance = Math.max(canvas.width, canvas.height);
+            const startX = planet.x + Math.cos(angle) * distance;
+            const startY = planet.y + Math.sin(angle) * distance;
+
+            // Speed ramps up with wave (base) + score bonus (gradual pressure)
+            const waveBonus  = (wave - 1) * 0.35;
+            const scoreBonus = Math.floor(score / 500) * 0.12;
+            const missileSpeed = Math.min(1.2 + waveBonus + scoreBonus, 6.5);
+            
+            missiles.push({
+                x: startX,
+                y: startY,
+                targetX: planet.x + (Math.random() - 0.5) * planet.radius * 2,
+                targetY: planet.y + (Math.random() - 0.5) * planet.radius * 2,
+                speed: missileSpeed,
+                radius: 8,
+                trail: []
+            });
+            
+            playSound('alert');
+        }
+
+        function createExplosion(x, y, size = 30) {
+            explosions.push({
+                x: x,
+                y: y,
+                radius: 0,
+                maxRadius: size,
+                life: 1
+            });
+            
+            playSound('explosion');
+        }
+
+        function handleTap(x, y) {
+            if (!gameActive) return;
+            
+            document.getElementById('tapHint').style.display = 'none';
+            
+            // Check if tapped on a missile
+            for (let i = missiles.length - 1; i >= 0; i--) {
+                const missile = missiles[i];
+                const dx = x - missile.x;
+                const dy = y - missile.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < missile.radius + 20) {
+                    // Hit!
+                    missiles.splice(i, 1);
+                    createExplosion(missile.x, missile.y);
+                    score += 10 * wave;
+                    missilesDestroyed++;
+                    playSound('lock');
+                    break;
+                }
+            }
+            
+            updateUI();
+        }
+
+        function checkWaveComplete() {
+            if (missiles.length === 0 && Date.now() - lastSpawn > 3000) {
+                wave++;
+                spawnRate = Math.max(500, spawnRate - 150);  // faster spawns each wave
+                shield = Math.min(100, shield + 20);
+                score += wave * 50;
+                playSound('shield');
+                updateUI();
+            }
+        }
+
+        function gameOver() {
+            gameActive = false;
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('finalWave').textContent = wave;
+            document.getElementById('destroyed').textContent = missilesDestroyed;
+            document.getElementById('gameOver').style.display = 'block';
+            createExplosion(planet.x, planet.y, 100);
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = score;
+            document.getElementById('wave').textContent = wave;
+            document.getElementById('shieldFill').style.width = shield + '%';
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            const now = Date.now();
+            
+            // Spawn missiles
+            if (now - lastSpawn > spawnRate) {
+                spawnMissile();
+                lastSpawn = now;
+            }
+
+            // Update missiles
+            missiles.forEach((missile, index) => {
+                const dx = missile.targetX - missile.x;
+                const dy = missile.targetY - missile.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < missile.speed) {
+                    // Missile hit planet
+                    missiles.splice(index, 1);
+                    shield -= 20;
+                    createExplosion(missile.targetX, missile.targetY);
+                    
+                    if (shield <= 0) {
+                        shield = 0;
+                        gameOver();
+                    }
+                    updateUI();
+                } else {
+                    // Move missile
+                    const vx = (dx / distance) * missile.speed;
+                    const vy = (dy / distance) * missile.speed;
+                    
+                    missile.trail.push({ x: missile.x, y: missile.y });
+                    if (missile.trail.length > 15) missile.trail.shift();
+                    
+                    missile.x += vx;
+                    missile.y += vy;
+                }
+            });
+
+            // Update explosions
+            explosions = explosions.filter(exp => {
+                exp.radius += exp.maxRadius / 20;
+                exp.life -= 0.05;
+                return exp.life > 0;
+            });
+
+            // Check wave completion
+            checkWaveComplete();
+
+            // Twinkle stars
+            stars.forEach(star => {
+                star.brightness += (Math.random() - 0.5) * 0.1;
+                star.brightness = Math.max(0, Math.min(1, star.brightness));
+            });
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw stars
+            stars.forEach(star => {
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.brightness})`;
+                ctx.fillRect(star.x, star.y, star.size, star.size);
+            });
+
+            // Draw planet
+            const gradient = ctx.createRadialGradient(
+                planet.x, planet.y, 0,
+                planet.x, planet.y, planet.radius
+            );
+            gradient.addColorStop(0, '#0ff');
+            gradient.addColorStop(0.7, '#0080ff');
+            gradient.addColorStop(1, '#003366');
+            
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(planet.x, planet.y, planet.radius, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Planet shield
+            if (shield > 0) {
+                ctx.strokeStyle = `rgba(0, 255, 255, ${shield / 200})`;
+                ctx.lineWidth = 3;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#0ff';
+                ctx.beginPath();
+                ctx.arc(planet.x, planet.y, planet.radius + 10, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+            }
+
+            // Draw missiles
+            missiles.forEach(missile => {
+                // Trail
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                missile.trail.forEach((point, i) => {
+                    if (i === 0) ctx.moveTo(point.x, point.y);
+                    else ctx.lineTo(point.x, point.y);
+                });
+                ctx.stroke();
+                
+                // Missile body
+                ctx.fillStyle = '#f00';
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#f00';
+                ctx.beginPath();
+                ctx.arc(missile.x, missile.y, missile.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Missile tip
+                const angle = Math.atan2(missile.targetY - missile.y, missile.targetX - missile.x);
+                ctx.fillStyle = '#ff0';
+                ctx.beginPath();
+                ctx.arc(
+                    missile.x + Math.cos(angle) * missile.radius,
+                    missile.y + Math.sin(angle) * missile.radius,
+                    3, 0, Math.PI * 2
+                );
+                ctx.fill();
+                
+                ctx.shadowBlur = 0;
+            });
+
+            // Draw explosions
+            explosions.forEach(exp => {
+                const alpha = exp.life;
+                ctx.strokeStyle = `rgba(255, 150, 0, ${alpha})`;
+                ctx.lineWidth = 3;
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#ff0';
+                ctx.beginPath();
+                ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                ctx.fillStyle = `rgba(255, 200, 0, ${alpha * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(exp.x, exp.y, exp.radius * 0.7, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.shadowBlur = 0;
+            });
+
+            // Draw targeting lines from missiles to planet
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.1)';
+            ctx.lineWidth = 1;
+            missiles.forEach(missile => {
+                ctx.beginPath();
+                ctx.moveTo(missile.x, missile.y);
+                ctx.lineTo(missile.targetX, missile.targetY);
+                ctx.stroke();
+            });
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+
+            if (gameActive || explosions.length > 0) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Touch controls
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            const x = (touch.clientX - rect.left) * (canvas.width / rect.width);
+            const y = (touch.clientY - rect.top) * (canvas.height / rect.height);
+            handleTap(x, y);
+        });
+
+        // Mouse control for testing
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+            const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+            handleTap(x, y);
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', init);
+
+        // Start game
+        init();
+    </script>
+</body>
+</html>

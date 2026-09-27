@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Tic-Tac-Toe & Gomoku</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: #0f172a;
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 100vh;
+    padding: 12px 8px;
+    touch-action: manipulation;
+  }
+  .header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    width: 100%;
+    max-width: 360px;
+  }
+  .title {
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    background: linear-gradient(135deg, #38bdf8, #ec4899);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .modes-bar {
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    justify-content: center;
+  }
+  .btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .btn.active {
+    background: #3b82f6;
+    color: #fff;
+    border-color: #60a5fa;
+    box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+  }
+
+  .score-board {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    width: 100%;
+    max-width: 360px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 10px;
+    padding: 8px;
+    margin-bottom: 12px;
+  }
+  .score-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+  }
+  .score-val {
+    font-size: 18px;
+    font-weight: 900;
+    color: #fff;
+  }
+
+  .board-wrap {
+    width: 100%;
+    max-width: 340px;
+    aspect-ratio: 1 / 1;
+    background: #1e293b;
+    padding: 6px;
+    border-radius: 12px;
+    border: 2px solid #334155;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  }
+  .grid {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+    height: 100%;
+  }
+  .cell {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 40px;
+    font-weight: 900;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s;
+  }
+  .cell:active { transform: scale(0.92); }
+  .cell.x { color: #38bdf8; text-shadow: 0 0 10px rgba(56, 189, 248, 0.5); }
+  .cell.o { color: #ec4899; text-shadow: 0 0 10px rgba(236, 72, 153, 0.5); }
+  .cell.win { background: #065f46 !important; border-color: #34d399 !important; animation: pulse 0.5s infinite alternate; }
+
+  @keyframes pulse {
+    0% { transform: scale(1); }
+    100% { transform: scale(1.05); }
+  }
+
+  .status-text {
+    margin-top: 12px;
+    font-size: 14px;
+    font-weight: 800;
+    color: #cbd5e1;
+  }
+  .reset-btn {
+    margin-top: 10px;
+    background: #334155;
+    border: 1px solid #475569;
+    color: #fff;
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="title">❌ TIC-TAC-TOE ⭕</div>
+  <div class="modes-bar">
+    <button class="btn active" id="btn3" onclick="setSize(3)">3×3 Classic</button>
+    <button class="btn" id="btn5" onclick="setSize(5)">5×5 (4 in a row)</button>
+  </div>
+  <div class="modes-bar" style="margin-top: 4px;">
+    <button class="btn active" id="btnAI" onclick="setOpponent('ai')">vs AI</button>
+    <button class="btn" id="btn2P" onclick="setOpponent('2p')">2 Players</button>
+  </div>
+</div>
+
+<div class="score-board">
+  <div class="score-item">
+    <span>PLAYER X</span>
+    <span class="score-val" id="scoreX" style="color:#38bdf8;">0</span>
+  </div>
+  <div class="score-item">
+    <span>TIES</span>
+    <span class="score-val" id="scoreTies">0</span>
+  </div>
+  <div class="score-item">
+    <span>PLAYER O</span>
+    <span class="score-val" id="scoreO" style="color:#ec4899;">0</span>
+  </div>
+</div>
+
+<div class="board-wrap">
+  <div class="grid" id="grid"></div>
+</div>
+
+<div class="status-text" id="status">Player X's Turn</div>
+<button class="reset-btn" onclick="initGame()">🔄 New Game</button>
+
+<script>
+let audioCtx = null;
+function playSound(type) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+
+    if (type === 'tap') {
+      osc.frequency.setValueAtTime(350, now);
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      osc.start(now); osc.stop(now + 0.05);
+    } else if (type === 'win') {
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.setValueAtTime(659.25, now + 0.1);
+      osc.frequency.setValueAtTime(783.99, now + 0.2);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc.start(now); osc.stop(now + 0.5);
+    }
+  } catch(e){}
+}
+
+let size = 3;
+let opponent = 'ai';
+let board = [];
+let turn = 'X';
+let gameOver = false;
+let scores = { X: 0, O: 0, ties: 0 };
+let aiTimer = null;
+
+function setSize(s) {
+  size = s;
+  document.getElementById('btn3').classList.toggle('active', s === 3);
+  document.getElementById('btn5').classList.toggle('active', s === 5);
+  initGame();
+}
+
+function setOpponent(opp) {
+  opponent = opp;
+  document.getElementById('btnAI').classList.toggle('active', opp === 'ai');
+  document.getElementById('btn2P').classList.toggle('active', opp === '2p');
+  initGame();
+}
+
+function initGame() {
+  if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
+  board = Array.from({ length: size }, () => Array(size).fill(''));
+  turn = 'X';
+  gameOver = false;
+  document.getElementById('status').textContent = "Player X's Turn";
+  
+  const gridEl = document.getElementById('grid');
+  gridEl.style.gridTemplateColumns = `repeat(${size}, 1fr)`;
+  gridEl.style.gridTemplateRows = `repeat(${size}, 1fr)`;
+  gridEl.innerHTML = '';
+
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      if (size === 5) cell.style.fontSize = '24px';
+      cell.onclick = () => makeMove(r, c);
+      gridEl.appendChild(cell);
+    }
+  }
+}
+
+function makeMove(r, c, fromAI) {
+  if (gameOver || board[r][c] !== '') return;
+  if (!fromAI && opponent === 'ai' && turn === 'O') return;
+
+  board[r][c] = turn;
+  playSound('tap');
+  renderBoard();
+
+  const winCombo = checkWin(board, size === 3 ? 3 : 4);
+  if (winCombo) {
+    endGame(turn, winCombo);
+    return;
+  }
+
+  if (board.flat().every(cell => cell !== '')) {
+    endGame('tie');
+    return;
+  }
+
+  turn = turn === 'X' ? 'O' : 'X';
+  document.getElementById('status').textContent = `Player ${turn}'s Turn`;
+
+  if (opponent === 'ai' && turn === 'O' && !gameOver) {
+    aiTimer = setTimeout(aiMove, 250);
+  }
+}
+
+function renderBoard() {
+  const cells = document.querySelectorAll('.grid .cell');
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const idx = r * size + c;
+      const val = board[r][c];
+      cells[idx].textContent = val;
+      cells[idx].className = `cell ${val ? val.toLowerCase() : ''}`;
+    }
+  }
+}
+
+function checkWin(b, targetCount) {
+  const dirs = [[0,1], [1,0], [1,1], [1,-1]];
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      const mark = b[r][c];
+      if (!mark) continue;
+      for (let [dr, dc] of dirs) {
+        let coords = [{ r, c }];
+        for (let step = 1; step < targetCount; step++) {
+          const nr = r + dr * step, nc = c + dc * step;
+          if (nr >= 0 && nr < size && nc >= 0 && nc < size && b[nr][nc] === mark) {
+            coords.push({ r: nr, c: nc });
+          } else {
+            break;
+          }
+        }
+        if (coords.length === targetCount) return coords;
+      }
+    }
+  }
+  return null;
+}
+
+function endGame(winner, winCombo) {
+  gameOver = true;
+  if (winner === 'tie') {
+    scores.ties++;
+    document.getElementById('scoreTies').textContent = scores.ties;
+    document.getElementById('status').textContent = "It's a Tie! 🤝";
+  } else {
+    scores[winner]++;
+    document.getElementById('score' + winner).textContent = scores[winner];
+    document.getElementById('status').textContent = `Player ${winner} Wins! 🏆`;
+    playSound('win');
+    
+    const cells = document.querySelectorAll('.grid .cell');
+    winCombo.forEach(({r, c}) => {
+      cells[r * size + c].classList.add('win');
+    });
+  }
+}
+
+function aiMove() {
+  if (gameOver) return;
+  const targetCount = size === 3 ? 3 : 4;
+
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (board[r][c] === '') {
+        board[r][c] = 'O';
+        if (checkWin(board, targetCount)) {
+          board[r][c] = '';
+          makeMove(r, c, true);
+          return;
+        }
+        board[r][c] = '';
+      }
+    }
+  }
+
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (board[r][c] === '') {
+        board[r][c] = 'X';
+        if (checkWin(board, targetCount)) {
+          board[r][c] = '';
+          makeMove(r, c, true);
+          return;
+        }
+        board[r][c] = '';
+      }
+    }
+  }
+
+  const mid = Math.floor(size / 2);
+  if (board[mid][mid] === '') {
+    makeMove(mid, mid, true);
+    return;
+  }
+
+  let empty = [];
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (board[r][c] === '') empty.push({ r, c });
+    }
+  }
+  if (empty.length > 0) {
+    const pick = empty[Math.floor(Math.random() * empty.length)];
+    makeMove(pick.r, pick.c, true);
+  }
+}
+
+initGame();
+</script>
+</body>
+</html>

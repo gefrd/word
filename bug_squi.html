@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Bug Squish!</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;}
+body{min-height:100vh;overflow:hidden;touch-action:none;font-family:'Fredoka One',cursive;}
+
+/* LAWN BG */
+#bg{position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%,#A8E063,#56AB2F);}
+.grass-stripe{position:absolute;width:100%;height:60px;background:rgba(255,255,255,.04);}
+
+/* HUD */
+#hud{position:fixed;top:0;left:0;right:0;z-index:100;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;}
+.hpill{background:rgba(255,255,255,.92);border-radius:20px;padding:8px 18px;font-size:1.2rem;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.15);}
+.hpill.score{color:#2D7A2D;}
+.hpill.timer{color:#E84393;}
+.hpill.miss{color:#E8622A;}
+
+/* PROGRESS BAR */
+#progress{position:fixed;top:58px;left:16px;right:16px;height:8px;background:rgba(255,255,255,.3);border-radius:8px;z-index:100;overflow:hidden;}
+#progress-fill{height:100%;background:linear-gradient(90deg,#FFD700,#FF8C00);border-radius:8px;transition:width .4s;}
+
+/* GAME AREA */
+#game{position:fixed;inset:0;top:72px;z-index:10;}
+
+/* BUGS */
+.bug{position:absolute;font-size:2.6rem;cursor:pointer;transition:transform .08s;animation:bugWalk linear infinite;transform-origin:center;}
+.bug:active{transform:scale(.6)!important;}
+.bug.super{font-size:3.4rem;filter:drop-shadow(0 0 8px gold);}
+.bug.fast{font-size:2rem;}
+
+/* SQUISH EFFECT */
+.squish{position:absolute;pointer-events:none;font-size:2rem;animation:squishPop .5s forwards;z-index:200;}
+.score-pop{position:absolute;pointer-events:none;font-family:'Fredoka One';font-size:1.5rem;animation:scorePop .7s forwards;z-index:201;white-space:nowrap;}
+.miss-indicator{position:absolute;pointer-events:none;font-size:2.5rem;animation:missFly .6s forwards;z-index:200;}
+
+/* OVERLAY */
+#overlay{position:fixed;inset:0;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;}
+#overlay.start{background:radial-gradient(ellipse at 50% 40%,#A8E063,#56AB2F);}
+#overlay.end{background:radial-gradient(ellipse at 50% 40%,#A8E063,#2D7A2D);}
+.big-title{font-size:3.5rem;color:white;text-shadow:0 4px 0 rgba(0,0,0,.2);margin-bottom:6px;}
+.big-bug{font-size:5rem;animation:bounce .8s ease-in-out infinite alternate;margin-bottom:8px;}
+.how-card{background:rgba(255,255,255,.92);border-radius:22px;padding:16px 22px;margin-bottom:22px;font-size:.92rem;color:#2D5A1B;line-height:1.9;text-align:center;max-width:300px;font-family:'Nunito';}
+.play-btn{background:white;color:#2D7A2D;border:none;border-radius:50px;padding:16px 50px;font-family:'Fredoka One';font-size:1.6rem;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.2);}
+.play-btn:active{transform:scale(.94);}
+.final-score{font-size:5rem;color:white;text-shadow:0 4px 0 rgba(0,0,0,.2);margin:6px 0;}
+.final-lbl{font-size:1.1rem;color:rgba(255,255,255,.8);font-family:'Nunito';margin-bottom:4px;}
+.stars{font-size:3rem;margin:6px 0 16px;}
+
+/* LEVEL UP BANNER */
+#levelup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:400;font-family:'Fredoka One';font-size:2.5rem;color:#FFD700;text-shadow:0 0 20px rgba(255,215,0,.8),0 4px 0 rgba(0,0,0,.3);pointer-events:none;opacity:0;}
+
+/* MULTIPLIER POPUP */
+#multiplier{position:fixed;top:80px;left:50%;transform:translateX(-50%);z-index:300;font-family:'Fredoka One';font-size:1.3rem;color:#FFD700;opacity:0;pointer-events:none;text-shadow:0 2px 8px rgba(0,0,0,.4);}
+
+@keyframes bugWalk{0%{transform:rotate(-10deg);}50%{transform:rotate(10deg);}100%{transform:rotate(-10deg);}}
+@keyframes bounce{from{transform:translateY(0);}to{transform:translateY(-12px);}}
+@keyframes squishPop{0%{transform:scale(1.5);opacity:1;}100%{transform:scale(.3);opacity:0;}}
+@keyframes scorePop{0%{opacity:0;transform:translateY(0);}20%{opacity:1;}80%{opacity:1;transform:translateY(-40px);}100%{opacity:0;transform:translateY(-60px);}}
+@keyframes missFly{0%{opacity:1;transform:scale(1.3);}100%{opacity:0;transform:scale(.5) translateY(-40px);}}
+@keyframes levelUpAnim{0%{opacity:0;transform:translate(-50%,-50%) scale(.5);}25%{opacity:1;transform:translate(-50%,-50%) scale(1.2);}75%{opacity:1;transform:translate(-50%,-50%) scale(1);}100%{opacity:0;transform:translate(-50%,-50%) scale(.9);}}
+@keyframes multiAnim{0%{opacity:0;}20%{opacity:1;}80%{opacity:1;}100%{opacity:0;}}
+</style>
+</head>
+<body>
+
+<div id="bg">
+  <div class="grass-stripe" style="top:20%"></div>
+  <div class="grass-stripe" style="top:45%"></div>
+  <div class="grass-stripe" style="top:70%"></div>
+</div>
+
+<div id="hud">
+  <div class="hpill score">🐛 <span id="score-v">0</span></div>
+  <div class="hpill timer">⏱ <span id="timer-v">60</span>s</div>
+  <div class="hpill miss">❌ <span id="miss-v">0</span>/5</div>
+</div>
+<div id="progress"><div id="progress-fill" style="width:100%"></div></div>
+
+<div id="game"></div>
+<div id="levelup"></div>
+<div id="multiplier"></div>
+
+<div id="overlay" class="start" style="display:none;">
+  <div class="big-bug">🐛</div>
+  <div class="big-title">Bug Squish!</div>
+  <div class="how-card">
+    🐛 <b>Tap bugs</b> to squish them!<br>
+    ⚡ Tap fast for a <b>combo bonus!</b><br>
+    ⭐ Golden bugs = <b>5× points!</b><br>
+    ❌ Miss 5 bugs and it's game over!
+  </div>
+  <button class="play-btn" onclick="startGame()">Let's Squish! 🥾</button>
+</div>
+
+<script>
+const BUGS=['🐛','🐜','🐝','🦗','🦟','🪲','🐞','🦎'];
+const SPECIAL='⭐'; // bonus bug
+
+let score=0,misses=0,combo=0,level=1,timeLeft=60,active=false;
+let timerInt,spawnInt,bugCount=0;
+const MAX_MISSES=5;
+const game=document.getElementById('game');
+
+// Generate grass stripes dynamically
+for(let i=0;i<8;i++){
+  const s=document.createElement('div');
+  s.className='grass-stripe';
+  s.style.top=(i*13)+'%';
+  document.getElementById('bg').appendChild(s);
+}
+
+function spawnBug(){
+  if(!active) return;
+  bugCount++;
+  const isSpecial=Math.random()<0.08;
+  const isFast=Math.random()<0.15&&level>2;
+  const el=document.createElement('div');
+  el.className='bug'+(isSpecial?' super':isFast?' fast':'');
+
+  const emojiPool=isSpecial?[SPECIAL]:BUGS;
+  el.textContent=emojiPool[Math.floor(Math.random()*emojiPool.length)];
+
+  const size=isSpecial?56:isFast?40:50;
+  const areaW=window.innerWidth-size;
+  const areaH=window.innerHeight-72-size;
+  const startX=Math.random()*areaW;
+  const startY=Math.random()*areaH+72;
+
+  el.style.left=startX+'px';
+  el.style.top=startY+'px';
+
+  // Movement direction
+  const speed=isFast?(2.5+Math.random()*2):(1+level*0.3+Math.random()*1.5);
+  const angle=Math.random()*Math.PI*2;
+  let vx=Math.cos(angle)*speed, vy=Math.sin(angle)*speed;
+  let x=startX, y=startY;
+
+  el.style.fontSize=size+'px';
+
+  // Bug crawl animation
+  const id=setInterval(()=>{
+    if(!active){el.remove();clearInterval(id);return;}
+    x+=vx; y+=vy;
+    // Bounce off walls
+    if(x<0||x>window.innerWidth-size){vx*=-1; el.style.transform=vx>0?'scaleX(1)':'scaleX(-1)';}
+    if(y<72||y>window.innerHeight-size){vy*=-1;}
+    el.style.left=x+'px'; el.style.top=y+'px';
+  },16);
+
+  // Lifetime — if not squished, it escapes
+  const lifetime=isSpecial?3500:isFast?2200:Math.max(2500,4000-level*200);
+  const escape=setTimeout(()=>{
+    if(el.parentNode){
+      el.remove(); clearInterval(id);
+      bugEscape(x+size/2,y+size/2);
+    }
+  },lifetime);
+
+  const squish=()=>{
+    el.removeEventListener('click',squish);
+    el.removeEventListener('touchstart',squish);
+    clearTimeout(escape); clearInterval(id);
+    if(!el.parentNode) return;
+    squishBug(el,isSpecial,isFast,x+size/2,y+size/2);
+  };
+  el.addEventListener('click',squish);
+  el.addEventListener('touchstart',e=>{e.preventDefault();squish();},{passive:false});
+
+  game.appendChild(el);
+
+  // Spawn next
+  const nextDelay=Math.max(400,1200-level*80);
+  if(active) spawnInt=setTimeout(spawnBug,nextDelay);
+}
+
+function squishBug(el,isSpecial,isFast,cx,cy){
+  const pts=isSpecial?50:isFast?15:10;
+  combo++;
+  const multiplied=pts*Math.min(combo,5);
+  score+=multiplied;
+  document.getElementById('score-v').textContent=score;
+
+  // Squish FX
+  const fx=document.createElement('div');
+  fx.className='squish';
+  fx.style.left=(cx-24)+'px'; fx.style.top=(cy-24)+'px';
+  fx.textContent=isSpecial?'✨':'💥';
+  game.appendChild(fx);
+  setTimeout(()=>fx.remove(),500);
+
+  // Score pop
+  const sp=document.createElement('div');
+  sp.className='score-pop';
+  const color=isSpecial?'#FFD700':combo>=5?'#FF8C42':'#2D7A2D';
+  sp.style.cssText=`left:${cx}px;top:${cy}px;color:${color};transform:translateX(-50%);`;
+  sp.textContent=combo>=5?`×${Math.min(combo,5)} COMBO! +${multiplied}`:`+${multiplied}`;
+  game.appendChild(sp);
+  setTimeout(()=>sp.remove(),700);
+
+  el.remove();
+
+  // Show multiplier
+  if(combo>=3){
+    const m=document.getElementById('multiplier');
+    m.textContent=`🔥 ${Math.min(combo,5)}× Combo!`;
+    m.style.animation='none'; m.offsetHeight;
+    m.style.animation='multiAnim .8s forwards';
+  }
+
+  // Level up
+  if(score>0&&score%100<multiplied){
+    level=Math.min(10,Math.floor(score/100)+1);
+    showLevelUp();
+  }
+}
+
+function bugEscape(cx,cy){
+  misses++;
+  combo=0;
+  document.getElementById('miss-v').textContent=misses;
+  document.getElementById('progress-fill').style.width=((MAX_MISSES-misses)/MAX_MISSES*100)+'%';
+
+  const fx=document.createElement('div');
+  fx.className='miss-indicator';
+  fx.style.left=(cx-24)+'px'; fx.style.top=(cy-24)+'px';
+  fx.textContent='💨';
+  game.appendChild(fx);
+  setTimeout(()=>fx.remove(),600);
+
+  if(misses>=MAX_MISSES){active=false;clearTimeout(spawnInt);clearInterval(timerInt);endGame();}
+}
+
+function showLevelUp(){
+  const el=document.getElementById('levelup');
+  el.textContent=`Level ${level}! 🚀`;
+  el.style.animation='none'; el.offsetHeight;
+  el.style.animation='levelUpAnim 1s forwards';
+}
+
+function startGame(){
+  document.getElementById('overlay').style.display='none';
+  game.innerHTML='';
+  score=0;misses=0;combo=0;level=1;timeLeft=60;active=true;
+  document.getElementById('score-v').textContent='0';
+  document.getElementById('miss-v').textContent='0';
+  document.getElementById('timer-v').textContent='60';
+  document.getElementById('progress-fill').style.width='100%';
+  clearTimeout(spawnInt);clearInterval(timerInt);
+
+  spawnBug();
+
+  timerInt=setInterval(()=>{
+    timeLeft--;
+    document.getElementById('timer-v').textContent=timeLeft;
+    if(timeLeft<=0){active=false;clearTimeout(spawnInt);clearInterval(timerInt);endGame();}
+  },1000);
+}
+
+function endGame(){
+  active=false;
+  game.innerHTML='';
+  const stars=score>=300?'⭐⭐⭐':score>=150?'⭐⭐':'⭐';
+  const ov=document.getElementById('overlay');
+  ov.className='overlay end';
+  ov.innerHTML=`
+    <div class="stars">${stars}</div>
+    <div class="big-title">Game Over!</div>
+    <div class="final-score">${score}</div>
+    <div class="final-lbl">bugs squished!</div>
+    <div style="color:rgba(255,255,255,.75);font-family:Nunito;font-size:.9rem;margin-bottom:22px">Max combo: <b style="color:#FFD700">${Math.min(combo,50)}×</b></div>
+    <button class="play-btn" onclick="startGame()">Play Again! 🐛</button>
+  `;
+  ov.style.display='flex';
+}
+
+startGame();
+</script>
+</body>
+</html>

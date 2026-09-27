@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Classic Sudoku</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: #0f172a;
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    min-height: 100vh;
+    padding: 10px 8px;
+    touch-action: manipulation;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 380px;
+    margin-bottom: 8px;
+  }
+  .title {
+    font-size: 18px;
+    font-weight: 800;
+    color: #38bdf8;
+  }
+  .diff-bar {
+    display: flex;
+    gap: 4px;
+  }
+  .diff-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    padding: 6px 12px;
+    min-height: 36px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .diff-btn.active {
+    background: #0284c7;
+    color: #fff;
+    border-color: #38bdf8;
+  }
+
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 380px;
+    font-size: 12px;
+    color: #94a3b8;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  .board-container {
+    width: 100%;
+    max-width: 380px;
+    aspect-ratio: 1 / 1;
+    background: #1e293b;
+    border: 3px solid #38bdf8;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    grid-template-rows: repeat(9, 1fr);
+    overflow: hidden;
+  }
+  .cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 800;
+    border: 0.5px solid #334155;
+    cursor: pointer;
+    background: #0f172a;
+    position: relative;
+    transition: background 0.1s;
+  }
+  .cell:nth-child(3n) { border-right: 2px solid #38bdf8; }
+  .cell:nth-child(9n) { border-right: none; }
+  .cell:nth-child(n+19):nth-child(-n+27),
+  .cell:nth-child(n+46):nth-child(-n+54) {
+    border-bottom: 2px solid #38bdf8;
+  }
+
+  .cell.initial { color: #f8fafc; }
+  .cell.user { color: #38bdf8; }
+  .cell.error { color: #ef4444 !important; background: rgba(239, 68, 68, 0.2) !important; }
+  .cell.selected { background: #0369a1 !important; }
+  .cell.highlight { background: #1e293b; }
+  .cell.same-num { background: #0c4a6e; }
+
+  .notes-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .note-num {
+    font-size: 8px;
+    font-weight: 600;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .tools-bar {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 380px;
+    margin-top: 10px;
+  }
+  .tool-btn {
+    flex: 1;
+    margin: 0 3px;
+    height: 38px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .tool-btn.active {
+    background: #ca8a04;
+    color: #fff;
+    border-color: #facc15;
+  }
+
+  .numpad {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 4px;
+    width: 100%;
+    max-width: 380px;
+    margin-top: 8px;
+  }
+  .num-btn {
+    height: 44px;
+    background: #1e293b;
+    border: 1px solid #475569;
+    color: #38bdf8;
+    border-radius: 8px;
+    font-size: 20px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+  }
+  .num-btn:active { background: #0284c7; color: #fff; transform: scale(0.92); }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    z-index: 100;
+  }
+  .modal.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="title">🧩 CLASSIC SUDOKU</div>
+  <div class="diff-bar">
+    <button class="diff-btn active" onclick="setDiff('easy', this)">Easy</button>
+    <button class="diff-btn" onclick="setDiff('med', this)">Medium</button>
+    <button class="diff-btn" onclick="setDiff('hard', this)">Hard</button>
+  </div>
+</div>
+
+<div class="status-bar">
+  <div>Mistakes: <span id="mistakes" style="color:#ef4444;">0/3</span></div>
+  <div>Time: <span id="timer">00:00</span></div>
+</div>
+
+<div class="board-container" id="board"></div>
+
+<div class="tools-bar">
+  <button class="tool-btn" id="pencilBtn" onclick="togglePencil()">✏️ Notes: OFF</button>
+  <button class="tool-btn" onclick="eraseCell()">🧹 Erase</button>
+  <button class="tool-btn" onclick="giveHint()">💡 Hint</button>
+  <button class="tool-btn" onclick="restartGame()">🔄 Restart</button>
+</div>
+
+<div class="numpad">
+  <button class="num-btn" onclick="inputNum(1)">1</button>
+  <button class="num-btn" onclick="inputNum(2)">2</button>
+  <button class="num-btn" onclick="inputNum(3)">3</button>
+  <button class="num-btn" onclick="inputNum(4)">4</button>
+  <button class="num-btn" onclick="inputNum(5)">5</button>
+  <button class="num-btn" onclick="inputNum(6)">6</button>
+  <button class="num-btn" onclick="inputNum(7)">7</button>
+  <button class="num-btn" onclick="inputNum(8)">8</button>
+  <button class="num-btn" onclick="inputNum(9)">9</button>
+</div>
+
+<div class="modal hidden" id="winModal">
+  <h1 style="font-size:28px; color:#38bdf8; font-weight:900;" id="modalTitle">VICTORY! 🎉</h1>
+  <p id="modalDesc" style="color:#cbd5e1;">You solved the sudoku!</p>
+  <button class="diff-btn" style="padding:10px 24px; font-size:15px;" onclick="initGame()">New Game</button>
+</div>
+
+<script>
+let audioCtx = null;
+function playSound(type) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain); gain.connect(audioCtx.destination);
+
+    if (type === 'num') {
+      osc.frequency.setValueAtTime(400, now);
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      osc.start(now); osc.stop(now + 0.05);
+    } else if (type === 'error') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, now);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      osc.start(now); osc.stop(now + 0.15);
+    } else if (type === 'win') {
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.setValueAtTime(659.25, now + 0.1);
+      osc.frequency.setValueAtTime(783.99, now + 0.2);
+      osc.frequency.setValueAtTime(1046.50, now + 0.3);
+      gain.gain.setValueAtTime(0.2, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      osc.start(now); osc.stop(now + 0.6);
+    }
+  } catch(e){}
+}
+
+let solution = [];
+let initialBoard = [];
+let currentBoard = [];
+let notes = [];
+let selectedCell = null;
+let pencilMode = false;
+let mistakes = 0;
+let difficulty = 'easy';
+let timerSec = 0, timerInt = null;
+let gameOver = false;
+let cluesGiven = 0;
+
+function setDiff(d, btn) {
+  difficulty = d;
+  document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  initGame();
+}
+
+function togglePencil() {
+  pencilMode = !pencilMode;
+  const btn = document.getElementById('pencilBtn');
+  btn.classList.toggle('active', pencilMode);
+  btn.textContent = pencilMode ? '✏️ Notes: ON' : '✏️ Notes: OFF';
+}
+
+function generateSudoku() {
+  // --- 1. Полностью заполненная сетка: базовый шаблон + преобразования, сохраняющие корректность ---
+  let base = [
+    [1,2,3,4,5,6,7,8,9],
+    [4,5,6,7,8,9,1,2,3],
+    [7,8,9,1,2,3,4,5,6],
+    [2,3,4,5,6,7,8,9,1],
+    [5,6,7,8,9,1,2,3,4],
+    [8,9,1,2,3,4,5,6,7],
+    [3,4,5,6,7,8,9,1,2],
+    [6,7,8,9,1,2,3,4,5],
+    [9,1,2,3,4,5,6,7,8]
+  ];
+  const rnd = n => Math.floor(Math.random() * n);
+
+  // строки внутри полосы
+  for (let i = 0; i < 20; i++) {
+    const b = rnd(3) * 3;
+    const r1 = b + rnd(3), r2 = b + rnd(3);
+    [base[r1], base[r2]] = [base[r2], base[r1]];
+  }
+  // столбцы внутри стопки
+  for (let i = 0; i < 20; i++) {
+    const b = rnd(3) * 3;
+    const c1 = b + rnd(3), c2 = b + rnd(3);
+    for (let r = 0; r < 9; r++) { const t = base[r][c1]; base[r][c1] = base[r][c2]; base[r][c2] = t; }
+  }
+  // полосы целиком
+  for (let i = 0; i < 6; i++) {
+    const b1 = rnd(3) * 3, b2 = rnd(3) * 3;
+    for (let k = 0; k < 3; k++) { const t = base[b1 + k]; base[b1 + k] = base[b2 + k]; base[b2 + k] = t; }
+  }
+  // стопки целиком
+  for (let i = 0; i < 6; i++) {
+    const b1 = rnd(3) * 3, b2 = rnd(3) * 3;
+    for (let r = 0; r < 9; r++) for (let k = 0; k < 3; k++) {
+      const t = base[r][b1 + k]; base[r][b1 + k] = base[r][b2 + k]; base[r][b2 + k] = t;
+    }
+  }
+  // транспонирование
+  if (Math.random() < 0.5) {
+    const t = Array.from({length: 9}, (_, r) => Array.from({length: 9}, (_, c) => base[c][r]));
+    base = t;
+  }
+  // переобозначение цифр
+  const digits = [1,2,3,4,5,6,7,8,9];
+  for (let i = digits.length - 1; i > 0; i--) { const j = rnd(i + 1); [digits[i], digits[j]] = [digits[j], digits[i]]; }
+  const digitMap = [0, ...digits];
+  for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++) base[r][c] = digitMap[base[r][c]];
+
+  solution = base.map(row => [...row]);
+
+  // --- 2. Удаляем клетки ТОЛЬКО пока решение остаётся единственным ---
+  const puzzle = solution.map(row => [...row]);
+  const targetClues = difficulty === 'easy' ? 40 : (difficulty === 'med' ? 32 : 25);
+  const order = [];
+  for (let i = 0; i < 81; i++) order.push(i);
+  for (let i = order.length - 1; i > 0; i--) { const j = rnd(i + 1); [order[i], order[j]] = [order[j], order[i]]; }
+
+  let clues = 81;
+  for (const idx of order) {
+    if (clues <= targetClues) break;
+    const r = Math.floor(idx / 9), c = idx % 9;
+    if (puzzle[r][c] === 0) continue;
+    const saved = puzzle[r][c];
+    puzzle[r][c] = 0;
+    if (countSolutions(puzzle, 2) === 1) clues--;
+    else puzzle[r][c] = saved; // убрать нельзя — появился второй ответ
+  }
+  cluesGiven = clues;
+  return puzzle;
+}
+
+// Считает решения (останавливается, дойдя до cap). Выбирает клетку с минимумом вариантов.
+function countSolutions(grid, cap) {
+  const g = grid.map(row => [...row]);
+  let found = 0;
+  const allowed = (r, c, v) => {
+    for (let i = 0; i < 9; i++) if (g[r][i] === v || g[i][c] === v) return false;
+    const br = r - r % 3, bc = c - c % 3;
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) if (g[br + i][bc + j] === v) return false;
+    return true;
+  };
+  const rec = () => {
+    if (found >= cap) return;
+    let br = -1, bc = -1, best = 10, bestCand = null;
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (g[r][c] !== 0) continue;
+        const cand = [];
+        for (let v = 1; v <= 9; v++) if (allowed(r, c, v)) cand.push(v);
+        if (cand.length < best) { best = cand.length; br = r; bc = c; bestCand = cand; }
+        if (best === 0) { r = 9; break; }
+      }
+    }
+    if (br === -1) { found++; return; }
+    for (const v of bestCand) {
+      g[br][bc] = v;
+      rec();
+      g[br][bc] = 0;
+      if (found >= cap) return;
+    }
+  };
+  rec();
+  return found;
+}
+
+function initGame() {
+  clearInterval(timerInt);
+  gameOver = false;
+  timerSec = 0;
+  mistakes = 0;
+  selectedCell = null;
+  document.getElementById('winModal').classList.add('hidden');
+  document.getElementById('mistakes').textContent = '0/3';
+  document.getElementById('timer').textContent = '00:00';
+
+  timerInt = setInterval(() => {
+    timerSec++;
+    const m = String(Math.floor(timerSec / 60)).padStart(2, '0');
+    const s = String(timerSec % 60).padStart(2, '0');
+    document.getElementById('timer').textContent = `${m}:${s}`;
+  }, 1000);
+
+  initialBoard = generateSudoku();
+  currentBoard = initialBoard.map(row => [...row]);
+  notes = Array.from({length: 9}, () => Array.from({length: 9}, () => new Set()));
+
+  renderBoard();
+}
+
+// Перезапуск ТЕКУЩЕЙ головоломки: та же задача, обнуляются ввод, ошибки и время
+function restartGame() {
+  if (!initialBoard || initialBoard.length !== 9) { initGame(); return; }
+  clearInterval(timerInt);
+  gameOver = false;
+  timerSec = 0;
+  mistakes = 0;
+  selectedCell = null;
+  pencilMode = false;
+  const pb = document.getElementById('pencilBtn');
+  pb.classList.remove('active');
+  pb.textContent = '✏️ Notes: OFF';
+  document.getElementById('winModal').classList.add('hidden');
+  document.getElementById('mistakes').textContent = '0/3';
+  document.getElementById('timer').textContent = '00:00';
+
+  timerInt = setInterval(() => {
+    timerSec++;
+    const m = String(Math.floor(timerSec / 60)).padStart(2, '0');
+    const s = String(timerSec % 60).padStart(2, '0');
+    document.getElementById('timer').textContent = `${m}:${s}`;
+  }, 1000);
+
+  currentBoard = initialBoard.map(row => [...row]);
+  notes = Array.from({length: 9}, () => Array.from({length: 9}, () => new Set()));
+  renderBoard();
+}
+
+function renderBoard() {
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+
+  const selVal = selectedCell ? currentBoard[selectedCell.r][selectedCell.c] : 0;
+
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const cellEl = document.createElement('div');
+      cellEl.className = 'cell';
+
+      const isInit = initialBoard[r][c] !== 0;
+      const val = currentBoard[r][c];
+
+      if (isInit) {
+        cellEl.classList.add('initial');
+        cellEl.textContent = val;
+      } else if (val !== 0) {
+        cellEl.classList.add('user');
+        cellEl.textContent = val;
+        if (val !== solution[r][c]) {
+          cellEl.classList.add('error');
+        }
+      } else {
+        const cellNotes = notes[r][c];
+        if (cellNotes.size > 0) {
+          const notesGrid = document.createElement('div');
+          notesGrid.className = 'notes-grid';
+          for (let n = 1; n <= 9; n++) {
+            const nEl = document.createElement('div');
+            nEl.className = 'note-num';
+            nEl.textContent = cellNotes.has(n) ? n : '';
+            notesGrid.appendChild(nEl);
+          }
+          cellEl.appendChild(notesGrid);
+        }
+      }
+
+      if (selectedCell) {
+        if (selectedCell.r === r && selectedCell.c === c) {
+          cellEl.classList.add('selected');
+        } else if (selectedCell.r === r || selectedCell.c === c || 
+                  (Math.floor(selectedCell.r/3) === Math.floor(r/3) && Math.floor(selectedCell.c/3) === Math.floor(c/3))) {
+          cellEl.classList.add('highlight');
+        }
+        if (val !== 0 && val === selVal) {
+          cellEl.classList.add('same-num');
+        }
+      }
+
+      cellEl.onclick = () => {
+        selectedCell = { r, c };
+        renderBoard();
+      };
+
+      boardEl.appendChild(cellEl);
+    }
+  }
+}
+
+function inputNum(num) {
+  if (gameOver) return;
+  if (!selectedCell) return;
+  const { r, c } = selectedCell;
+  if (initialBoard[r][c] !== 0) return;
+
+  if (pencilMode) {
+    if (currentBoard[r][c] !== 0) currentBoard[r][c] = 0;
+    if (notes[r][c].has(num)) notes[r][c].delete(num);
+    else notes[r][c].add(num);
+    playSound('num');
+    renderBoard();
+    return;
+  }
+
+  currentBoard[r][c] = num;
+  notes[r][c].clear();
+
+  if (num !== solution[r][c]) {
+    mistakes++;
+    playSound('error');
+    document.getElementById('mistakes').textContent = `${mistakes}/3`;
+    if (mistakes >= 3) {
+      clearInterval(timerInt);
+      gameOver = true;
+      document.getElementById('modalTitle').textContent = 'GAME OVER ❌';
+      document.getElementById('modalDesc').textContent = 'You made 3 mistakes.';
+      document.getElementById('winModal').classList.remove('hidden');
+    }
+  } else {
+    playSound('num');
+    checkWin();
+  }
+  renderBoard();
+}
+
+function eraseCell() {
+  if (gameOver) return;
+  if (!selectedCell) return;
+  const { r, c } = selectedCell;
+  if (initialBoard[r][c] !== 0) return;
+  currentBoard[r][c] = 0;
+  notes[r][c].clear();
+  renderBoard();
+}
+
+function giveHint() {
+  if (gameOver) return;
+  if (!selectedCell) return;
+  const { r, c } = selectedCell;
+  if (initialBoard[r][c] !== 0 || currentBoard[r][c] === solution[r][c]) return;
+  currentBoard[r][c] = solution[r][c];
+  notes[r][c].clear();
+  playSound('num');
+  checkWin();
+  renderBoard();
+}
+
+function checkWin() {
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (currentBoard[r][c] !== solution[r][c]) return;
+    }
+  }
+  clearInterval(timerInt);
+  gameOver = true;
+  playSound('win');
+  document.getElementById('modalTitle').textContent = 'VICTORY! 🎉';
+  document.getElementById('modalDesc').textContent = `Sudoku solved in ${document.getElementById('timer').textContent}!`;
+  document.getElementById('winModal').classList.remove('hidden');
+}
+
+window.addEventListener('keydown', (e) => {
+  const n = parseInt(e.key);
+  if (n >= 1 && n <= 9) inputNum(n);
+  if (e.key === 'Backspace' || e.key === 'Delete') eraseCell();
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    e.preventDefault();
+    if (!selectedCell) {
+      selectedCell = { r: 0, c: 0 };
+    } else {
+      if (e.key === 'ArrowUp') selectedCell.r = (selectedCell.r + 8) % 9;
+      if (e.key === 'ArrowDown') selectedCell.r = (selectedCell.r + 1) % 9;
+      if (e.key === 'ArrowLeft') selectedCell.c = (selectedCell.c + 8) % 9;
+      if (e.key === 'ArrowRight') selectedCell.c = (selectedCell.c + 1) % 9;
+    }
+    renderBoard();
+  }
+});
+
+initGame();
+</script>
+</body>
+</html>
