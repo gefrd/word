@@ -90,7 +90,7 @@
     color: #fff;
     box-shadow: 0 0 12px rgba(245, 158, 11, 0.3);
   }
-  .level-select { color: #f8fafc; appearance: none; -webkit-appearance: none; text-align-last: center; }
+  .level-select { flex: 0 0 auto; width: 25%; color: #f8fafc; appearance: none; -webkit-appearance: none; text-align-last: center; }
   .level-select[hidden] { display: none; }
 
   /* Players */
@@ -326,6 +326,131 @@
     .side-labels { font-size: 10px; }
   }
 
+  /* Online */
+  input { user-select: text; -webkit-user-select: text; }
+  .player-card { position: relative; }
+  .bubble {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 50%;
+    transform: translate(-50%, -4px) scale(0.9);
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 14px;
+    font-weight: 800;
+    padding: 6px 12px;
+    border-radius: 14px;
+    white-space: nowrap;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 5;
+  }
+  .bubble::before {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    margin-left: -6px;
+    border: 6px solid transparent;
+    border-top: 0;
+    border-bottom-color: #f8fafc;
+  }
+  .bubble.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  .status-bar.low { color: #f87171; }
+  .wait-card {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: min(320px, 92%);
+    height: fit-content;
+    background: rgba(15, 23, 42, 0.95);
+    border: 1px solid #475569;
+    border-radius: 18px;
+    padding: 18px 16px;
+    text-align: center;
+    z-index: 3;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  }
+  .wait-card[hidden] { display: none; }
+  .wait-title { font-size: 16px; font-weight: 800; color: #e2e8f0; }
+  .wait-code { font-size: 48px; font-weight: 900; letter-spacing: 10px; color: #fbbf24; margin: 6px 0 2px; padding-left: 10px; font-variant-numeric: tabular-nums; }
+  .wait-hint { font-size: 13px; color: #94a3b8; margin-top: 6px; line-height: 1.4; }
+  .wait-card .primary { margin-top: 14px; }
+  .spinner {
+    width: 40px; height: 40px; margin: 4px auto 10px;
+    border: 4px solid #334155; border-top-color: #f59e0b; border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .lobby-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-top: 10px;
+    min-height: 64px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .lobby-btn:active { transform: scale(0.98); }
+  .lobby-btn:disabled { opacity: 0.45; }
+  .lobby-btn .lb-icon { font-size: 26px; width: 34px; text-align: center; flex-shrink: 0; }
+  .lobby-btn b { display: block; font-size: 16px; }
+  .lobby-btn small { display: block; font-size: 12px; color: #94a3b8; margin-top: 2px; }
+  .lobby-btn.main { background: linear-gradient(135deg, #b45309, #92400e); border-color: #f59e0b; }
+  .lobby-btn.main small { color: #fde68a; }
+  .join-row { display: flex; gap: 8px; margin-top: 10px; }
+  .code-input {
+    flex: 1;
+    min-width: 0;
+    min-height: 54px;
+    background: #0f172a;
+    border: 1px solid #475569;
+    border-radius: 12px;
+    color: #fbbf24;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: 8px;
+    text-align: center;
+    font-family: inherit;
+  }
+  .code-input::placeholder { color: #475569; letter-spacing: 2px; font-size: 16px; font-weight: 700; }
+  .join-btn {
+    min-width: 96px;
+    border: none;
+    border-radius: 12px;
+    background: #0284c7;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 800;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .lobby-msg { font-size: 14px; color: #fca5a5; min-height: 0; margin-bottom: 2px; }
+  .lobby-msg:empty { display: none; }
+  .emote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .emote-grid button {
+    min-height: 52px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .emote-grid button:active { background: #334155; }
+  [hidden] { display: none !important; }
+
   /* Sheets (rules, game over) */
   .overlay {
     position: fixed;
@@ -432,10 +557,11 @@
   <div class="mode-bar">
     <button class="mode-btn" data-mode="bot">VS BOT</button>
     <button class="mode-btn" data-mode="2p">2 PLAYERS</button>
+    <button class="mode-btn" data-mode="online">🌐 ONLINE</button>
     <select class="level-select" id="levelSelect" aria-label="Bot level">
-      <option value="easy">Bot: Easy</option>
-      <option value="medium">Bot: Medium</option>
-      <option value="hard">Bot: Hard</option>
+      <option value="easy">Easy</option>
+      <option value="medium">Medium</option>
+      <option value="hard">Hard</option>
     </select>
   </div>
 
@@ -446,6 +572,7 @@
         <span class="p-name" id="name0">You</span>
         <span class="p-score"><span id="score0">32</span> <small>seeds</small></span>
       </div>
+      <div class="bubble" id="bubble0"></div>
     </div>
     <div class="player-card opp" id="card1">
       <div class="p-dot"></div>
@@ -453,6 +580,7 @@
         <span class="p-name" id="name1">Bot</span>
         <span class="p-score"><span id="score1">32</span> <small>seeds</small></span>
       </div>
+      <div class="bubble" id="bubble1"></div>
     </div>
   </div>
 
@@ -466,11 +594,21 @@
   <div class="board-wrap" id="boardWrap">
     <div class="board" id="board"></div>
     <div class="hand" id="hand"></div>
+    <div class="wait-card" id="waitCard" hidden>
+      <div class="spinner" id="waitSpinner"></div>
+      <div class="wait-title" id="waitTitle">Connecting…</div>
+      <div class="wait-code" id="waitCode" hidden></div>
+      <div class="wait-hint" id="waitHint"></div>
+      <button class="primary" id="shareBtn" hidden>📤 Send code to a friend</button>
+      <button class="secondary" id="cancelWaitBtn">Cancel</button>
+    </div>
   </div>
 
   <div class="controls">
     <button class="ctrl-btn" id="undoBtn">↩ Undo</button>
     <button class="ctrl-btn" id="newBtn">🔄 New Game</button>
+    <button class="ctrl-btn" id="emoteBtn" hidden>😀 Say</button>
+    <button class="ctrl-btn" id="leaveBtn" hidden>🚪 Leave</button>
   </div>
 </div>
 
@@ -536,6 +674,36 @@
   </div>
 </div>
 
+<!-- Online lobby -->
+<div class="overlay" id="lobbyOverlay">
+  <div class="sheet" role="dialog" aria-label="Play online">
+    <h2>Play online <button class="close-x" data-close aria-label="Close">✕</button></h2>
+    <div class="lobby-msg" id="lobbyMsg"></div>
+    <button class="lobby-btn main" id="quickBtn">
+      <span class="lb-icon">⚡</span>
+      <span><b>Quick match</b><small>Play someone now. If nobody is free in 15 seconds, you play a bot.</small></span>
+    </button>
+    <button class="lobby-btn" id="createBtn">
+      <span class="lb-icon">➕</span>
+      <span><b>Create room</b><small>Get a 4-digit code and send it to a friend</small></span>
+    </button>
+    <h3>Join a friend's room</h3>
+    <div class="join-row">
+      <input class="code-input" id="codeInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="Code">
+      <button class="join-btn" id="joinBtn">Join</button>
+    </div>
+    <p class="hint" style="margin-top:12px">No chat and no typing: you get a name like “Swift Lion 42” and can send quick emojis. Rooms you create use your rules from ⚙️.</p>
+  </div>
+</div>
+
+<!-- Emotes -->
+<div class="overlay" id="emoteOverlay">
+  <div class="sheet" role="dialog" aria-label="Send a message">
+    <h2>Say something <button class="close-x" data-close aria-label="Close">✕</button></h2>
+    <div class="emote-grid" id="emoteGrid"></div>
+  </div>
+</div>
+
 <!-- Game over -->
 <div class="overlay center" id="overOverlay">
   <div class="sheet" role="dialog" aria-label="Game over">
@@ -544,6 +712,7 @@
     <div class="result-sub" id="resultSub"></div>
     <div class="stats" id="resultStats"></div>
     <button class="primary" id="againBtn">Play again</button>
+    <button class="secondary" id="leaveOverBtn" hidden>Leave</button>
     <button class="secondary" data-close>View board</button>
   </div>
 </div>
@@ -868,6 +1037,11 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
 (function () {
     'use strict';
 
+    // Address of the online game server (the Cloudflare Worker in server/).
+    // Set it after `npx wrangler deploy`, e.g. 'https://kivu-games.YOUR-NAME.workers.dev'.
+    // For testing it can be overridden with localStorage 'igisoro_server'.
+    const ONLINE_SERVER = '';
+
     // ---------- Storage (may be unavailable in private mode) ----------
     const KEYS = { settings: 'igisoro_settings_v1', save: 'igisoro_save_v1', stats: 'igisoro_stats_v1' };
     function load(key, fallback) {
@@ -902,8 +1076,22 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
     let activePit = null;  // {player, pit} highlighted during animation
     let pendingRules = null;
 
+    // Online session. The server numbers players 0/1; on this phone "you" are
+    // always drawn as local player 0 (see toLocalGame).
+    const online = {
+        ws: null, room: null, connected: false, retries: 0, retryTimer: null, pingTimer: null,
+        status: null, kind: null, code: null, you: 0, seats: [null, null],
+        result: null, rematch: [false, false], pending: false, pendingTimer: null,
+        queue: [], busy: false, turnEnd: null, waitEnd: null, lastEmote: 0, notice: '',
+    };
+    const isOnline = () => settings.mode === 'online';
+
     const isBot = (player) => settings.mode === 'bot' && player === 1;
-    const humanTurn = () => game && game.winner === null && !isBot(game.turn);
+    const humanTurn = () => {
+        if (!game || game.winner !== null) return false;
+        if (isOnline()) return online.connected && online.status === 'playing' && game.turn === 0 && !online.pending;
+        return !isBot(game.turn);
+    };
 
     // ---------- DOM ----------
     const $ = (id) => document.getElementById(id);
@@ -1010,7 +1198,7 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
                 c.el.classList.toggle('legal', showLegal && p === turn && n >= min);
                 c.el.classList.toggle('active', !!activePit && activePit.player === p && activePit.pit === i);
                 c.el.classList.toggle('last', !animating && !!game.lastMove && game.lastMove.player === p && game.lastMove.pit === i);
-                c.el.setAttribute('aria-label', (p === 0 ? 'Player 1' : 'Player 2') + ' pit, ' + n + ' seeds');
+                c.el.setAttribute('aria-label', names()[p] + ' pit, ' + n + ' seeds');
             }
         }
         const s0 = display[0].reduce((a, b) => a + b, 0);
@@ -1020,12 +1208,30 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
         $('card0').classList.toggle('active', game.winner === null && turn === 0);
         $('card1').classList.toggle('active', game.winner === null && turn === 1);
         $('undoBtn').disabled = animating || history.length === 0;
+        if (isOnline()) {
+            const n = names();
+            $('name0').textContent = n[0];
+            $('name1').textContent = n[1];
+        }
     }
 
     function names() {
+        if (isOnline()) {
+            const me = online.seats[online.you];
+            const opp = online.seats[1 - online.you];
+            let oppName = opp ? opp.name : 'Waiting…';
+            if (opp && opp.bot) oppName = '🤖 Bot';
+            else if (opp && !opp.online) oppName = '⚠️ ' + oppName + ' (offline)';
+            return ['You' + (me ? ' · ' + me.name : ''), oppName];
+        }
         return settings.mode === 'bot'
             ? ['You', 'Bot (' + settings.level + ')']
             : ['Player 1', 'Player 2'];
+    }
+
+    function oppShortName() {
+        const opp = online.seats[1 - online.you];
+        return opp ? (opp.bot ? 'Bot' : opp.name) : 'Opponent';
     }
 
     function setStatus(text, oppColor) {
@@ -1035,6 +1241,8 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
     }
 
     function updateStatus() {
+        if (isOnline()) return updateOnlineStatus();
+        $('status').classList.remove('low');
         const n = names();
         if (game.winner !== null) {
             setStatus(game.winner === DRAW ? 'Draw' : (n[game.winner] + (game.winner === 0 && settings.mode === 'bot' ? ' win!' : ' wins!')), game.winner === 1);
@@ -1051,11 +1259,16 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
         const n = names();
         $('name0').textContent = n[0];
         $('name1').textContent = n[1];
-        $('labelOpp').textContent = '◀ ' + (settings.mode === 'bot' ? 'BOT' : 'PLAYER 2');
-        $('labelMe').textContent = (settings.mode === 'bot' ? 'YOU' : 'PLAYER 1') + ' ▶';
-        document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === settings.mode));
+        const m = settings.mode;
+        $('labelOpp').textContent = '◀ ' + (m === 'bot' ? 'BOT' : m === 'online' ? 'OPPONENT' : 'PLAYER 2');
+        $('labelMe').textContent = (m === '2p' ? 'PLAYER 1' : 'YOU') + ' ▶';
+        document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
         $('levelSelect').value = settings.level;
-        $('levelSelect').hidden = settings.mode !== 'bot';
+        $('levelSelect').hidden = m !== 'bot';
+        $('undoBtn').hidden = m === 'online';
+        $('newBtn').hidden = m === 'online';
+        $('emoteBtn').hidden = m !== 'online';
+        $('leaveBtn').hidden = m !== 'online';
         $('soundBtn').textContent = settings.sound ? '🔊' : '🔇';
     }
 
@@ -1077,7 +1290,13 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
             o.stop(audio.currentTime + dur);
         } catch (e) { /* no audio */ }
     }
-    function vibrate(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) { /* ignore */ } }
+    function vibrate(ms) {
+        try {
+            // Browsers refuse vibration before the first tap on the page.
+            if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+            if (navigator.vibrate) navigator.vibrate(ms);
+        } catch (e) { /* ignore */ }
+    }
 
     // ---------- Animation ----------
     const SPEEDS = {
@@ -1174,6 +1393,7 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
         if (animating) { skipAnimation = true; return; }
         if (!humanTurn()) return;
         if (player !== game.turn) return;
+        if (isOnline() && isLegalMove(game, pit)) return sendMove(pit);
         if (!isLegalMove(game, pit)) {
             const el = cells[player][pit].el;
             el.classList.remove('shake');
@@ -1209,6 +1429,7 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
     function newGame(rules) {
         clearTimeout(botTimer);
         if (rules) settings.rules = normalizeRules(rules);
+        if (isOnline()) { store(KEYS.settings, settings); return; }
         let first = 0;
         if (settings.first === 'opp') first = 1;
         else if (settings.first === 'alt') { first = 1 - (settings.lastFirst || 0); settings.lastFirst = first; }
@@ -1230,6 +1451,10 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
     }
 
     function onGameOver() {
+        if (isOnline()) return onOnlineGameOver();
+        $('againBtn').textContent = 'Play again';
+        $('againBtn').disabled = false;
+        $('leaveOverBtn').hidden = true;
         const n = names();
         let emoji, title, sub;
         const s0 = seedCount(game, 0), s1 = seedCount(game, 1);
@@ -1308,6 +1533,7 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
     $('rulesBtn').addEventListener('click', () => {
         pendingRules = Object.assign({}, settings.rules);
         renderRulesSheet();
+        $('applyRules').textContent = isOnline() ? 'Use these rules for rooms I create' : 'Start new game with these rules';
         openOverlay('rulesOverlay');
     });
     $('applyRules').addEventListener('click', () => {
@@ -1318,10 +1544,21 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
     // ---------- Controls ----------
     document.querySelectorAll('.mode-btn').forEach((b) => {
         b.addEventListener('click', () => {
-            if (settings.mode === b.dataset.mode || animating) return;
+            if (animating) return;
+            if (settings.mode === b.dataset.mode) {
+                if (isOnline() && !online.room) openLobby();
+                return;
+            }
+            if (isOnline() && !leaveOnline(true)) return;
             settings.mode = b.dataset.mode;
+            store(KEYS.settings, settings);
             updateLabels();
-            newGame();
+            if (isOnline()) {
+                enterOnline();
+            } else {
+                refreshOnlineUI();
+                newGame();
+            }
         });
     });
     $('levelSelect').addEventListener('change', (e) => {
@@ -1337,7 +1574,520 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
     });
     $('undoBtn').addEventListener('click', undo);
     $('newBtn').addEventListener('click', () => { if (!animating) newGame(); });
-    $('againBtn').addEventListener('click', () => newGame());
+    $('againBtn').addEventListener('click', () => (isOnline() ? requestRematch() : newGame()));
+
+    // ---------- Online ----------
+    const ONLINE_ROOM_KEY = 'igisoro_online_room_v1';
+    const EMOTES = {
+        nice: '👍 Nice move!', wow: '😮 Wow!', laugh: '😂 Haha', fire: '🔥 On fire',
+        thanks: '🙏 Thanks', hurry: '⏰ Your turn!', gg: '🤝 Good game', again: '🔁 Again?',
+    };
+
+    function serverUrl() {
+        let s = '';
+        try { s = localStorage.getItem('igisoro_server') || ''; } catch (e) { /* ignore */ }
+        return (s || ONLINE_SERVER).replace(/\/+$/, '');
+    }
+
+    function playerToken() {
+        let t = load('kivu_player_token', '');
+        if (!/^[a-f0-9]{32}$/.test(t)) {
+            const b = new Uint8Array(16);
+            crypto.getRandomValues(b);
+            t = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+            store('kivu_player_token', t);
+        }
+        return t;
+    }
+
+    // Server state → this phone's point of view (you = local player 0).
+    const flip = (p) => (p === 0 || p === 1 ? 1 - p : p);
+    function toLocalGame(g, you) {
+        if (you === 0) return g;
+        return Object.assign({}, g, {
+            pits: [g.pits[1].slice(), g.pits[0].slice()],
+            turn: flip(g.turn),
+            winner: g.winner === null ? null : flip(g.winner),
+            lastMove: g.lastMove ? { player: flip(g.lastMove.player), pit: g.lastMove.pit } : null,
+        });
+    }
+    function toLocalEvents(events, you) {
+        if (you === 0) return events;
+        return events.map((e) => {
+            const c = Object.assign({}, e, { player: flip(e.player) });
+            if (e.from) c.from = e.from.map((f) => ({ player: flip(f.player), pit: f.pit, count: f.count }));
+            return c;
+        });
+    }
+
+    async function api(path, body) {
+        const res = await fetch(serverUrl() + path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {}),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+    }
+
+    function openLobby(msg) {
+        const ready = !!serverUrl();
+        $('lobbyMsg').textContent = msg || (ready ? '' : 'Online play is not set up yet. Play vs bot or 2 players for now.');
+        ['quickBtn', 'createBtn', 'joinBtn'].forEach((id) => { $(id).disabled = !ready; });
+        openOverlay('lobbyOverlay');
+    }
+
+    function lobbyBusy(busy) {
+        ['quickBtn', 'createBtn', 'joinBtn'].forEach((id) => { $(id).disabled = busy || !serverUrl(); });
+    }
+
+    function networkError() {
+        return navigator.onLine === false
+            ? 'No internet connection. Check your data or Wi-Fi.'
+            : 'Could not reach the game server. Please try again.';
+    }
+
+    async function quickMatch() {
+        lobbyBusy(true);
+        try {
+            const r = await api('/quick');
+            closeOverlay('lobbyOverlay');
+            connectRoom(r.room);
+        } catch (e) {
+            openLobby(networkError());
+        } finally { lobbyBusy(false); }
+    }
+
+    async function createRoom() {
+        lobbyBusy(true);
+        try {
+            const r = await api('/rooms', { rules: settings.rules });
+            closeOverlay('lobbyOverlay');
+            connectRoom(r.room);
+        } catch (e) {
+            openLobby(networkError());
+        } finally { lobbyBusy(false); }
+    }
+
+    function joinRoom() {
+        const code = $('codeInput').value.replace(/\D/g, '');
+        if (code.length !== 4) { $('lobbyMsg').textContent = 'Enter the 4-digit code from your friend.'; return; }
+        $('codeInput').blur();
+        closeOverlay('lobbyOverlay');
+        connectRoom(code);
+    }
+
+    function resetOnlineState(room) {
+        online.room = room;
+        online.retries = 0;
+        online.status = null;
+        online.kind = room && /^\d{4}$/.test(room) ? 'private' : 'quick';
+        online.code = online.kind === 'private' ? room : null;
+        online.you = 0;
+        online.seats = [null, null];
+        online.result = null;
+        online.rematch = [false, false];
+        online.pending = false;
+        online.queue = [];
+        online.turnEnd = null;
+        online.waitEnd = null;
+        online.notice = '';
+    }
+
+    function showBoardFor(rules) {
+        const r = Object.assign({}, rules || settings.rules);
+        if (r.setup === 'random') r.setup = 'outer4';
+        game = createGame({ rules: r });
+        display = [game.pits[0].slice(), game.pits[1].slice()];
+    }
+
+    function connectRoom(room) {
+        disconnect(false);
+        resetOnlineState(room);
+        store(ONLINE_ROOM_KEY, { room: room, at: Date.now() });
+        closeOverlay('overOverlay');
+        showBoardFor(settings.rules);
+        openSocket();
+        refreshOnlineUI();
+    }
+
+    function openSocket() {
+        if (!online.room || !serverUrl()) return;
+        const url = serverUrl().replace(/^http/, 'ws') + '/rooms/' + online.room + '/ws?token=' + playerToken();
+        let ws;
+        try { ws = new WebSocket(url); } catch (e) { scheduleReconnect(); return; }
+        online.ws = ws;
+        ws.onopen = () => {
+            if (online.ws !== ws) return;
+            online.connected = true;
+            online.retries = 0;
+            clearInterval(online.pingTimer);
+            online.pingTimer = setInterval(() => sendOnline({ t: 'ping' }), 25000);
+            refreshOnlineUI();
+        };
+        ws.onmessage = (e) => {
+            if (online.ws !== ws) return;
+            let m;
+            try { m = JSON.parse(e.data); } catch (x) { return; }
+            onServerMessage(m);
+        };
+        ws.onclose = (e) => {
+            if (online.ws !== ws) return;
+            online.ws = null;
+            online.connected = false;
+            online.pending = false;
+            clearInterval(online.pingTimer);
+            if (e.code === 4001) {
+                forgetRoom('This game is open on another screen.');
+            } else if (e.code !== 4000 && e.code !== 1000 && isOnline() && online.room) {
+                scheduleReconnect();
+            }
+            refreshOnlineUI();
+        };
+    }
+
+    function scheduleReconnect() {
+        clearTimeout(online.retryTimer);
+        const delay = Math.min(10000, 800 * Math.pow(2, online.retries++));
+        online.retryTimer = setTimeout(() => {
+            if (isOnline() && online.room && !online.ws) openSocket();
+        }, delay);
+    }
+
+    function reconnectNow() {
+        if (isOnline() && online.room && !online.ws) {
+            clearTimeout(online.retryTimer);
+            openSocket();
+        }
+    }
+    window.addEventListener('online', reconnectNow);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reconnectNow(); });
+
+    function sendOnline(msg) {
+        if (online.ws && online.ws.readyState === 1) {
+            online.ws.send(JSON.stringify(msg));
+            return true;
+        }
+        return false;
+    }
+
+    function disconnect(sendLeave) {
+        clearTimeout(online.retryTimer);
+        clearInterval(online.pingTimer);
+        const ws = online.ws;
+        online.ws = null;
+        online.connected = false;
+        if (ws) {
+            try {
+                if (sendLeave && ws.readyState === 1) ws.send(JSON.stringify({ t: 'leave' }));
+                ws.close(1000);
+            } catch (e) { /* ignore */ }
+        }
+    }
+
+    function forgetRoom(notice) {
+        disconnect(false);
+        online.room = null;
+        online.notice = notice || '';
+        try { localStorage.removeItem(ONLINE_ROOM_KEY); } catch (e) { /* ignore */ }
+    }
+
+    // Returns false if the player cancelled.
+    function leaveOnline(ask) {
+        if (online.room && online.status === 'playing' && ask) {
+            if (!window.confirm('Leave this game? It will count as a loss.')) return false;
+        }
+        const wasRoom = !!online.room;
+        disconnect(wasRoom);
+        forgetRoom('');
+        closeOverlay('overOverlay');
+        return true;
+    }
+
+    function sendMove(pit) {
+        if (!sendOnline({ t: 'move', pit: pit, n: game.moveCount })) return;
+        online.pending = true;
+        clearTimeout(online.pendingTimer);
+        online.pendingTimer = setTimeout(() => { online.pending = false; render(); updateStatus(); }, 8000);
+        render();
+        updateStatus();
+    }
+
+    function onServerMessage(m) {
+        if (m.t === 'state') {
+            online.queue.push(m);
+            processQueue();
+        } else if (m.t === 'emote') {
+            showBubble(m.seat === online.you ? 0 : 1, EMOTES[m.id] || '');
+        } else if (m.t === 'error') {
+            if (m.code === 'not_found' || m.code === 'full' || m.code === 'bad_token') {
+                const text = m.code === 'not_found' ? 'Room not found. Check the code and try again.'
+                    : m.code === 'full' ? 'That room is already full.' : 'Something went wrong. Please try again.';
+                forgetRoom('');
+                refreshOnlineUI();
+                openLobby(text);
+            } else {
+                online.pending = false;
+                render();
+                updateStatus();
+            }
+        }
+    }
+
+    async function processQueue() {
+        if (online.busy) return;
+        online.busy = true;
+        try {
+            while (online.queue.length) await applyServerState(online.queue.shift());
+        } finally {
+            online.busy = false;
+        }
+    }
+
+    async function applyServerState(s) {
+        const prevStatus = online.status;
+        online.you = s.you;
+        online.seats = s.seats;
+        online.kind = s.kind;
+        online.code = s.code;
+        online.rematch = s.rematch;
+        online.result = s.result;
+
+        if (s.game) {
+            const next = toLocalGame(s.game, s.you);
+            const mv = s.move;
+            // Animate a move only if it follows directly from what is on screen;
+            // after a reconnect or a skipped state we simply jump to the new position.
+            const animateIt = mv && game && prevStatus === 'playing' && mv.n === game.moveCount + 1 && online.queue.length < 3;
+            if (animateIt) {
+                const mover = mv.player === s.you ? 0 : 1;
+                clearTimeout(online.pendingTimer);
+                online.pending = false;
+                animating = true;
+                skipAnimation = false;
+                online.status = 'playing';
+                setStatus(mover === 0 ? (mv.auto ? '⏰ Time up — automatic move' : 'Sowing… (tap to skip)') : oppShortName() + ' is moving…', mover === 1);
+                render();
+                await animate(toLocalEvents(mv.events, s.you));
+                animating = false;
+            }
+            game = next;
+            display = [game.pits[0].slice(), game.pits[1].slice()];
+        } else {
+            showBoardFor(s.rules);
+        }
+        online.status = s.status;
+        online.pending = false;
+        online.turnEnd = s.turnMsLeft != null ? Date.now() + s.turnMsLeft : null;
+        online.waitEnd = s.waitMsLeft != null ? Date.now() + s.waitMsLeft : null;
+
+        if (s.status === 'playing' && prevStatus !== 'playing') {
+            closeOverlay('overOverlay');
+            closeOverlay('lobbyOverlay');
+            beep(520, 0.1, 0.07);
+            setTimeout(() => beep(780, 0.15, 0.07), 110);
+            vibrate(60);
+        }
+        if (s.status === 'over' && prevStatus === 'playing') onGameOver();
+        if (s.status === 'over' && $('overOverlay').classList.contains('open')) updateRematchButton();
+        if (s.status === 'playing' && game.turn === 0 && prevStatus === 'playing' && s.move && s.move.player !== s.you) vibrate(25);
+
+        render();
+        refreshOnlineUI();
+    }
+
+    function onOnlineGameOver() {
+        const r = online.result || { winner: DRAW, reason: 'draw' };
+        const draw = r.winner === DRAW;
+        const won = r.winner === online.you;
+        const opp = oppShortName();
+        let emoji, title, sub;
+        if (draw) {
+            emoji = '🤝'; title = 'Draw'; sub = 'Equal seeds after ' + game.moveCount + ' moves.';
+        } else if (won) {
+            emoji = '🎉'; title = 'You win!';
+            sub = r.reason === 'resign' ? opp + ' left the game.' : r.reason === 'timeout' ? opp + ' ran out of time.' : opp + ' has no moves left.';
+        } else {
+            emoji = '😔'; title = opp + ' wins';
+            sub = r.reason === 'resign' ? 'You left the game.' : r.reason === 'timeout' ? 'You ran out of time.' : 'You have no moves left.';
+        }
+        const st = stats.online || { w: 0, l: 0, d: 0 };
+        if (draw) st.d++; else if (won) st.w++; else st.l++;
+        stats.online = st;
+        store(KEYS.stats, stats);
+        $('resultEmoji').textContent = emoji;
+        $('resultTitle').textContent = title;
+        $('resultSub').textContent = sub + ' (' + seedCount(game, 0) + ' : ' + seedCount(game, 1) + ')';
+        $('resultStats').textContent = 'Online: ' + st.w + ' won · ' + st.l + ' lost' + (st.d ? ' · ' + st.d + ' draw' : '');
+        $('leaveOverBtn').hidden = false;
+        $('leaveOverBtn').textContent = online.kind === 'quick' ? '⚡ Find a new opponent' : 'Leave room';
+        updateRematchButton();
+        if (won) { beep(660, 0.15, 0.08); setTimeout(() => beep(880, 0.25, 0.08), 150); }
+        setTimeout(() => openOverlay('overOverlay'), 500);
+    }
+
+    function updateRematchButton() {
+        const btn = $('againBtn');
+        const me = online.rematch[online.you];
+        const them = online.rematch[1 - online.you];
+        const opp = online.seats[1 - online.you];
+        if (opp && !opp.bot && !opp.online) {
+            btn.textContent = oppShortName() + ' left';
+            btn.disabled = true;
+        } else if (me) {
+            btn.textContent = 'Waiting for ' + oppShortName() + '…';
+            btn.disabled = true;
+        } else {
+            btn.textContent = them ? '✅ Accept rematch' : '🔁 Rematch';
+            btn.disabled = false;
+        }
+    }
+
+    function requestRematch() {
+        if (sendOnline({ t: 'rematch' })) {
+            online.rematch[online.you] = true;
+            updateRematchButton();
+        }
+    }
+
+    let bubbleTimers = [null, null];
+    function showBubble(localPlayer, text) {
+        if (!text) return;
+        const el = $('bubble' + localPlayer);
+        el.textContent = text;
+        el.classList.add('show');
+        clearTimeout(bubbleTimers[localPlayer]);
+        bubbleTimers[localPlayer] = setTimeout(() => el.classList.remove('show'), 2600);
+        if (localPlayer === 1) beep(880, 0.08, 0.05);
+    }
+
+    function updateOnlineStatus() {
+        const el = $('status');
+        el.classList.remove('low');
+        if (!online.room) return setStatus(online.notice || 'Tap 🌐 ONLINE to find a game', false);
+        if (!online.connected) return setStatus(online.retries > 0 ? 'Connection lost — reconnecting…' : 'Connecting…', false);
+        if (online.status === 'waiting') {
+            return setStatus(online.kind === 'private' ? 'Waiting for your friend…' : 'Looking for a player…', false);
+        }
+        if (online.status === 'over') {
+            const r = online.result;
+            if (!r) return setStatus('Game over', false);
+            return setStatus(r.winner === DRAW ? 'Draw' : r.winner === online.you ? 'You win!' : oppShortName() + ' wins', r.winner !== online.you);
+        }
+        if (online.status === 'playing') {
+            const secs = online.turnEnd ? Math.max(0, Math.ceil((online.turnEnd - Date.now()) / 1000)) : null;
+            const t = secs !== null ? ' · ' + secs + 's' : '';
+            if (game.turn === 0) {
+                setStatus(online.pending ? 'Sending…' : 'Your turn — tap a glowing pit' + t, false);
+                if (secs !== null && secs <= 10) el.classList.add('low');
+            } else {
+                setStatus(oppShortName() + ' is thinking…' + t, true);
+            }
+            return;
+        }
+        setStatus('Connecting…', false);
+    }
+
+    function refreshOnlineUI() {
+        const card = $('waitCard');
+        const on = isOnline();
+        let show = false;
+        if (on && online.room) {
+            const code = $('waitCode');
+            const share = $('shareBtn');
+            const spinner = $('waitSpinner');
+            code.hidden = true;
+            share.hidden = true;
+            spinner.hidden = false;
+            if (!online.connected && online.status !== 'playing' && online.status !== 'over') {
+                show = true;
+                $('waitTitle').textContent = online.retries > 0 ? 'Reconnecting…' : 'Connecting…';
+                $('waitHint').textContent = navigator.onLine === false ? 'You are offline. Waiting for internet…' : '';
+            } else if (online.status === 'waiting' && online.kind === 'private') {
+                show = true;
+                spinner.hidden = true;
+                $('waitTitle').textContent = 'Room code';
+                code.hidden = false;
+                code.textContent = online.code;
+                share.hidden = false;
+                $('waitHint').textContent = 'Your friend opens Igisoro → 🌐 ONLINE → Join and types this code.';
+            } else if (online.status === 'waiting') {
+                show = true;
+                const secs = online.waitEnd ? Math.max(0, Math.ceil((online.waitEnd - Date.now()) / 1000)) : null;
+                $('waitTitle').textContent = 'Looking for a player…';
+                $('waitHint').textContent = secs ? 'If nobody is free, a bot joins in ' + secs + ' s.' : 'Starting a game with a bot…';
+            }
+        }
+        card.hidden = !show;
+        updateLabels();
+        if (game) { render(); updateStatus(); }
+    }
+
+    function enterOnline() {
+        resetOnlineState(null);
+        showBoardFor(settings.rules);
+        refreshOnlineUI();
+        const saved = load(ONLINE_ROOM_KEY, null);
+        if (saved && saved.room && Date.now() - saved.at < 2 * 3600 * 1000 && serverUrl()) {
+            connectRoom(saved.room);
+        } else {
+            openLobby();
+        }
+    }
+
+    async function shareCode() {
+        const text = 'Play Igisoro with me! Open Igisoro → 🌐 ONLINE → Join and enter code ' + online.code;
+        try {
+            if (navigator.share) { await navigator.share({ title: 'Igisoro', text: text }); return; }
+        } catch (e) { if (e && e.name === 'AbortError') return; }
+        try {
+            await navigator.clipboard.writeText(online.code);
+            $('waitHint').textContent = 'Code copied. Send it to your friend.';
+        } catch (e) {
+            $('waitHint').textContent = 'Tell your friend the code: ' + online.code;
+        }
+    }
+
+    const emoteGrid = $('emoteGrid');
+    Object.keys(EMOTES).forEach((id) => {
+        const b = document.createElement('button');
+        b.textContent = EMOTES[id];
+        b.addEventListener('click', () => {
+            closeOverlay('emoteOverlay');
+            const now = Date.now();
+            if (now - online.lastEmote < 1600) return;
+            online.lastEmote = now;
+            sendOnline({ t: 'emote', id: id });
+        });
+        emoteGrid.appendChild(b);
+    });
+
+    $('quickBtn').addEventListener('click', quickMatch);
+    $('createBtn').addEventListener('click', createRoom);
+    $('joinBtn').addEventListener('click', joinRoom);
+    $('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
+    $('codeInput').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4); });
+    $('shareBtn').addEventListener('click', shareCode);
+    $('cancelWaitBtn').addEventListener('click', () => { leaveOnline(false); refreshOnlineUI(); openLobby(); });
+    $('emoteBtn').addEventListener('click', () => {
+        if (online.status === 'playing' || online.status === 'over') openOverlay('emoteOverlay');
+    });
+    $('leaveBtn').addEventListener('click', () => {
+        if (!online.room) return openLobby();
+        if (leaveOnline(true)) { refreshOnlineUI(); openLobby(); }
+    });
+    $('leaveOverBtn').addEventListener('click', () => {
+        const quick = online.kind === 'quick';
+        leaveOnline(false);
+        refreshOnlineUI();
+        if (quick) quickMatch(); else openLobby();
+    });
+    setInterval(() => {
+        if (isOnline() && !animating && online.room) {
+            updateStatus();
+            if (online.status === 'waiting' && online.kind === 'quick') refreshOnlineUI();
+        }
+    }, 500);
 
     let resizeTimer = null;
     window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(layout, 80); });
@@ -1348,7 +2098,9 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
     layout();
 
     const saved = load(KEYS.save, null);
-    if (saved && saved.game && saved.game.pits && saved.mode === settings.mode && saved.game.winner === null) {
+    if (isOnline()) {
+        enterOnline();
+    } else if (saved && saved.game && saved.game.pits && saved.mode === settings.mode && saved.game.winner === null) {
         game = saved.game;
         game.rules = normalizeRules(game.rules);
         history = Array.isArray(saved.history) ? saved.history : [];
