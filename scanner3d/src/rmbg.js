@@ -126,3 +126,20 @@ export async function segmentObject(rgba, w, h, side = 384) {
     if (t.dispose) t.dispose();
     return mask;
 }
+
+/**
+ * Mask computed on a crop (box normalised [x0, y0, x1, y1]) of the image,
+ * returned at full size with 0 outside the crop.
+ */
+export async function segmentCrop(rgba, w, h, box, side = 384) {
+    const x0 = Math.max(0, Math.floor(box[0] * w)), y0 = Math.max(0, Math.floor(box[1] * h));
+    const x1 = Math.min(w, Math.ceil(box[2] * w)), y1 = Math.min(h, Math.ceil(box[3] * h));
+    const cw = x1 - x0, ch = y1 - y0;
+    if (cw < 16 || ch < 16) return new Uint8Array(w * h);
+    const crop = new Uint8ClampedArray(cw * ch * 4);
+    for (let y = 0; y < ch; y++) crop.set(rgba.subarray(((y0 + y) * w + x0) * 4, ((y0 + y) * w + x1) * 4), y * cw * 4);
+    const m = await segmentObject(crop, cw, ch, side);
+    const out = new Uint8Array(w * h);
+    for (let y = 0; y < ch; y++) out.set(m.subarray(y * cw, (y + 1) * cw), (y0 + y) * w + x0);
+    return out;
+}

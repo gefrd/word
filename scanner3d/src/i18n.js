@@ -14,7 +14,7 @@ const STRINGS = {
         freeTip4: 'Keep the whole object in the picture. Even light, no hands in the frame.',
         freeTip5: 'Turning it on a stool? Keep the phone still and turn the object slowly by a full turn.',
         freeModelNote: 'The first scan downloads the AI model (~45 MB) once; after that it works offline.',
-        freeSizeNote: 'Size is estimated — type the real length below for exact size.',
+        freeSizeNote: 'Size is estimated — type the real length for an exact size.',
         realLength: 'Real length (longest side), cm',
         applySize: 'Apply',
         sizeApplied: 'Size updated',

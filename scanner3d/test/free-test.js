@@ -1,9 +1,9 @@
 // In-page driver for the markerless tests (see run-free.mjs).
 import { buildMarkerlessModel, frameFeatures, PROFILES } from '/src/markerless.js';
-import { loadRMBG, segmentObject } from '/src/rmbg.js';
+import { loadRMBG, segmentObject, segmentCrop } from '/src/rmbg.js';
 import { reconstructWithMasks } from '/src/reconstruct.js';
 import { poseErrors, gridIoU, gridIoUScaleFit } from './eval-util.js';
-import { labelMask, objectThumb } from '/src/markerless.js';
+import { labelMask, objectThumb, fixMasks } from '/src/markerless.js';
 
 async function decode(url, w, h) {
     const img = new Image(); img.src = url; await img.decode();
@@ -28,6 +28,7 @@ window.runFree = async (o = {}) => {
         T.loadModel = t() - t0;
     }
     const frames = [];
+    const res0 = [];
     T.mask = 0; T.features = 0;
     const maskIoU = [];
     for (const fr of data.frames) {
@@ -47,13 +48,24 @@ window.runFree = async (o = {}) => {
         T.features += t() - t0;
         frames.push({ feat, prob, thumb: objectThumb(rgba, w, h, prob) });
     }
+    if (o.masks !== 'gt' && o.fixMasks !== false) {
+        t0 = t();
+        const logs0 = [];
+        await fixMasks(frames, w, h, {
+            getRGBA: (i) => decode(data.frames[i].url, w, h),
+            segmentCrop: (rgba, ww, hh, box) => segmentCrop(rgba, ww, hh, box, o.segSide || prof.segSide),
+            maxFeatures: prof.maxFeatures, log: (m) => logs0.push(m),
+        });
+        T.fixMasks = t() - t0;
+        res0.push(...logs0);
+    }
     // mask quality vs ground truth (needs a second render with masks)
     if (o.masks !== 'gt' && o.maskEval) {
         const gtData = o.mode === 'turntable' ? window.renderTurntable(o.n || 30, { masks: true, ...o.render }) : window.renderWalk(o.n || 30, { masks: true, ...o.render });
         for (let k = 0; k < frames.length; k++) {
             const m = await decode(gtData.frames[k].mask, w, h);
             let a = 0, u = 0;
-            for (let i = 0; i < w * h; i++) { const g = m[i * 4] > 127, e = frames[k].prob[i] >= 110; if (g && e) a++; if (g || e) u++; }
+            for (let i = 0; i < w * h; i++) { if (frames[k].noVote && frames[k].noVote[i]) continue; const g = m[i * 4] > 127, e = frames[k].prob[i] >= 110; if (g && e) a++; if (g || e) u++; }
             maskIoU.push(a / u);
         }
     }
@@ -78,6 +90,7 @@ window.runFree = async (o = {}) => {
         });
     } catch (e) { err = e.message + (e.stats ? ' ' + JSON.stringify(e.stats) : ''); }
     T.reconstruct = t() - t0;
+    logs.unshift(...res0);
     const res = { T, logs, err, featCounts: frames.map(f => f.feat.n), maskIoU };
     const gtPoses = data.frames.map(fr => ({ R: fr.R, t: fr.t }));
     const gtBox = window.gtBox();
@@ -99,7 +112,7 @@ window.runFree = async (o = {}) => {
     if (o.groundCheck) {
         const { createCarver } = await import('/src/reconstruct.js');
         const { estimateGround } = await import('/src/markerless.js');
-        const labels = frames.map(fr => labelMask(fr.prob, w, h));
+        const labels = frames.map(fr => labelMask(fr.prob, w, h, {}, fr.noVote));
         const [lo, hi] = gtBox;
         const views = gtPoses.map((p, k) => ({ R: p.R, t: p.t, f: data.f * s, width: w, height: h, mask: labels[k] }));
         for (const res of [56, 90, 130]) {
@@ -112,7 +125,7 @@ window.runFree = async (o = {}) => {
     }
     // Upper bound: same masks, ground-truth poses (mask error only)
     if (o.gtPoseCheck) {
-        const labels = frames.map(fr => labelMask(fr.prob, w, h));
+        const labels = frames.map(fr => labelMask(fr.prob, w, h, {}, fr.noVote));
         const [lo, hi] = gtBox;
         const pad = 15;
         const bounds = { x0: lo[0] - pad, x1: hi[0] + pad, y0: lo[1] - pad, y1: hi[1] + pad, z0: 0, z1: hi[2] + pad };

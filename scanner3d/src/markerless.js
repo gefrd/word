@@ -13,6 +13,7 @@
 import { reconstructWithMasks, createCarver, FOREGROUND, BACKGROUND, UNKNOWN } from './reconstruct.js';
 import { runSfM, camCenter, eigenSym } from './sfm.js';
 import { detectFeatures, rgbaToGray } from './features.js';
+import { maskStats, planMaskFixes, isStillCamera, staticPixels, smallGrey } from './maskfix.js';
 
 const mul3 = (A, B) => {
     const C = new Array(9);
@@ -98,7 +99,7 @@ export function similarNeighbours(list, k) {
  * edge become UNKNOWN (no vote) so small pose errors don't shave off thin
  * parts; confident background carves.
  */
-export function labelMask(prob, w, h, opts = {}) {
+export function labelMask(prob, w, h, opts = {}, noVote = null) {
     const fgT = opts.fgThreshold ?? 110, bgT = opts.bgThreshold ?? 40, grow = opts.edgeGuard ?? 2;
     const out = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) out[i] = prob[i] >= fgT ? FOREGROUND : prob[i] < bgT ? BACKGROUND : UNKNOWN;
@@ -106,7 +107,50 @@ export function labelMask(prob, w, h, opts = {}) {
         const fg = dilateBinary(prob, w, h, grow, fgT);
         for (let i = 0; i < w * h; i++) if (out[i] === BACKGROUND && fg[i]) out[i] = UNKNOWN;
     }
+    if (noVote) for (let i = 0; i < w * h; i++) if (noVote[i]) out[i] = UNKNOWN;
     return out;
+}
+
+/**
+ * Check and repair the AI masks of all frames (see maskfix.js).
+ *   frames[i] = { prob, feat, ... }; getRGBA(i) → rgba at w×h;
+ *   segmentCrop(rgba, w, h, box) → new soft mask.
+ * Sets frames[i].noVote (pixels that must not vote) and recomputes the
+ * features of frames whose mask changed. Returns a short report.
+ */
+export async function fixMasks(frames, w, h, { getRGBA, segmentCrop, maxFeatures, log = () => {} }) {
+    const stats = frames.map(fr => maskStats(fr.prob, w, h));
+    const plan = planMaskFixes(stats);
+    let redone = 0, dropped = 0;
+    for (const i of plan.bad) {
+        const rgba = await getRGBA(i);
+        const prob = await segmentCrop(rgba, w, h, plan.box);
+        const st = maskStats(prob, w, h);
+        const cropArea = (plan.box[2] - plan.box[0]) * (plan.box[3] - plan.box[1]);
+        // outside the crop we know nothing: no votes there
+        const noVote = new Uint8Array(w * h).fill(1);
+        const bx0 = Math.floor(plan.box[0] * w), by0 = Math.floor(plan.box[1] * h), bx1 = Math.ceil(plan.box[2] * w), by1 = Math.ceil(plan.box[3] * h);
+        for (let y = by0; y < by1; y++) noVote.fill(0, y * w + bx0, y * w + bx1);
+        if (st.area / cropArea > 0.7 || st.area < 0.003) { noVote.fill(1); dropped++; }
+        frames[i].prob = prob;
+        frames[i].noVote = noVote;
+        frames[i].feat = frameFeatures(rgba, w, h, prob, { maxFeatures });
+        redone++;
+    }
+    // still camera (turntable): what never changes can't be the turning object
+    const sw = 96, sh = Math.max(8, Math.round(96 * h / w));
+    const greys = [];
+    for (let i = 0; i < frames.length; i++) greys.push(smallGrey(await getRGBA(i), w, h, sw, sh));
+    const still = isStillCamera(greys, frames.map(f => f.prob), w, h, sw, sh);
+    if (still) {
+        const flags = staticPixels(greys, frames.map(f => f.prob), w, h, sw, sh);
+        frames.forEach((fr, i) => {
+            if (fr.noVote) for (let k = 0; k < flags[i].length; k++) fr.noVote[k] |= flags[i][k];
+            else fr.noVote = flags[i];
+        });
+    }
+    log(`masks: ${plan.good} good, ${redone} redone on a crop (${dropped} unusable), still camera: ${still ? 'yes (turntable)' : 'no'}`);
+    return { redone, dropped, still, good: plan.good };
 }
 
 /**
@@ -285,7 +329,7 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
     const fold = Math.abs(obj.info.turnSignedDeg) / Math.max(1, obj.info.turnDeg);
     if (obj.info.turnDeg > 90 && fold < (opts.minOneWay ?? 0.75)) { const e = new Error('POSES_FAILED'); e.stats = { ...sfm.stats, fold }; throw e; }
     log(`object frame: coverage ${obj.info.coverageDeg.toFixed(0)}°, path turns ${obj.info.turnDeg.toFixed(0)}° (${(100 * Math.abs(obj.info.turnSignedDeg) / Math.max(1, obj.info.turnDeg)).toFixed(0)} % one way), elevation ${obj.info.elevMin.toFixed(0)}…${obj.info.elevMax.toFixed(0)}°, planarity ${obj.info.planarity.toFixed(2)}`);
-    const labels = frames.map(fr => labelMask(fr.prob, width, height, opts));
+    const labels = frames.map(fr => labelMask(fr.prob, width, height, opts, fr.noVote));
     const views = reg.map(i => ({ R: obj.poses[i].R, t: obj.poses[i].t, f: sfm.f, width, height, mask: labels[i] }));
 
     // --- 3. coarse carving: box around the sparse points, grown if needed

@@ -12,8 +12,8 @@
 //   { type: 'done', positions, indices, normals, colors, info }
 //   { type: 'error', message, code? }
 
-import { loadRMBG, segmentObject, releaseRMBG } from './rmbg.js';
-import { frameFeatures, buildMarkerlessModel, objectThumb, PROFILES } from './markerless.js';
+import { loadRMBG, segmentObject, segmentCrop, releaseRMBG } from './rmbg.js';
+import { frameFeatures, buildMarkerlessModel, objectThumb, fixMasks, PROFILES } from './markerless.js';
 
 let profile = PROFILES.mid, cfg = {};
 const frames = [];      // { blob, feat, prob, thumb }
@@ -79,6 +79,14 @@ async function solve(opts = {}) {
     if (list.length < 8) throw Object.assign(new Error('TOO_FEW_FRAMES'), { code: 'TOO_FEW_FRAMES' });
     const bad = list.filter(f => f.coverage < 0.004).length;
     if (bad > list.length / 2) throw Object.assign(new Error('NO_OBJECT'), { code: 'NO_OBJECT' });
+    const { w: fw, h: fh } = size;
+    post({ type: 'progress', stage: 'mask', p: 1 });
+    await fixMasks(list, fw, fh, {
+        getRGBA: async (i) => (await decode(list[i].index, list[i].blob, 0, size)).rgba,
+        segmentCrop: (rgba, w, h, box) => segmentCrop(rgba, w, h, box, profile.segSide),
+        maxFeatures: profile.maxFeatures,
+        log: (m) => post({ type: 'log', message: m }),
+    });
     // The AI model is not needed any more: free its memory before carving.
     if (opts.lowMemory) await releaseRMBG();
     const { w, h } = size;
