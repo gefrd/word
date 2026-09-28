@@ -473,7 +473,7 @@ async function reconstructOnMainThread(job, onProgress) {
 // ---------------------------------------------------------------------
 // No-sheet 360° scan (AI masks + structure from motion, all on the phone)
 // ---------------------------------------------------------------------
-const FREE_STAGES = ['download', 'mask', 'depth', 'match', 'pose', 'carve', 'refine', 'mesh', 'color'];
+const FREE_STAGES = ['download', 'mask', 'depth', 'match', 'pose', 'carve', 'refine', 'mesh', 'color', 'texture'];
 
 function startFreeJob(ui, expected) {
     let added = 0;
@@ -495,7 +495,20 @@ async function finishFreeJob(job, ui, opts = {}) {
     try { refine = localStorage.getItem('k3d-refine') === '1'; } catch (_) {}
     const r = await job.solve({ lowMemory: PROFILE.tier === 'low', refine, ...opts });
     const { buildMesh } = await lazyExport();
-    const mesh = buildMesh({ positions: r.positions, indices: r.indices, colors: r.colors, name: 'Kivu 3D Scan' });
+    let mesh;
+    if (r.textured) {
+        // photo texture atlas → canvas texture (saved as JPEG inside the GLB)
+        const { CanvasTexture, SRGBColorSpace } = await import('three');
+        const a = r.textured.atlas;
+        const c = document.createElement('canvas'); c.width = a.width; c.height = a.height;
+        c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(a.data.buffer), a.width, a.height), 0, 0);
+        const texture = new CanvasTexture(c);
+        texture.colorSpace = SRGBColorSpace; texture.flipY = true; texture.anisotropy = 4;
+        texture.userData.mimeType = 'image/jpeg';
+        mesh = buildMesh({ positions: r.textured.positions, indices: r.textured.indices, uvs: r.textured.uvs, texture, name: 'Kivu 3D Scan' });
+    } else {
+        mesh = buildMesh({ positions: r.positions, indices: r.indices, colors: r.colors, name: 'Kivu 3D Scan' });
+    }
     const secs = ((performance.now() - t0) / 1000).toFixed(0);
     const cov = Math.round(r.info.coverageDeg || 0);
     viewerScreen({ mesh, name: 'Scan ' + new Date().toLocaleString(), kind: 'free', note: `${r.info.registered}/${r.info.frames} views · ${cov}° around · ${secs} s`, sizeEdit: true });

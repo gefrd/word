@@ -112,14 +112,21 @@ async function solve(opts = {}) {
         return { rgba: fr.rgba, width: fr.width, height: fr.height };
     };
     const out = await buildMarkerlessModel({ frames: list, width: w, height: h, getFrame }, {
-        gridRes: profile.gridRes, colorSide: profile.colorSide, refineSide: profile.refineSide, refine: !!opts.refine, similarK: opts.unordered ? 4 : 2,
+        gridRes: profile.gridRes, colorSide: profile.colorSide, refineSide: profile.refineSide, refine: !!opts.refine, atlasSize: profile.atlasSize, textureSide: profile.textureSide, texture: opts.texture !== false, similarK: opts.unordered ? 4 : 2,
         sfm: { f0: opts.f0 ? opts.f0 * Math.max(w, h) : undefined },
         onProgress: (stage, p) => post({ type: 'progress', stage, p }),
         log: (m) => post({ type: 'log', message: m }),
     });
     const { positions, indices, normals, colors } = out;
     const info = { ...out.info, registered: out.registered.length, frames: list.length };
-    post({ type: 'done', positions, indices, normals, colors, info }, [positions.buffer, indices.buffer, normals.buffer, colors.buffer]);
+    const tx = out.textured;
+    const msg = { type: 'done', positions, indices, normals, colors, info };
+    const transfer = [positions.buffer, indices.buffer, normals.buffer, colors.buffer];
+    if (tx) {
+        msg.textured = { positions: tx.positions, indices: tx.indices, uvs: tx.uvs, atlas: tx.atlas };
+        transfer.push(tx.positions.buffer, tx.indices.buffer, tx.uvs.buffer, tx.atlas.data.buffer);
+    }
+    post(msg, transfer);
 }
 
 self.onmessage = (e) => {

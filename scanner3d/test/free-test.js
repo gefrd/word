@@ -125,7 +125,7 @@ window.runFree = async (o = {}) => {
     try {
         out = await buildMarkerlessModel({ frames, width: w, height: h, getFrame }, {
             gridRes: o.gridRes || prof.gridRes, colorSide: prof.colorSide, log: (m) => logs.push(m), sfm: o.sfm || {}, similarK: o.similarK ?? 2,
-            refine: o.refine, colourRefine: o.colour, colourThreshold: o.colourT,
+            refine: o.refine, colourRefine: o.colour, colourThreshold: o.colourT, texture: !!o.texture,
         });
     } catch (e) { err = e.message + (e.stats ? ' ' + JSON.stringify(e.stats) : ''); }
     T.reconstruct = t() - t0;
@@ -153,6 +153,11 @@ window.runFree = async (o = {}) => {
             res.hollow = hollowEmpty(out.grid, pe.align, pts);
         }
         res.mesh = o.keepMesh ? { positions: Array.from(out.positions), indices: Array.from(out.indices), colors: Array.from(out.colors) } : null;
+        if (out.textured && o.keepMesh) {
+            const a = out.textured.atlas, c = document.createElement('canvas'); c.width = a.width; c.height = a.height;
+            c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(a.data.buffer), a.width, a.height), 0, 0);
+            res.texMesh = { positions: Array.from(out.textured.positions), indices: Array.from(out.textured.indices), uvs: Array.from(out.textured.uvs), tex: c.toDataURL('image/jpeg', 0.85) };
+        }
     }
     if (o.groundCheck) {
         const { createCarver } = await import('/src/reconstruct.js');

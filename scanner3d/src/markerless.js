@@ -14,6 +14,7 @@ import { reconstructWithMasks, createCarver, FOREGROUND, BACKGROUND, UNKNOWN } f
 import { runSfM, camCenter, eigenSym } from './sfm.js';
 import { detectFeatures, rgbaToGray } from './features.js';
 import { maskStats, planMaskFixes, isStillCamera, staticPixels, smallGrey } from './maskfix.js';
+import { bakeTexture, viewGains } from './texture.js';
 import { fitDepth, fitDepthToShape, depthCarve, erodeForeground, colourCarve, prepColourViews } from './refine.js';
 
 const mul3 = (A, B) => {
@@ -32,9 +33,9 @@ const pct = (v, q) => { const s = Float64Array.from(v).sort(); return s.length ?
 export const PROFILES = {
     // featSide: long side of the images used for features and carving masks
     // depthViews: frames that get an AI depth map (0 = off, saves memory/time)
-    low: { featSide: 560, segSide: 320, maxFeatures: 700, gridRes: 96, colorSide: 720, depthViews: 0, refineSide: 360 },
-    mid: { featSide: 640, segSide: 384, maxFeatures: 900, gridRes: 128, colorSide: 960, depthViews: 8, refineSide: 480 },
-    high: { featSide: 800, segSide: 448, maxFeatures: 1100, gridRes: 150, colorSide: 1280, depthViews: 10, refineSide: 560 },
+    low: { featSide: 560, segSide: 320, maxFeatures: 700, gridRes: 96, colorSide: 720, depthViews: 0, refineSide: 360, atlasSize: 1024, textureSide: 960 },
+    mid: { featSide: 640, segSide: 384, maxFeatures: 900, gridRes: 128, colorSide: 960, depthViews: 8, refineSide: 480, atlasSize: 2048, textureSide: 1280 },
+    high: { featSide: 800, segSide: 448, maxFeatures: 1100, gridRes: 150, colorSide: 1280, depthViews: 10, refineSide: 560, atlasSize: 2048, textureSide: 1280 },
 };
 
 /** Features of one frame, only where the object mask says "object". */
@@ -436,9 +437,21 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
         bounds, voxel, bgFrac: opts.bgFrac ?? 0.08, keepFrac: 0.15, skipBg: 5, colorSide: opts.colorSide || 960,
         smooth: opts.smooth ?? 4, onProgress: report, refineGrid: opts.refine ? refineGrid : null,
     });
+    // photo texture (sharp colours instead of one colour per vertex)
+    let textured = null;
+    if (opts.texture !== false) {
+        const tt = Date.now();
+        const small = [];
+        for (const i of reg) small.push(await getFrame(i, 200));
+        const gains = viewGains(small, reg.map(i => ({ mask: labels[i], width, height })));
+        textured = await bakeTexture(out, reg.map(i => ({ R: poses[i].R, t: poses[i].t, f: sfm.f, width, height })), (k, side) => getFrame(reg[k], side), {
+            atlasSize: opts.atlasSize || 2048, srcSide: opts.textureSide || 1280, gains, onProgress: report,
+        });
+        log(`texture: ${textured.charts} charts, ${(textured.textured * 100).toFixed(1)} % of the surface from photos, ${Date.now() - tt} ms`);
+    }
     log(`fine grid voxel ${voxel.toFixed(2)} mm, total ${Date.now() - t0} ms`);
     return {
-        ...out,
+        ...out, textured,
         poses, registered: reg, f: sfm.f,
         info: { ...obj.info, ...sfm.stats, refine: refineInfo, ground, voxel, size: [2 * hx, 2 * hy, top], scale: obj.scale, shift },
         sfm, obj,

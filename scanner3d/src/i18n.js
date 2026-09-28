@@ -36,6 +36,7 @@ const STRINGS = {
         hintFree_blurry: 'Blurry — hold the phone steadier',
         hintFree_enough: 'Enough frames — tap "Done"',
         stage_frames: 'Picking frames',
+        stage_texture: 'Photo texture',
         stage_refine: 'Refining the shape (colour, depth)',
         stage_match: 'Matching views',
         stage_pose: 'Camera positions',
