@@ -88,8 +88,7 @@ async function solve(opts = {}) {
         maxFeatures: profile.maxFeatures,
         log: (m) => post({ type: 'log', message: m }),
     });
-    // The mask model is not needed any more: free its memory.
-    if (opts.lowMemory || profile.depthViews) await releaseRMBG();
+    // (the mask model stays loaded: bad masks are redone once the field is known)
     // AI depth for a few frames spread around (helps carve hollows)
     if (opts.refine && profile.depthViews && opts.depth !== false) {
         try {
@@ -112,6 +111,13 @@ async function solve(opts = {}) {
         return { rgba: fr.rgba, width: fr.width, height: fr.height };
     };
     const out = await buildMarkerlessModel({ frames: list, width: w, height: h, getFrame }, {
+        recrop: async (i, box) => {
+            const fr = list[i];
+            const rgba = (await decode(fr.index, fr.blob, 0, size)).rgba;
+            return segmentCrop(rgba, fw, fh, box, profile.segSide);
+        },
+        // masks are final after this point: free the mask model on small phones
+        afterMasks: async () => { if (opts.lowMemory) await releaseRMBG(); },
         gridRes: profile.gridRes, colorSide: profile.colorSide, refineSide: profile.refineSide, refine: !!opts.refine, atlasSize: profile.atlasSize, textureSide: profile.textureSide, texture: opts.texture !== false, similarK: opts.unordered ? 4 : 2,
         sfm: { f0: opts.f0 ? opts.f0 * Math.max(w, h) : undefined },
         onProgress: (stage, p) => post({ type: 'progress', stage, p }),

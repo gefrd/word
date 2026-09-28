@@ -134,7 +134,8 @@ export async function fixMasks(frames, w, h, { getRGBA, segmentCrop, maxFeatures
         const noVote = new Uint8Array(w * h).fill(1);
         const bx0 = Math.floor(plan.box[0] * w), by0 = Math.floor(plan.box[1] * h), bx1 = Math.ceil(plan.box[2] * w), by1 = Math.ceil(plan.box[3] * h);
         for (let y = by0; y < by1; y++) noVote.fill(0, y * w + bx0, y * w + bx1);
-        if (st.area / cropArea > 0.7 || st.area < 0.003) { noVote.fill(1); dropped++; }
+        frames[i].maskQuality = 'crop';
+        if (st.area / cropArea > 0.7 || st.area < 0.003) { noVote.fill(1); dropped++; frames[i].maskQuality = 'bad'; }
         frames[i].prob = prob;
         frames[i].noVote = noVote;
         frames[i].feat = frameFeatures(rgba, w, h, prob, { maxFeatures });
@@ -320,6 +321,103 @@ export function estimateGround(grid, views) {
 }
 
 /**
+ * "The field": a box around the object found from the sparse 3D points
+ * (features on the object itself), not from silhouettes — so a table or
+ * stool the AI wrongly kept in the mask can't make it grow. Points of a
+ * table are recognisable: a dense, flat, horizontal layer at the bottom that
+ * spreads wider than the object. That layer is also the floor.
+ *   P: points in the object frame (z up), camD: typical camera distance.
+ */
+export function objectField(P0, camD) {
+    if (P0.length < 20) return null;
+    // dense cluster seen from above: a textured object gives many feature
+    // points per square centimetre, a table around it only a scattering
+    const P = denseCluster(P0, camD);
+    if (P.length < 20) return null;
+    const zs = P.map(p => p[2]);
+    const zLo = pct(zs, 0.0), zMid = pct(zs, 0.6);
+    const bin = Math.max(1, camD * 0.005);
+    const nb = Math.max(1, Math.ceil((zMid - zLo) / bin) + 1), hist = new Int32Array(nb);
+    for (const z of zs) if (z <= zMid) hist[Math.min(nb - 1, Math.floor((z - zLo) / bin))]++;
+    let bi = 0;
+    for (let i = 1; i < nb; i++) if (hist[i] + (hist[i - 1] || 0) > hist[bi] + (hist[bi - 1] || 0)) bi = i;
+    const zt = zLo + (bi + 0.5) * bin, tol = 1.5 * bin;
+    const onPlane = P.filter(p => Math.abs(p[2] - zt) < tol), above = P.filter(p => p[2] > zt + 2 * tol);
+    const spread = (Q) => pct(Q.map(p => Math.hypot(p[0], p[1])), 0.9);
+    // a floor has (almost) nothing under it — a flat top of the object does
+    const below = P.filter(p => p[2] < zt - 2 * tol).length;
+    const isTable = onPlane.length >= Math.max(15, 0.06 * P.length) && above.length >= 20 && below <= Math.max(3, 0.02 * P.length) && spread(onPlane) > 1.3 * spread(above);
+    const Q = isTable ? above : P;
+    const xs = Q.map(p => p[0]), ys = Q.map(p => p[1]), qz = Q.map(p => p[2]);
+    const x0 = pct(xs, 0.01), x1 = pct(xs, 0.99), y0 = pct(ys, 0.01), y1 = pct(ys, 0.99), z0 = pct(qz, 0.01), z1 = pct(qz, 0.995);
+    // generous margins: plain parts of the object have no feature points
+    const m = 0.35 * Math.max(x1 - x0, y1 - y0) + 0.05 * camD, mz = 0.3 * (z1 - z0) + 0.05 * camD;
+    return {
+        box: { x0: x0 - m, x1: x1 + m, y0: y0 - m, y1: y1 + m, z0: isTable ? zt : z0 - 0.35 * (z1 - z0) - mz, z1: z1 + mz },
+        floor: isTable ? zt : null, tablePoints: isTable ? onPlane.length : 0, objectPoints: Q.length,
+    };
+}
+
+/** Image rectangle [u0, v0, u1, v1] covered by a 3D box, or null if it is behind the camera. */
+function projectedBox(view, box) {
+    const { R, t, f, width: w, height: h } = view;
+    let u0 = Infinity, v0 = Infinity, u1 = -Infinity, v1 = -Infinity;
+    for (const X of [box.x0, box.x1]) for (const Y of [box.y0, box.y1]) for (const Z of [box.z0, box.z1]) {
+        const z = R[6] * X + R[7] * Y + R[8] * Z + t[2];
+        if (z <= 1) return null;
+        const u = f * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / z + w / 2, v = f * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / z + h / 2;
+        u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v);
+    }
+    return [u0, v0, u1, v1];
+}
+
+function denseCluster(P, camD) {
+    const cell = Math.max(2, camD * 0.02);
+    const xs = P.map(p => p[0]), ys = P.map(p => p[1]);
+    const x0 = Math.min(...xs), y0 = Math.min(...ys);
+    const W = Math.min(400, Math.ceil((Math.max(...xs) - x0) / cell) + 3), H = Math.min(400, Math.ceil((Math.max(...ys) - y0) / cell) + 3);
+    const ci = (p) => [Math.min(W - 2, Math.max(1, Math.floor((p[0] - x0) / cell) + 1)), Math.min(H - 2, Math.max(1, Math.floor((p[1] - y0) / cell) + 1))];
+    const cnt = new Float32Array(W * H);
+    for (const p of P) { const [i, j] = ci(p); cnt[j * W + i]++; }
+    const sm = new Float32Array(W * H);
+    for (let j = 1; j < H - 1; j++) for (let i = 1; i < W - 1; i++) {
+        let s = 0;
+        for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) s += cnt[(j + dj) * W + i + di];
+        sm[j * W + i] = s;
+    }
+    let best = 0;
+    for (let k = 1; k < sm.length; k++) if (sm[k] > sm[best]) best = k;
+    const thr = Math.max(3, 0.12 * sm[best]);
+    const inR = new Uint8Array(W * H), stack = [best];
+    inR[best] = 1;
+    while (stack.length) {
+        const k = stack.pop(), i = k % W, j = (k / W) | 0;
+        for (const q of [k - 1, k + 1, k - W, k + W]) {
+            const qi = q % W, qj = (q / W) | 0;
+            if (qi < 1 || qj < 1 || qi >= W - 1 || qj >= H - 1 || inR[q] || sm[q] < thr) continue;
+            inR[q] = 1; stack.push(q);
+        }
+        void i; void j;
+    }
+    return P.filter(p => { const [i, j] = ci(p); return inR[j * W + i]; });
+}
+
+/** Pixels outside the image of the box can't be the object: mark them background. */
+function clipToBox(label, view, box) {
+    const { width: w, height: h } = view;
+    const bb = projectedBox(view, box);
+    if (!bb) return; // box partly behind the camera: leave as is
+    const [u0, v0, u1, v1] = bb;
+    const a = Math.max(0, Math.floor(u0)), b = Math.min(w, Math.ceil(u1)), c = Math.max(0, Math.floor(v0)), d = Math.min(h, Math.ceil(v1));
+    for (let y = 0; y < h; y++) {
+        const row = y * w;
+        if (y < c || y >= d) { label.fill(BACKGROUND, row, row + w); continue; }
+        if (a > 0) label.fill(BACKGROUND, row, row + a);
+        if (b < w) label.fill(BACKGROUND, row + b, row + w);
+    }
+}
+
+/**
  * The whole no-sheet reconstruction.
  *   frames: [{ feat, prob (Uint8 0..255, width×height) }] (feature/mask images)
  *   getFrame(i, longSide) → { rgba, width, height } (for colouring)
@@ -353,6 +451,49 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
     log(`object frame: coverage ${obj.info.coverageDeg.toFixed(0)}°, path turns ${obj.info.turnDeg.toFixed(0)}° (${(100 * Math.abs(obj.info.turnSignedDeg) / Math.max(1, obj.info.turnDeg)).toFixed(0)} % one way), elevation ${obj.info.elevMin.toFixed(0)}…${obj.info.elevMax.toFixed(0)}°, planarity ${obj.info.planarity.toFixed(2)}`);
     const labels = frames.map(fr => labelMask(fr.prob, width, height, opts, fr.noVote));
     const views = reg.map(i => ({ R: obj.poses[i].R, t: obj.poses[i].t, f: sfm.f, width, height, mask: labels[i] }));
+    // the field around the object: everything outside it is background
+    // object points: inside the cleaned object mask in ≥ 2 of the frames that
+    // saw them (points on a table the AI once took for the object drop out)
+    const objPts = [];
+    sfm.points.forEach((P, q) => {
+        let yes = 0, votes = 0;
+        for (let k = 0; k < P.obs.length; k += 2) {
+            const fi = P.obs[k], F = frames[fi].feat, j = P.obs[k + 1];
+            const px = Math.min(width - 1, Math.max(0, Math.round(F.x[j]))), py = Math.min(height - 1, Math.max(0, Math.round(F.y[j])));
+            const lab = labels[fi][py * width + px];
+            if (lab === UNKNOWN) continue;
+            votes++;
+            if (lab === FOREGROUND) yes++;
+        }
+        if (yes >= 2 && yes >= 0.5 * votes) objPts.push(obj.points[q]);
+    });
+    const field = opts.field === false ? null : objectField(objPts, obj.info.camDist);
+    // Now the cameras and the field are known: redo the masks that were bad
+    // on a tight crop around where the field is in that picture — the mask
+    // AI does much better when the object fills its input.
+    if (field && opts.recrop) {
+        let redone = 0;
+        for (let k = 0; k < reg.length; k++) {
+            const i = reg[k], fr = frames[i];
+            if (fr.maskQuality !== 'bad') continue; // (crop masks from fixMasks are usually fine)
+            const bb = projectedBox(views[k], field.box);
+            if (!bb) continue;
+            const pad = 0.06;
+            const crop = [Math.max(0, bb[0] / width - pad), Math.max(0, bb[1] / height - pad), Math.min(1, bb[2] / width + pad), Math.min(1, bb[3] / height + pad)];
+            if (crop[2] - crop[0] < 0.05 || crop[3] - crop[1] < 0.05) continue;
+            fr.prob = await opts.recrop(i, crop);
+            fr.noVote = null;
+            labels[i] = labelMask(fr.prob, width, height, opts, null);
+            views[k].mask = labels[i];
+            redone++;
+        }
+        log(`field: ${redone} masks redone on a crop around the field (${reg.filter(i => frames[i].maskQuality).length} flagged)`);
+    }
+    if (opts.afterMasks) await opts.afterMasks();
+    if (field) {
+        for (const v of views) clipToBox(v.mask, v, field.box);
+        log(`field: ${field.objectPoints} object points, table/floor ${field.floor != null ? `at z=${field.floor.toFixed(1)} (${field.tablePoints} points)` : 'not seen'}`);
+    }
 
     // --- 3. coarse carving: box around the sparse points, grown if needed
     const P = obj.points;
@@ -360,6 +501,11 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
     const camD = obj.info.camDist;
     let half = Math.min(0.75 * camD, Math.max(rad * 1.8, 0.12 * camD));
     let zLo = Math.max(-0.9 * camD, pct(P.map(p => p[2]), 0.02) - half * 0.8), zHi = Math.min(0.9 * camD, pct(P.map(p => p[2]), 0.98) + half * 0.6);
+    if (field) {
+        const fb = field.box;
+        half = Math.max(Math.abs(fb.x0), Math.abs(fb.x1), Math.abs(fb.y0), Math.abs(fb.y1));
+        zLo = fb.z0 - (field.floor != null ? 0.02 * camD : 0); zHi = fb.z1;
+    }
     let coarse = null, cbox = null;
     for (let round = 0; round < 3; round++) {
         const bounds = { x0: -half, x1: half, y0: -half, y1: half, z0: zLo, z1: zHi };
@@ -371,7 +517,7 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
         if (!cbox) break;
         // grow the box if the object touches its sides
         const touch = cbox.idxMin[0] <= 0 || cbox.idxMin[1] <= 0 || cbox.idxMax[0] >= coarse.nx - 1 || cbox.idxMax[1] >= coarse.ny - 1 || cbox.idxMax[2] >= coarse.nz - 1;
-        if (!touch || half >= 0.75 * camD) break;
+        if (!touch || half >= 0.75 * camD || field) break;
         half = Math.min(0.75 * camD, half * 1.5); zHi = Math.min(0.9 * camD, zHi + half * 0.5);
     }
     if (!cbox) throw new Error('EMPTY_HULL');
@@ -394,7 +540,13 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
     }
     log(`coarse box ${cbox.min.map(v => v.toFixed(0))} … ${cbox.max.map(v => v.toFixed(0))}, lowest sparse point ${pct(P.map(p => p[2]), 0.02).toFixed(1)}`);
     const cv = coarse.voxel;
-    const box = { x0: cbox.min[0] - 2 * cv, x1: cbox.max[0] + 2 * cv, y0: cbox.min[1] - 2 * cv, y1: cbox.max[1] + 2 * cv, z0: ground, z1: cbox.max[2] + 2 * cv };
+    // a table seen in the points gives the floor directly
+    if (field && field.floor != null) ground = field.floor;
+    let box = { x0: cbox.min[0] - 2 * cv, x1: cbox.max[0] + 2 * cv, y0: cbox.min[1] - 2 * cv, y1: cbox.max[1] + 2 * cv, z0: ground, z1: cbox.max[2] + 2 * cv };
+    if (field) {
+        const fb = field.box;
+        box = { x0: Math.max(box.x0, fb.x0), x1: Math.min(box.x1, fb.x1), y0: Math.max(box.y0, fb.y0), y1: Math.min(box.y1, fb.y1), z0: box.z0, z1: Math.min(box.z1, fb.z1) };
+    }
     const scene = { frames, width, height, getFrame, opts, report, log, reg, labels, sfm, obj, t0 };
     return carveInBox(scene, box);
 }
