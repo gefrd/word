@@ -402,10 +402,12 @@ export class GameRoom extends DurableObject {
                 away: !!s.away,
                 online: !!s.bot || this.isOnline(i, except),
             } : null)),
-            state: r.state,
+            // Games with hidden information (cards, ships) show each player
+            // only what they may see: adapter.viewFor / adapter.viewMove.
+            state: A.viewFor && r.state ? A.viewFor(r.state, seat) : r.state,
             // The Igisoro client (first online game) reads the board as `game`.
             game: r.game === 'igisoro' ? r.state : r.game,
-            move: r.move,
+            move: A.viewMove && r.move ? A.viewMove(r.move, seat, r.state) : r.move,
             result: r.result,
             rematch: r.seats.map((_, i) => !!r.rematch[i]),
             // Sent as "ms left" so the phone's clock doesn't matter.

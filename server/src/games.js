@@ -1,6 +1,20 @@
 // Games the server can host. Each adapter wraps a pure engine from games/
 // (the same file the offline game uses) behind one small interface, so the
 // room code in room.js is the same for every game.
+//
+// Adapter fields (see the two below for examples):
+//   turnMs, botDelayMs, maxTimeouts, maxSeats
+//   seatOrder(options)            seats in join order, e.g. [0, 2] for 2 of 4
+//   normalizeRules(rules), normalizeOptions(options)
+//   create({ rules, firstPlayer, seats }) → state
+//   parseMove(msg) → move | null  (msg is what the phone sent; never trust it)
+//   isLegal(state, move), apply(state, move, rng) → { state, events }
+//   turn(state) → seat, counter(state) → number of actions so far
+//   winner(state) → null | seat | -1 (draw), reason(state) → string
+//   botMove(state, level, rng), nextFirst(prevFirst, seats)
+// Optional, for hidden information (cards, ships, secret words):
+//   viewFor(state, seat) → the state as that seat may see it
+//   viewMove(move, seat, state) → the last move as that seat may see it
 
 import * as igisoro from '../../games/igisoro/engine.js';
 import * as ludo from '../../games/ludo/engine.js';
