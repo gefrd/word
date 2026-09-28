@@ -76,12 +76,6 @@ export const GAMES = {
 
     draughts: {
         turnMs: 60_000,
-    },
-
-    connect4: {
-        turnMs: 30_000,
-    battleship: {
-        turnMs: 45_000,         // also the time to place your fleet
         botDelayMs: 900,
         maxTimeouts: 2,
         maxSeats: 2,
@@ -133,6 +127,13 @@ export const GAMES = {
         viewFor: (state, seat) => durak.viewFor(state, seat),
         viewMove: (move, seat) => ({ ...move, events: durak.viewEvents(move.events, seat) }),
     },
+
+    connect4: {
+        turnMs: 30_000,
+        botDelayMs: 900,
+        maxTimeouts: 2,
+        maxSeats: 2,
+        seatOrder: () => [0, 1],
         normalizeRules: connect4.normalizeRules,
         normalizeOptions: () => ({ players: 2 }),
         create: ({ rules, firstPlayer }) => connect4.createGame({ rules, firstPlayer }),
@@ -179,6 +180,14 @@ export const GAMES = {
         // Cards are secret: each phone gets only its own hand.
         viewFor: (state, seat) => uno.viewFor(state, seat),
         viewMove: (move, seat) => ({ ...move, events: uno.viewEvents(move.events, seat) }),
+    },
+
+    battleship: {
+        turnMs: 45_000,         // also the time to place your fleet
+        botDelayMs: 900,
+        maxTimeouts: 2,
+        maxSeats: 2,
+        seatOrder: () => [0, 1],
         normalizeRules: battleship.normalizeRules,
         normalizeOptions: () => ({ players: 2 }),
         create: ({ rules, firstPlayer }) => battleship.createGame({ rules, firstPlayer }),
