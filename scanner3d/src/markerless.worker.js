@@ -14,7 +14,7 @@
 
 import { loadRMBG, segmentObject, segmentCrop, releaseRMBG } from './rmbg.js';
 import { loadDepth, estimateDepth, releaseDepth } from './depth.js';
-import { frameFeatures, buildMarkerlessModel, objectThumb, fixMasks, PROFILES } from './markerless.js';
+import { frameFeatures, buildMarkerlessModel, carveInBox, objectThumb, fixMasks, PROFILES } from './markerless.js';
 
 let profile = PROFILES.mid, cfg = {};
 const frames = [];      // { blob, feat, prob, thumb }
@@ -117,8 +117,20 @@ async function solve(opts = {}) {
         onProgress: (stage, p) => post({ type: 'progress', stage, p }),
         log: (m) => post({ type: 'log', message: m }),
     });
+    postModel(out, list.length);
+}
+
+let last = null; // what the box editor needs to rebuild: { scene, shift, frames }
+
+function postModel(out, nFrames) {
+    last = { scene: out.scene, shift: out.info.shift, frames: nFrames };
     const { positions, indices, normals, colors } = out;
-    const info = { ...out.info, registered: out.registered.length, frames: list.length };
+    const info = { ...out.info, registered: out.registered.length, frames: nFrames };
+    delete info.box;
+    // the box as the viewer sees it (model frame: floor at z = 0, centred)
+    const b = out.info.box, sh = out.info.shift;
+    info.viewBox = out.info.fitBox || { x0: b.x0 - sh[0], x1: b.x1 - sh[0], y0: b.y0 - sh[1], y1: b.y1 - sh[1], z0: b.z0 - sh[2], z1: b.z1 - sh[2] };
+    delete info.fitBox;
     const tx = out.textured;
     const msg = { type: 'done', positions, indices, normals, colors, info };
     const transfer = [positions.buffer, indices.buffer, normals.buffer, colors.buffer];
@@ -127,6 +139,16 @@ async function solve(opts = {}) {
         transfer.push(tx.positions.buffer, tx.indices.buffer, tx.uvs.buffer, tx.atlas.data.buffer);
     }
     post(msg, transfer);
+}
+
+/** Rebuild inside a box given in the viewer's model frame. */
+async function rebuild(vb) {
+    if (!last) throw new Error('Nothing to rebuild');
+    const sh = last.shift;
+    const box = { x0: vb.x0 + sh[0], x1: vb.x1 + sh[0], y0: vb.y0 + sh[1], y1: vb.y1 + sh[1], z0: vb.z0 + sh[2], z1: vb.z1 + sh[2] };
+    if (!(box.x1 > box.x0 && box.y1 > box.y0 && box.z1 > box.z0)) throw new Error('Empty box');
+    const out = await carveInBox(last.scene, box);
+    postModel(out, last.frames);
 }
 
 self.onmessage = (e) => {
@@ -146,6 +168,10 @@ self.onmessage = (e) => {
     }
     if (m.cmd === 'add') {
         queue = queue.then(() => addFrame(m.index, m.blob)).catch((err) => post({ type: 'error', message: err.message || String(err), code: 'FRAME' }));
+        return;
+    }
+    if (m.cmd === 'rebuild') {
+        rebuild(m.box).catch((err) => post({ type: 'error', message: err.message || String(err), code: err.code || err.message }));
         return;
     }
     if (m.cmd === 'solve') {

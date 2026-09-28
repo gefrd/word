@@ -97,6 +97,15 @@ if (res === 'viewer') {
     await page.waitForTimeout(2500);
     console.log('stats:', await page.textContent('#stats'), '|', await page.textContent('#note'));
     await page.screenshot({ path: `test/out/ui-free-viewer-${input}.png` });
+    // "the field": lift the floor a little and pull the sides in, rebuild
+    await page.click('#boxBtn');
+    await page.$eval('input[data-k="z0"]', (e) => { e.value = 0.08; e.dispatchEvent(new Event('input')); });
+    await page.$eval('input[data-k="x0"]', (e) => { e.value = 0.05; e.dispatchEvent(new Event('input')); });
+    await page.screenshot({ path: `test/out/ui-free-box-${input}.png` });
+    const tb = Date.now();
+    await page.click('#boxApply');
+    await page.waitForFunction(() => document.querySelector('#boxApply') && !document.querySelector('#boxApply').disabled, null, { timeout: 600000 });
+    console.log(`box rebuild: ${((Date.now() - tb) / 1000).toFixed(1)} s →`, await page.textContent('#stats'), '| toast:', await page.textContent('.toast').catch(() => ''));
     await page.fill('#len', '26');
     await page.click('#applyLen');
     await page.waitForTimeout(800);

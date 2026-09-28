@@ -489,29 +489,30 @@ function startFreeJob(ui, expected) {
     return job;
 }
 
+async function freeMesh(r) {
+    const { buildMesh } = await lazyExport();
+    if (!r.textured) return buildMesh({ positions: r.positions, indices: r.indices, colors: r.colors, name: 'Kivu 3D Scan' });
+    // photo texture atlas → canvas texture (saved as JPEG inside the GLB)
+    const { CanvasTexture, SRGBColorSpace } = await import('three');
+    const a = r.textured.atlas;
+    const c = document.createElement('canvas'); c.width = a.width; c.height = a.height;
+    c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(a.data.buffer), a.width, a.height), 0, 0);
+    const texture = new CanvasTexture(c);
+    texture.colorSpace = SRGBColorSpace; texture.flipY = true; texture.anisotropy = 4;
+    texture.userData.mimeType = 'image/jpeg';
+    return buildMesh({ positions: r.textured.positions, indices: r.textured.indices, uvs: r.textured.uvs, texture, name: 'Kivu 3D Scan' });
+}
+
 async function finishFreeJob(job, ui, opts = {}) {
     const t0 = performance.now();
     let refine = false;
     try { refine = localStorage.getItem('k3d-refine') === '1'; } catch (_) {}
     const r = await job.solve({ lowMemory: PROFILE.tier === 'low', refine, ...opts });
-    const { buildMesh } = await lazyExport();
-    let mesh;
-    if (r.textured) {
-        // photo texture atlas → canvas texture (saved as JPEG inside the GLB)
-        const { CanvasTexture, SRGBColorSpace } = await import('three');
-        const a = r.textured.atlas;
-        const c = document.createElement('canvas'); c.width = a.width; c.height = a.height;
-        c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(a.data.buffer), a.width, a.height), 0, 0);
-        const texture = new CanvasTexture(c);
-        texture.colorSpace = SRGBColorSpace; texture.flipY = true; texture.anisotropy = 4;
-        texture.userData.mimeType = 'image/jpeg';
-        mesh = buildMesh({ positions: r.textured.positions, indices: r.textured.indices, uvs: r.textured.uvs, texture, name: 'Kivu 3D Scan' });
-    } else {
-        mesh = buildMesh({ positions: r.positions, indices: r.indices, colors: r.colors, name: 'Kivu 3D Scan' });
-    }
+    const mesh = await freeMesh(r);
     const secs = ((performance.now() - t0) / 1000).toFixed(0);
     const cov = Math.round(r.info.coverageDeg || 0);
-    viewerScreen({ mesh, name: 'Scan ' + new Date().toLocaleString(), kind: 'free', note: `${r.info.registered}/${r.info.frames} views · ${cov}° around · ${secs} s`, sizeEdit: true });
+    // the job stays alive in the viewer: "Adjust box" rebuilds from it
+    viewerScreen({ mesh, name: 'Scan ' + new Date().toLocaleString(), kind: 'free', note: `${r.info.registered}/${r.info.frames} views · ${cov}° around · ${secs} s`, sizeEdit: true, job, viewBox: r.info.viewBox });
 }
 
 function freeFail(ui, e) {
@@ -533,8 +534,7 @@ async function freeFromVideo(file) {
         job = startFreeJob(ui, () => frames.length);
         for (const f of frames) job.add(f.blob);
         await finishFreeJob(job, ui, {});
-    } catch (e) { freeFail(ui, e); }
-    finally { if (job) job.terminate(); }
+    } catch (e) { if (job) job.terminate(); freeFail(ui, e); }
 }
 
 async function freeFromPhotos(files) {
@@ -550,8 +550,7 @@ async function freeFromPhotos(files) {
         for (const f of frames) job.add(f.blob);
         // photos may be in any order; EXIF gives the lens focal length
         await finishFreeJob(job, ui, { unordered: true, f0: fRatio || undefined });
-    } catch (e) { freeFail(ui, e); }
-    finally { if (job) job.terminate(); }
+    } catch (e) { if (job) job.terminate(); freeFail(ui, e); }
 }
 
 async function freeLive() {
@@ -624,8 +623,7 @@ async function freeLive() {
         job.opts.onProgress = (stage, p) => { if (stage === 'download') ui.set('download', p); else if (FREE_STAGES.includes(stage)) ui.set(stage, p); };
         job.opts.onAdded = () => { processed++; ui.set('mask', processed / Math.max(1, count), `${processed} / ${count}`); };
         try { await finishFreeJob(job, ui, {}); }
-        catch (e) { freeFail(ui, e); }
-        finally { job.terminate(); }
+        catch (e) { job.terminate(); freeFail(ui, e); }
     };
     try { await cap.start(); }
     catch (e) { hintEl.textContent = t('cameraError'); hintEl.className = 'hint warn'; }
@@ -709,7 +707,7 @@ function meshToScanModel(mesh) {
     return { positions, indices, colors };
 }
 
-async function viewerScreen({ mesh, name, kind, note, rebuild, saved, sizeEdit }) {
+async function viewerScreen({ mesh, name, kind, note, rebuild, saved, sizeEdit, job, viewBox }) {
     const [{ Viewer, arSupport, openQuickLook, startWebXR, startARLite }, { exportGLB, exportSTL, exportOBJ }] = await Promise.all([lazyViewer(), lazyExport()]);
     const node = el(`
     <div class="viewer-screen">
@@ -722,6 +720,18 @@ async function viewerScreen({ mesh, name, kind, note, rebuild, saved, sizeEdit }
       <div class="viewer-panel">
         <div class="stats mono" id="stats"></div>
         ${note ? `<div class="stats" id="note"></div>` : ''}
+        ${job && viewBox ? `<div class="box-edit"><button class="btn" id="boxBtn" data-i18n="adjustBox"></button><div class="box-panel" id="boxPanel" hidden>
+          <p class="muted small" data-i18n="boxHelp"></p>
+          <div class="sliders">
+            <label data-i18n="boxFloor"></label><input type="range" data-k="z0" min="-0.3" max="0.6" step="0.01" value="0">
+            <label data-i18n="boxTop"></label><input type="range" data-k="z1" min="-0.6" max="0.3" step="0.01" value="0">
+            <label data-i18n="boxLeft"></label><input type="range" data-k="x0" min="-0.3" max="0.45" step="0.01" value="0">
+            <label data-i18n="boxRight"></label><input type="range" data-k="x1" min="-0.45" max="0.3" step="0.01" value="0">
+            <label data-i18n="boxFront"></label><input type="range" data-k="y0" min="-0.3" max="0.45" step="0.01" value="0">
+            <label data-i18n="boxBack"></label><input type="range" data-k="y1" min="-0.45" max="0.3" step="0.01" value="0">
+          </div>
+          <div class="btn-row"><button class="btn primary" id="boxApply" data-i18n="boxRebuild"></button><button class="btn ghost" id="boxReset" data-i18n="boxResetLbl"></button></div>
+        </div></div>` : ''}
         ${sizeEdit ? `<div class="size-row"><label for="len" data-i18n="realLength"></label><div class="size-in"><input id="len" type="number" inputmode="decimal" min="1" max="500" step="0.1"><button class="btn" id="applyLen" data-i18n="applySize"></button></div><p class="muted small" data-i18n="freeSizeNote"></p></div>` : ''}
         ${rebuild ? `<div class="sliders"><label for="thick" data-i18n="thickness"></label><input type="range" id="thick" min="0.1" max="0.9" step="0.05" value="${rebuild.params.thickness}"></div>` : ''}
         <div class="btn-row">
@@ -750,8 +760,54 @@ async function viewerScreen({ mesh, name, kind, note, rebuild, saved, sizeEdit }
         });
     };
     setMesh(mesh);
-    screenCleanup = () => viewer.dispose();
+    screenCleanup = () => { viewer.dispose(); if (job) job.terminate(); };
 
+    let userScale = 1; // "real length" rescales the shown model; the box works in scan units
+    if (job && viewBox) {
+        const { Box3, Box3Helper, Vector3, Color } = await import('three');
+        let base = { ...viewBox };
+        const panel = node.querySelector('#boxPanel');
+        const sliders = [...panel.querySelectorAll('input[type=range]')];
+        const helper = new Box3Helper(new Box3(), new Color(0xff8a3d));
+        helper.visible = false;
+        viewer.scene.add(helper);
+        const boxNow = () => {
+            const b = { ...base }, sx = base.x1 - base.x0, sy = base.y1 - base.y0, sz = base.z1 - base.z0;
+            for (const el of sliders) {
+                const k = el.dataset.k, v = +el.value;
+                b[k] += v * (k[0] === 'x' ? sx : k[0] === 'y' ? sy : sz);
+            }
+            return b;
+        };
+        const draw = () => {
+            const b = boxNow(), k = userScale / 1000;
+            // scan frame (mm, z up) → viewer (metres, y up, −y forward)
+            helper.box.set(new Vector3(b.x0 * k, b.z0 * k, -b.y1 * k), new Vector3(b.x1 * k, b.z1 * k, -b.y0 * k));
+        };
+        node.querySelector('#boxBtn').onclick = () => {
+            panel.hidden = !panel.hidden; helper.visible = !panel.hidden; viewer.controls.autoRotate = panel.hidden;
+            node.querySelector('.viewer-panel').classList.toggle('boxing', !panel.hidden);
+            viewer.resize && viewer.resize();
+            draw();
+        };
+        sliders.forEach(el => { el.oninput = draw; });
+        node.querySelector('#boxReset').onclick = () => { sliders.forEach(el => { el.value = 0; }); draw(); };
+        node.querySelector('#boxApply').onclick = async () => {
+            const btn = node.querySelector('#boxApply');
+            btn.disabled = true; btn.textContent = t('boxWorking');
+            try {
+                const r = await job.rebuild(boxNow());
+                const m = await freeMesh(r);
+                if (userScale !== 1) m.geometry.scale(userScale, userScale, userScale);
+                setMesh(m);
+                base = { ...r.info.viewBox };
+                sliders.forEach(el => { el.value = 0; });
+                draw();
+                toast(t('boxDone'));
+            } catch (e) { toast(e.message); }
+            btn.disabled = false; btn.textContent = t('boxRebuild');
+        };
+    }
     if (sizeEdit) {
         node.querySelector('#applyLen').onclick = () => {
             const cm = parseFloat(String(node.querySelector('#len').value).replace(',', '.'));
@@ -762,6 +818,7 @@ async function viewerScreen({ mesh, name, kind, note, rebuild, saved, sizeEdit }
             if (!(longest > 0)) return;
             const k = cm / 100 / longest;
             g.scale(k, k, k);
+            userScale *= k;
             g.computeBoundingBox(); g.computeBoundingSphere();
             setMesh(current);
             toast(t('sizeApplied'));

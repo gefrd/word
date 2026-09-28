@@ -74,6 +74,15 @@ export class MarkerlessJob {
         });
     }
 
+    /** Carve again inside a box (viewer's model frame, mm, z up) — no new capture. */
+    rebuild(box) {
+        if (this.fatal) this.fatal = null;
+        return new Promise((resolve, reject) => {
+            this.pending = { resolve, reject };
+            this.worker.postMessage({ cmd: 'rebuild', box });
+        });
+    }
+
     terminate() {
         this.worker.terminate();
         this.blobs = [];

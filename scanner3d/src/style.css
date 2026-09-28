@@ -108,6 +108,13 @@ label.check input { width: 18px; height: 18px; accent-color: var(--accent); }
 details.how { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 details.how summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--accent); min-height: 32px; display: flex; align-items: center; }
 details.how .tips { margin: 6px 0 8px; }
+.box-edit { display: flex; flex-direction: column; gap: 8px; }
+.viewer-panel { max-height: 58vh; overflow-y: auto; }
+/* while trimming the box: only the box controls, the model stays visible */
+.viewer-panel.boxing > :not(.box-edit):not(#stats) { display: none; }
+.viewer-panel.boxing .sliders { gap: 2px 12px; }
+.viewer-panel.boxing .box-panel .muted { display: none; }
+.box-panel { display: flex; flex-direction: column; gap: 10px; }
 .size-row { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
 .size-in { display: flex; gap: 8px; }
 .size-in input { flex: 1; min-width: 0; min-height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); padding: 8px 10px; font-size: 16px; }

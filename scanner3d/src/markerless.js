@@ -194,10 +194,21 @@ export function toObjectFrame(sfm, opts = {}) {
     let up = uAvg;
     const covN = coverage(n);
     if (covN > 150 && planar < 0.5 && dot(n, uAvg) > 0.5) up = norm([n[0] * 2 + uAvg[0], n[1] * 2 + uAvg[1], n[2] * 2 + uAvg[2]]);
-    // The first registered camera looks along +Y (it sees the "front").
+    // Horizontal axes along the object itself: X = its long side (principal
+    // axis of the sparse points seen from above), so the model — and the
+    // box around it — sit straight. The first camera decides the sign.
+    const b1 = norm(Math.abs(up[0]) < 0.9 ? cross(up, [1, 0, 0]) : cross(up, [0, 1, 0])), b2 = cross(up, b1);
+    let sxx = 0, syy = 0, sxy = 0;
+    for (const p of P) {
+        const d = [p[0] - O[0], p[1] - O[1], p[2] - O[2]];
+        const a = dot(d, b1), b = dot(d, b2);
+        sxx += a * a; syy += b * b; sxy += a * b;
+    }
+    const ang = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+    let ex = norm([b1[0] * Math.cos(ang) + b2[0] * Math.sin(ang), b1[1] * Math.cos(ang) + b2[1] * Math.sin(ang), b1[2] * Math.cos(ang) + b2[2] * Math.sin(ang)]);
+    let ey = cross(up, ex);
     const d0 = [C[0][0] - O[0], C[0][1] - O[1], C[0][2] - O[2]];
-    const h0 = norm([d0[0] - dot(d0, up) * up[0], d0[1] - dot(d0, up) * up[1], d0[2] - dot(d0, up) * up[2]]);
-    const ey = h0.map(x => -x), ex = cross(ey, up);
+    if (dot(d0, ey) > 0) { ex = ex.map(x => -x); ey = ey.map(x => -x); } // first camera sits in front (−Y)
     // rows of Rw: object axes in SfM coordinates
     const Rw = [ex[0], ex[1], ex[2], ey[0], ey[1], ey[2], up[0], up[1], up[2]];
     const dMed = median(C.map(c => Math.hypot(c[0] - O[0], c[1] - O[1], c[2] - O[2])));
@@ -228,6 +239,14 @@ export function toObjectFrame(sfm, opts = {}) {
         poses, points: pts, scale: s, Rw, O,
         info: { coverageDeg: coverage(up), turnDeg: turn, turnSignedDeg: signed, planarity: planar, elevMin: Math.min(...elev), elevMax: Math.max(...elev), camDist },
     };
+}
+
+/** Box hugging the carved object (model frame), floor kept at 0. */
+function fitBox(grid, voxel) {
+    const b = occupiedBox(grid);
+    if (!b) return null;
+    const m = 1.5 * voxel;
+    return { x0: b.min[0] - m, x1: b.max[0] + m, y0: b.min[1] - m, y1: b.max[1] + m, z0: 0, z1: b.max[2] + m };
 }
 
 /** Shift the object frame by `d` (new = old − d). */
@@ -374,14 +393,28 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
         log(`ground coarse ${g0 && g0.pcts} → medium ${g1 && g1.pcts} (${g1 ? g1.n : 0} rays) → ${ground.toFixed(1)}`);
     }
     log(`coarse box ${cbox.min.map(v => v.toFixed(0))} … ${cbox.max.map(v => v.toFixed(0))}, lowest sparse point ${pct(P.map(p => p[2]), 0.02).toFixed(1)}`);
-    // --- 4. fine carving in the tight box, ground at z = 0
     const cv = coarse.voxel;
-    const shift = [(cbox.min[0] + cbox.max[0]) / 2, (cbox.min[1] + cbox.max[1]) / 2, ground];
+    const box = { x0: cbox.min[0] - 2 * cv, x1: cbox.max[0] + 2 * cv, y0: cbox.min[1] - 2 * cv, y1: cbox.max[1] + 2 * cv, z0: ground, z1: cbox.max[2] + 2 * cv };
+    const scene = { frames, width, height, getFrame, opts, report, log, reg, labels, sfm, obj, t0 };
+    return carveInBox(scene, box);
+}
+
+/**
+ * Fine carving + surface + colours + texture inside a box (object frame, mm;
+ * z0 is the floor). Called once automatically and again whenever the user
+ * adjusts the box ("the field" around the object): cameras and masks are
+ * reused, so this is quick.
+ */
+export async function carveInBox(scene, box) {
+    const { frames, width, height, getFrame, opts, report, log, reg, labels, sfm, obj } = scene;
+    const t0 = Date.now();
+    // --- 4. fine carving in the box, floor at z = 0
+    const shift = [(box.x0 + box.x1) / 2, (box.y0 + box.y1) / 2, box.z0];
     const poses = shiftPoses(obj.poses, shift);
-    const hx = (cbox.max[0] - cbox.min[0]) / 2 + 2 * cv, hy = (cbox.max[1] - cbox.min[1]) / 2 + 2 * cv;
-    const top = cbox.max[2] - ground + 2 * cv;
+    const hx = (box.x1 - box.x0) / 2, hy = (box.y1 - box.y0) / 2, top = box.z1 - box.z0;
     const bounds = { x0: -hx, x1: hx, y0: -hy, y1: hy, z0: 0, z1: top };
     const voxel = Math.max(2 * hx, 2 * hy, top) / (opts.gridRes || 128);
+    const ground = box.z0;
     const regPoses = reg.map(i => poses[i]);
     // sparse points in the final frame, with the frames that saw them
     const ptsFinal = obj.points.map(p => [p[0] - shift[0], p[1] - shift[1], p[2] - shift[2]]);
@@ -453,7 +486,7 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
     return {
         ...out, textured,
         poses, registered: reg, f: sfm.f,
-        info: { ...obj.info, ...sfm.stats, refine: refineInfo, ground, voxel, size: [2 * hx, 2 * hy, top], scale: obj.scale, shift },
-        sfm, obj,
+        info: { ...obj.info, ...sfm.stats, refine: refineInfo, ground, voxel, size: [2 * hx, 2 * hy, top], scale: obj.scale, shift, box: { ...box }, fitBox: fitBox(out.grid, voxel) },
+        sfm, obj, scene,
     };
 }
