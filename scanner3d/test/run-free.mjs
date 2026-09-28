@@ -27,7 +27,7 @@ const timer = setInterval(sample, 500);
 const t0 = Date.now();
 const res = await page.evaluate((o) => window.runFree(o), {
     mode, n, masks, profile, maskEval: process.argv.includes('--maskEval'), gtPoseCheck: process.argv.includes('--gtPoses'), groundCheck: process.argv.includes('--groundCheck'),
-    keepMesh: process.argv.includes('--mesh'), render: arg('loops') ? { loops: arg('loops').split(',').map(Number) } : {}, sfm: { debug: process.argv.includes('--debug'), ...JSON.parse(arg('sfm', '{}')) }, similarK: +arg('similarK', 2),
+    keepMesh: process.argv.includes('--mesh'), render: arg('loops') ? { loops: arg('loops').split(',').map(Number) } : {}, sfm: { debug: process.argv.includes('--debug'), ...JSON.parse(arg('sfm', '{}')) }, similarK: +arg('similarK', 2), depth: process.argv.includes('--depth'), refine: !process.argv.includes('--norefine'), colour: !process.argv.includes('--nocolour'), colourT: +arg('colourT', 24), trueFit: process.argv.includes('--trueFit'),
 });
 clearInterval(timer);
 const r = (x, d = 0) => (x == null ? '-' : (+x).toFixed(d));
@@ -43,8 +43,10 @@ if (res.pose) {
     console.log(`focal est ${r(res.fEst, 1)} vs true ${res.fGT} (${r((res.fEst / res.fGT - 1) * 100, 1)} %); scale est/true ${r(res.pose.scale, 3)}`);
     console.log(`ground error ${r(res.groundErrMm, 1)} mm (+ = model floor too low), up-axis error ${r(res.upErrDeg, 2)}°`);
     console.log(`IoU ${r(res.iou.iou, 3)}  extra ${r(res.iou.extraFrac, 3)}  missing ${r(res.iou.missingFrac, 3)}  verts ${res.verts}`);
+    if (res.hollow != null) console.log(`mug inside left empty: ${(res.hollow * 100).toFixed(0)} %`);
     console.log(`shape IoU (size fitted ×${r(res.iouShape.scale, 2)}): ${r(res.iouShape.iou, 3)}`);
 }
+if (res.hollowGT != null) console.log(`true poses: mug inside left empty ${(res.hollowGT * 100).toFixed(0)} %`);
 if (res.iouGTPoses) console.log(`IoU with true poses (mask error only): ${r(res.iouGTPoses.iou, 3)} extra ${r(res.iouGTPoses.extraFrac, 3)} missing ${r(res.iouGTPoses.missingFrac, 3)}`);
 console.log(`peak renderer RSS ≈ ${r(peak)} MB`);
 fs.mkdirSync('test/out', { recursive: true });

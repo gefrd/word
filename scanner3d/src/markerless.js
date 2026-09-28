@@ -14,6 +14,7 @@ import { reconstructWithMasks, createCarver, FOREGROUND, BACKGROUND, UNKNOWN } f
 import { runSfM, camCenter, eigenSym } from './sfm.js';
 import { detectFeatures, rgbaToGray } from './features.js';
 import { maskStats, planMaskFixes, isStillCamera, staticPixels, smallGrey } from './maskfix.js';
+import { fitDepth, fitDepthToShape, depthCarve, erodeForeground, colourCarve, prepColourViews } from './refine.js';
 
 const mul3 = (A, B) => {
     const C = new Array(9);
@@ -30,9 +31,10 @@ const pct = (v, q) => { const s = Float64Array.from(v).sort(); return s.length ?
 
 export const PROFILES = {
     // featSide: long side of the images used for features and carving masks
-    low: { featSide: 560, segSide: 320, maxFeatures: 700, gridRes: 96, colorSide: 720 },
-    mid: { featSide: 640, segSide: 384, maxFeatures: 900, gridRes: 128, colorSide: 960 },
-    high: { featSide: 800, segSide: 448, maxFeatures: 1100, gridRes: 150, colorSide: 1280 },
+    // depthViews: frames that get an AI depth map (0 = off, saves memory/time)
+    low: { featSide: 560, segSide: 320, maxFeatures: 700, gridRes: 96, colorSide: 720, depthViews: 0, refineSide: 360 },
+    mid: { featSide: 640, segSide: 384, maxFeatures: 900, gridRes: 128, colorSide: 960, depthViews: 8, refineSide: 480 },
+    high: { featSide: 800, segSide: 448, maxFeatures: 1100, gridRes: 150, colorSide: 1280, depthViews: 10, refineSide: 560 },
 };
 
 /** Features of one frame, only where the object mask says "object". */
@@ -380,6 +382,51 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
     const bounds = { x0: -hx, x1: hx, y0: -hy, y1: hy, z0: 0, z1: top };
     const voxel = Math.max(2 * hx, 2 * hy, top) / (opts.gridRes || 128);
     const regPoses = reg.map(i => poses[i]);
+    // sparse points in the final frame, with the frames that saw them
+    const ptsFinal = obj.points.map(p => [p[0] - shift[0], p[1] - shift[1], p[2] - shift[2]]);
+    const refineInfo = {};
+    const refineGrid = async (grid) => {
+        const tR = Date.now();
+        const before = grid.occ.reduce((a, v) => a + v, 0);
+        // depth maps (only some frames have one)
+        const dviews = [];
+        for (const i of reg) {
+            const d = frames[i].depth;
+            if (!d) continue;
+            const seen = [];
+            sfm.points.forEach((P, q) => { for (let k = 0; k < P.obs.length; k += 2) if (P.obs[k] === i) { seen.push(ptsFinal[q]); break; } });
+            const v = { depth: d.depth, dW: d.dW, dH: d.dH, R: poses[i].R, t: poses[i].t, f: sfm.f, width, height, mask: erodeForeground(labels[i], width, height, 4) };
+            // two independent scale estimates must agree: from the sparse 3D
+            // points (unbiased, noisy) and from the carved shape (precise,
+            // but pulled by hollows); otherwise this depth map is not used
+            const fp = fitDepth(v, seen), fs = fitDepthToShape(grid, v, seen);
+            if (!fp || !fs) continue;
+            const ratio = fs.a / fp.a;
+            (refineInfo.depthAgree ||= []).push(+ratio.toFixed(2));
+            if (ratio < 0.8 || ratio > 1.25 || fs.spread > 0.05) continue;
+            v.fit = fs;
+            dviews.push(v);
+        }
+        if (dviews.length >= 3) {
+            refineInfo.depthViews = dviews.length;
+            refineInfo.depthSpread = +(dviews.reduce((a, v) => a + v.fit.spread, 0) / dviews.length).toFixed(4);
+            refineInfo.depthRemoved = depthCarve(grid, dviews, { minViews: 2, log });
+        }
+        // colour consistency
+        if (opts.colourRefine !== false) {
+            const side = opts.refineSide || 480;
+            const imgs = [];
+            for (const i of reg) imgs.push(await getFrame(i, side));
+            const col = prepColourViews(imgs, reg.map(i => ({ mask: labels[i], width, height })));
+            const views = reg.map((i, k) => ({ R: poses[i].R, t: poses[i].t, f: sfm.f * col[k].width / width, width: col[k].width, height: col[k].height, rgb: col[k].rgb, gain: col[k].gain }));
+            const r = colourCarve(grid, views, { threshold: opts.colourThreshold ?? 30, passes: opts.colourPasses ?? 8 });
+            Object.assign(refineInfo, { colourRemoved: r.removed, colourPasses: r.passes, colourStopped: r.stopped });
+        }
+        const after = grid.occ.reduce((a, v) => a + v, 0);
+        refineInfo.removedFrac = +(1 - after / Math.max(1, before)).toFixed(3);
+        refineInfo.ms = Date.now() - tR;
+        log(`refine: ${JSON.stringify(refineInfo)}`);
+    };
     const out = await reconstructWithMasks({
         count: reg.length,
         getFrame: (k, side) => getFrame(reg[k], side),
@@ -387,13 +434,13 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
         poses: regPoses, f: sfm.f, fullWidth: width, fullHeight: height,
     }, {
         bounds, voxel, bgFrac: opts.bgFrac ?? 0.08, keepFrac: 0.15, skipBg: 5, colorSide: opts.colorSide || 960,
-        smooth: opts.smooth ?? 4, onProgress: report,
+        smooth: opts.smooth ?? 4, onProgress: report, refineGrid: opts.refine === false ? null : refineGrid,
     });
     log(`fine grid voxel ${voxel.toFixed(2)} mm, total ${Date.now() - t0} ms`);
     return {
         ...out,
         poses, registered: reg, f: sfm.f,
-        info: { ...obj.info, ...sfm.stats, ground, voxel, size: [2 * hx, 2 * hy, top], scale: obj.scale, shift },
+        info: { ...obj.info, ...sfm.stats, refine: refineInfo, ground, voxel, size: [2 * hx, 2 * hy, top], scale: obj.scale, shift },
         sfm, obj,
     };
 }

@@ -17,7 +17,7 @@ export class MarkerlessJob {
         this.fatal = null;
         this.worker.onmessage = (e) => this.onMessage(e.data);
         this.worker.onerror = (e) => this.fail(new Error(e.message || 'Worker failed'));
-        this.worker.postMessage({ cmd: 'config', profile: opts.profile || 'mid', modelUrl: opts.modelUrl, wasmPaths: opts.wasmPaths });
+        this.worker.postMessage({ cmd: 'config', profile: opts.profile || 'mid', modelUrl: opts.modelUrl, depthUrl: opts.depthUrl, wasmPaths: opts.wasmPaths });
     }
 
     onMessage(m) {

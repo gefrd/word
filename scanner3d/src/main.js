@@ -100,7 +100,7 @@ async function home() {
         </div>
         <details class="how">
           <summary data-i18n="freeHow"></summary>
-          <ul class="tips small"><li data-i18n="freeTip1"></li><li data-i18n="freeTip2"></li><li data-i18n="freeTip3"></li><li data-i18n="freeTip4"></li><li data-i18n="freeTip5"></li></ul>
+          <ul class="tips small"><li data-i18n="freeTip1"></li><li data-i18n="freeTip2"></li><li data-i18n="freeTip3"></li><li data-i18n="freeTip4"></li><li data-i18n="freeTip5"></li><li data-i18n="freeTip6"></li></ul>
           <p class="muted small" data-i18n="freeModelNote"></p>
         </details>
       </section>
@@ -469,7 +469,7 @@ async function reconstructOnMainThread(job, onProgress) {
 // ---------------------------------------------------------------------
 // No-sheet 360° scan (AI masks + structure from motion, all on the phone)
 // ---------------------------------------------------------------------
-const FREE_STAGES = ['download', 'mask', 'match', 'pose', 'carve', 'mesh', 'color'];
+const FREE_STAGES = ['download', 'mask', 'depth', 'match', 'pose', 'carve', 'refine', 'mesh', 'color'];
 
 function startFreeJob(ui, expected) {
     let added = 0;

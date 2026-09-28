@@ -20,10 +20,10 @@ for (const [obj, mode, loops] of process.argv.includes('--quick') ? scenarios.sl
         posErr: g(/position err median ([\d.]+) mm/), rotErr: g(/rotation err median ([\d.]+)°/),
         focal: g(/focal est [\d.]+ vs true \d+ \(([-\d.]+) %\)/), ground: g(/ground error ([-\d.]+) mm/),
         iou: g(/^IoU ([\d.]+)/m), shape: g(/shape IoU \(size fitted[^)]*\): ([\d.]+)/), maskIoU: g(/mask IoU vs truth: mean ([\d.]+)/),
-        time: g(/reconstruct=(\d+)/), maskMs: g(/ mask=(\d+)/), mem: g(/RSS ≈ (\d+) MB/),
+        time: g(/reconstruct=(\d+)/), hollow: g(/mug inside left empty: (\d+) %/), refine: g(/removedFrac":([\d.]+)/), maskMs: g(/ mask=(\d+)/), mem: g(/RSS ≈ (\d+) MB/),
     });
     console.log(out.split('\n').filter(l => /^==|ERROR|IoU|registered |focal|ground e|times/.test(l)).join('\n'));
 }
-console.log('\n| scene | registered | cam err mm | rot err ° | focal err % | ground err mm | IoU | shape IoU | mask IoU | masks ms | recon ms | peak RSS MB |');
-console.log('|---|---|---|---|---|---|---|---|---|---|---|---|');
-for (const r of rows) console.log(`| ${r.scene} | ${r.reg} | ${r.posErr ?? '-'} | ${r.rotErr ?? '-'} | ${r.focal ?? '-'} | ${r.ground ?? '-'} | ${r.iou ?? '-'} | ${r.shape ?? '-'} | ${r.maskIoU ?? '-'} | ${r.maskMs ?? '-'} | ${r.time ?? '-'} | ${r.mem ?? '-'} |`);
+console.log('\n| scene | registered | refine removed | mug hollow empty % | cam err mm | rot err ° | focal err % | ground err mm | IoU | shape IoU | mask IoU | masks ms | recon ms | peak RSS MB |');
+console.log('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+for (const r of rows) console.log(`| ${r.scene} | ${r.reg} | ${r.refine ?? '-'} | ${r.hollow ?? '-'} | ${r.posErr ?? '-'} | ${r.rotErr ?? '-'} | ${r.focal ?? '-'} | ${r.ground ?? '-'} | ${r.iou ?? '-'} | ${r.shape ?? '-'} | ${r.maskIoU ?? '-'} | ${r.maskMs ?? '-'} | ${r.time ?? '-'} | ${r.mem ?? '-'} |`);

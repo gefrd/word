@@ -13,6 +13,7 @@
 //   { type: 'error', message, code? }
 
 import { loadRMBG, segmentObject, segmentCrop, releaseRMBG } from './rmbg.js';
+import { loadDepth, estimateDepth, releaseDepth } from './depth.js';
 import { frameFeatures, buildMarkerlessModel, objectThumb, fixMasks, PROFILES } from './markerless.js';
 
 let profile = PROFILES.mid, cfg = {};
@@ -87,15 +88,31 @@ async function solve(opts = {}) {
         maxFeatures: profile.maxFeatures,
         log: (m) => post({ type: 'log', message: m }),
     });
-    // The AI model is not needed any more: free its memory before carving.
-    if (opts.lowMemory) await releaseRMBG();
+    // The mask model is not needed any more: free its memory.
+    if (opts.lowMemory || profile.depthViews) await releaseRMBG();
+    // AI depth for a few frames spread around (helps carve hollows)
+    if (profile.depthViews && opts.depth !== false) {
+        try {
+            await loadDepth({ url: cfg.depthUrl, wasmPaths: cfg.wasmPaths, onProgress: (p) => post({ type: 'progress', stage: 'download', p }) });
+            const K = Math.min(profile.depthViews, list.length);
+            for (let k = 0; k < K; k++) {
+                const i = Math.floor((k + 0.5) * list.length / K);
+                const fr = await decode(list[i].index, list[i].blob, 0, size);
+                list[i].depth = await estimateDepth(fr.rgba, fw, fh, 364);
+                post({ type: 'progress', stage: 'depth', p: (k + 1) / K });
+            }
+        } catch (err) {
+            post({ type: 'log', message: 'depth skipped: ' + (err && err.message) }); // offline first run etc.: still works without
+        }
+        await releaseDepth();
+    }
     const { w, h } = size;
     const getFrame = async (i, side) => {
         const fr = await decode(list[i].index, list[i].blob, side);
         return { rgba: fr.rgba, width: fr.width, height: fr.height };
     };
     const out = await buildMarkerlessModel({ frames: list, width: w, height: h, getFrame }, {
-        gridRes: profile.gridRes, colorSide: profile.colorSide, similarK: opts.unordered ? 4 : 2,
+        gridRes: profile.gridRes, colorSide: profile.colorSide, refineSide: profile.refineSide, similarK: opts.unordered ? 4 : 2,
         sfm: { f0: opts.f0 ? opts.f0 * Math.max(w, h) : undefined },
         onProgress: (stage, p) => post({ type: 'progress', stage, p }),
         log: (m) => post({ type: 'log', message: m }),
@@ -109,7 +126,7 @@ self.onmessage = (e) => {
     const m = e.data;
     if (m.cmd === 'config') {
         profile = PROFILES[m.profile] || PROFILES.mid;
-        cfg = { modelUrl: m.modelUrl, wasmPaths: m.wasmPaths };
+        cfg = { modelUrl: m.modelUrl, depthUrl: m.depthUrl, wasmPaths: m.wasmPaths };
         // start the model download/compile right away
         queue = queue.then(() => ensureModel()).catch((err) => post({ type: 'error', message: err.message || String(err), code: 'MODEL' }));
         return;

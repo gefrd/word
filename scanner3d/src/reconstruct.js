@@ -702,5 +702,7 @@ export async function reconstructWithMasks({ count, getFrame, getMask, poses, f,
     let solidCount = 0;
     for (let i = 0; i < grid.occ.length; i++) solidCount += grid.occ[i];
     if (solidCount < 20) throw new Error('EMPTY_HULL');
+    // optional extra carving (depth maps, colour consistency) before meshing
+    if (opts.refineGrid) { report('refine', 0); await opts.refineGrid(grid); keepMainComponents(grid.occ, grid.nx, grid.ny, grid.nz, 0.15); }
     return meshAndColor(grid, { count, getFrame, poses, scaleF }, colorSide, opts, report);
 }

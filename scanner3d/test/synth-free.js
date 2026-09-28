@@ -105,6 +105,11 @@ if (OBJ === 'sneaker') {
     add(new THREE.CylinderGeometry(10, 10, 80, 16), mat('#e74c3c', 150), [55, 0, 75], [Math.PI / 2, 0, 0]);
     add(new THREE.CylinderGeometry(12, 12, 25, 16), mat('#2c3e50', 120), [-20, 0, 12.5], [Math.PI / 2, 0, 0]);
     add(new THREE.CylinderGeometry(12, 12, 25, 16), mat('#2c3e50', 120), [20, 0, 12.5], [Math.PI / 2, 0, 0]);
+} else if (OBJ === 'mug') {
+    // open cup (a real hollow) with a handle: Ø 80 mm, 95 mm tall
+    const prof = [[0, 0], [40, 0], [40, 95], [35, 95], [35, 7], [0, 7]].map(([r, z]) => new THREE.Vector2(r, z));
+    add(new THREE.LatheGeometry(prof, 64), mat('#e8c547', 380), [0, 0, 0], [Math.PI / 2, 0, 0]);
+    add(new THREE.TorusGeometry(22, 6, 16, 40, Math.PI), mat('#e8c547', 120), [38, 0, 50], [Math.PI / 2, 0, -Math.PI / 2]);
 } else {
     // bottle: body + shoulder + neck + cap, label texture
     add(new THREE.CylinderGeometry(38, 38, 150, 40), mat('#3aa655', 400, 1), [0, 0, 75], [Math.PI / 2, 0, 0]);
@@ -166,6 +171,30 @@ function maskURL() {
     return url;
 }
 
+// True depth of the object (mm along the view axis) packed in 24 bits;
+// background = 0. Used to imitate a monocular depth network in tests.
+const depthMat = new THREE.ShaderMaterial({
+    vertexShader: 'varying float vz; void main() { vec4 p = modelViewMatrix * vec4(position, 1.0); vz = -p.z; gl_Position = projectionMatrix * p; }',
+    fragmentShader: 'varying float vz; void main() { float v = clamp(vz / 4000.0, 0.0, 1.0) * 16777215.0; float r = floor(v / 65536.0); float g = floor((v - r * 65536.0) / 256.0); float b = v - r * 65536.0 - g * 256.0; gl_FragColor = vec4(r / 255.0, g / 255.0, b / 255.0, 1.0); }',
+});
+depthMat.toneMapped = false;
+function depthURL() {
+    const bg = scene.background, saved = [];
+    scene.background = new THREE.Color(0x000000);
+    scene.traverse(o => { if (o.isMesh || o.isLight) { saved.push([o, o.visible]); if (!objects.children.includes(o)) o.visible = false; } });
+    const mats = objects.children.map(o => o.material);
+    objects.children.forEach(o => { o.material = depthMat; o.visible = true; });
+    const oe = renderer.outputColorSpace; renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+    renderer.shadowMap.enabled = false;
+    renderer.render(scene, camera);
+    const url = renderer.domElement.toDataURL('image/png');
+    renderer.outputColorSpace = oe;
+    objects.children.forEach((o, i) => { o.material = mats[i]; });
+    saved.forEach(([o, v]) => { o.visible = v; });
+    scene.background = bg; renderer.shadowMap.enabled = !NOSHADOW;
+    return url;
+}
+
 function walkCamera(u, loops, opts) {
     // u in [0,1): position along the walk; loops at different heights
     const k = Math.min(loops.length - 1, Math.floor(u * loops.length));
@@ -196,7 +225,7 @@ window.renderWalk = (n = 30, opts = {}) => {
     for (let i = 0; i < n; i++) {
         walkCamera(i / n, opts.loops || [25, 45], opts);
         renderer.render(scene, camera);
-        out.push({ url: renderer.domElement.toDataURL('image/jpeg', 0.9), ...cvPose(), mask: opts.masks ? maskURL() : null });
+        out.push({ url: renderer.domElement.toDataURL('image/jpeg', 0.9), ...cvPose(), mask: opts.masks ? maskURL() : null, depth: opts.depthIdx && opts.depthIdx.includes(i) ? depthURL() : null });
     }
     return { frames: out, f: opts.f || 1000, width: W, height: H };
 };
@@ -208,7 +237,7 @@ window.renderTurntable = (n = 30, opts = {}) => {
     for (let i = 0; i < n; i++) {
         turntableCamera(i / n, opts);
         renderer.render(scene, camera);
-        out.push({ url: renderer.domElement.toDataURL('image/jpeg', 0.9), ...cvPose(), mask: opts.masks ? maskURL() : null });
+        out.push({ url: renderer.domElement.toDataURL('image/jpeg', 0.9), ...cvPose(), mask: opts.masks ? maskURL() : null, depth: opts.depthIdx && opts.depthIdx.includes(i) ? depthURL() : null });
     }
     objects.rotation.z = 0; stool.visible = false;
     return { frames: out, f: opts.f || 1000, width: W, height: H };

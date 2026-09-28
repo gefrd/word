@@ -121,3 +121,16 @@ export function gridIoUScaleFit(grid, align, gtInside, gtBox, step = 3) {
     }
     return best;
 }
+
+/** Fraction of a hollow (GT-frame test points) that the model left empty. */
+export function hollowEmpty(grid, align, pts) {
+    const { occ, nx, ny, nz, origin, voxel } = grid;
+    let empty = 0;
+    for (const p of pts) {
+        const q = mv(align.R, p).map((v, k) => align.s * v + align.t[k]);
+        const i = Math.floor((q[0] - origin[0]) / voxel), j = Math.floor((q[1] - origin[1]) / voxel), k = Math.floor((q[2] - origin[2]) / voxel);
+        const inside = i >= 0 && j >= 0 && k >= 0 && i < nx && j < ny && k < nz && occ[(k * ny + j) * nx + i] === 1;
+        if (!inside) empty++;
+    }
+    return empty / pts.length;
+}
