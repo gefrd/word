@@ -163,10 +163,23 @@ export function toObjectFrame(sfm, opts = {}) {
         return { R, t: [(RO[0] + c.t[0]) * s, (RO[1] + c.t[1]) * s, (RO[2] + c.t[2]) * s] };
     });
     const pts = P.map(toObj);
+    // how far the camera turned around the object, in capture order: a
+    // path that folds back and forth (sum ≫ coverage) is a wrong solution
+    let turn = 0, signed = 0;
+    {
+        let prevAz = null;
+        for (const i of reg) {
+            const c = camCenter(poses[i]);
+            const az = Math.atan2(c[1], c[0]);
+            if (prevAz !== null) { let d = az - prevAz; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; turn += Math.abs(d); signed += d; }
+            prevAz = az;
+        }
+        turn *= 180 / Math.PI; signed *= 180 / Math.PI;
+    }
     const elev = reg.map(i => { const c = camCenter(poses[i]); return Math.atan2(c[2], Math.hypot(c[0], c[1])) * 180 / Math.PI; });
     return {
         poses, points: pts, scale: s, Rw, O,
-        info: { coverageDeg: coverage(up), planarity: planar, elevMin: Math.min(...elev), elevMax: Math.max(...elev), camDist },
+        info: { coverageDeg: coverage(up), turnDeg: turn, turnSignedDeg: signed, planarity: planar, elevMin: Math.min(...elev), elevMax: Math.max(...elev), camDist },
     };
 }
 
@@ -261,12 +274,17 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
     const reg = [];
     sfm.cams.forEach((c, i) => { if (c) reg.push(i); });
     log(`sfm ${Date.now() - t0} ms`);
-    if (reg.length < Math.max(6, Math.ceil(frames.length * (opts.minRegisteredFrac ?? 0.5)))) {
+    log(`path: ${sfm.stats.jumps} jumps`);
+    if (reg.length < Math.max(6, Math.ceil(frames.length * (opts.minRegisteredFrac ?? 0.5))) || sfm.stats.jumps > (opts.maxJumps ?? 1)) {
         const e = new Error('POSES_FAILED'); e.stats = sfm.stats; throw e;
     }
     // --- 2. object frame
     const obj = toObjectFrame(sfm, opts);
-    log(`object frame: coverage ${obj.info.coverageDeg.toFixed(0)}°, elevation ${obj.info.elevMin.toFixed(0)}…${obj.info.elevMax.toFixed(0)}°, planarity ${obj.info.planarity.toFixed(2)}`);
+    // walking around (or turning the object) goes one way; a solution whose
+    // path keeps reversing is wrong
+    const fold = Math.abs(obj.info.turnSignedDeg) / Math.max(1, obj.info.turnDeg);
+    if (obj.info.turnDeg > 90 && fold < (opts.minOneWay ?? 0.75)) { const e = new Error('POSES_FAILED'); e.stats = { ...sfm.stats, fold }; throw e; }
+    log(`object frame: coverage ${obj.info.coverageDeg.toFixed(0)}°, path turns ${obj.info.turnDeg.toFixed(0)}° (${(100 * Math.abs(obj.info.turnSignedDeg) / Math.max(1, obj.info.turnDeg)).toFixed(0)} % one way), elevation ${obj.info.elevMin.toFixed(0)}…${obj.info.elevMax.toFixed(0)}°, planarity ${obj.info.planarity.toFixed(2)}`);
     const labels = frames.map(fr => labelMask(fr.prob, width, height, opts));
     const views = reg.map(i => ({ R: obj.poses[i].R, t: obj.poses[i].t, f: sfm.f, width, height, mask: labels[i] }));
 

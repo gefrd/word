@@ -1092,9 +1092,14 @@ export function runSfM(frames, width, height, userOpts = {}) {
     let done = 0;
     // sequential pairs first, then the look-alike ones
     pairs.sort((a, b) => (a[2] ? 1 : 0) - (b[2] ? 1 : 0));
+    // Ordered captures (video, live): look-alike pairs wait until the chain
+    // of neighbours is built — a symmetric object's two sides look alike
+    // and would tie the wrong frames together. Unordered photos need them now.
+    const deferred = [];
     for (const [i, j, kind] of pairs) {
         const key = i + ',' + j;
         if (seen.has(key)) continue;
+        if (kind === 'similar' && opts.similarFirst === false && Math.abs(i - j) > opts.window) { deferred.push([i, j]); continue; }
         seen.add(key);
         // a look-alike pair must show real parallax: symmetric sides of an
         // object "match" with almost none
@@ -1220,8 +1225,11 @@ export function runSfM(frames, width, height, userOpts = {}) {
     //    similar directions but were not matched yet; then retry failures.
     for (let round = 0; round < 2; round++) {
         const extra = loopClosureCandidates(S, opts);
+        // deferred look-alike pairs: to attach frames the chain missed (checked
+        // by registration itself), or pose-checked between placed frames
+        if (round === 0) for (const [i, j] of deferred) if (!S.cams[i] || !S.cams[j]) extra.push([i, j, 'similar']);
         let added = 0;
-        for (const [i, j] of extra) if (verifyPair(S, i, j, { ...opts, checkPoses: true })) added++;
+        for (const [i, j, kind] of extra) if (verifyPair(S, i, j, { ...opts, checkPoses: true, minParallaxDeg: kind ? 4 : 1 })) added++;
         if (!added && !S.failed?.size) break;
         if (added) {
             // rebuild tracks from all matches, keep cameras, re-triangulate
@@ -1243,12 +1251,25 @@ export function runSfM(frames, width, height, userOpts = {}) {
     filterObservations(S, opts.inlierPx * 0.75);
     ba = bundleAdjust(S, { iters: 15 });
     if (opts.optimizeF !== false && registeredCount(S) >= 8) ba = focalCheck(S, f0, ba, opts, log);
+    // Path sanity: in capture order the camera moves smoothly; big jumps
+    // between neighbouring frames mean part of the path is wrong.
+    const steps = [];
+    let prev = null;
+    for (let c = 0; c < N; c++) {
+        if (!S.cams[c]) continue;
+        const C = camCenter(S.cams[c]);
+        if (prev) steps.push(Math.hypot(C[0] - prev[0], C[1] - prev[1], C[2] - prev[2]));
+        prev = C;
+    }
+    const sortedSteps = [...steps].sort((x, y) => x - y);
+    const medStep = sortedSteps[sortedSteps.length >> 1] || 0;
+    const jumps = steps.filter(d => d > 4 * medStep).length;
     const npts = S.points.filter(p => p.X).length;
     log(`final: ${registeredCount(S)}/${N} cams, ${npts} points, rms ${ba.rms.toFixed(2)} px, f=${S.f.toFixed(1)} (${Date.now() - t0} ms)`);
     return {
         cams: S.cams, f: S.f, cx: S.cx, cy: S.cy,
         points: S.points.filter(p => p.X),
-        stats: { registered: registeredCount(S), total: N, points: npts, rms: ba.rms, pairs: S.pairMatches.size, ms: Date.now() - t0 },
+        stats: { registered: registeredCount(S), total: N, points: npts, rms: ba.rms, pairs: S.pairMatches.size, jumps, ms: Date.now() - t0 },
     };
 }
 
