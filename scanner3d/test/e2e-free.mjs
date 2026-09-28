@@ -7,7 +7,7 @@
 import { chromium } from 'playwright-core'; import fs from 'fs'; import path from 'path'; import { execSync } from 'child_process';
 const arg = (k, d) => process.argv.find(a => a.startsWith(`--${k}=`))?.split('=')[1] ?? d;
 const input = arg('input', 'video'), obj = arg('obj', 'sneaker'), mode = arg('mode', 'walk'), cpu = +arg('cpu', 1);
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', ...(process.argv.includes('--gpu') ? ['--enable-unsafe-webgpu'] : [])] });
 fs.mkdirSync('test/out', { recursive: true });
 
 // 1. make the input with the synthetic scene

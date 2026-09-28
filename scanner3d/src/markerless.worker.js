@@ -118,7 +118,7 @@ async function solve(opts = {}) {
         },
         // masks are final after this point: free the mask model on small phones
         afterMasks: async () => { if (opts.lowMemory) await releaseRMBG(); },
-        gridRes: profile.gridRes, colorSide: profile.colorSide, refineSide: profile.refineSide, refine: !!opts.refine, atlasSize: profile.atlasSize, textureSide: profile.textureSide, texture: opts.texture !== false, similarK: opts.unordered ? 4 : 2,
+        gridRes: profile.gridRes, colorSide: profile.colorSide, refineSide: profile.refineSide, refine: !!opts.refine, mvs: opts.mvs !== false, mvsSide: profile.mvsSide, mvsPlanes: profile.mvsPlanes, atlasSize: profile.atlasSize, textureSide: profile.textureSide, texture: opts.texture !== false, similarK: opts.unordered ? 4 : 2,
         sfm: { f0: opts.f0 ? opts.f0 * Math.max(w, h) : undefined },
         onProgress: (stage, p) => post({ type: 'progress', stage, p }),
         log: (m) => post({ type: 'log', message: m }),

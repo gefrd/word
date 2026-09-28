@@ -34,9 +34,9 @@ const pct = (v, q) => { const s = Float64Array.from(v).sort(); return s.length ?
 export const PROFILES = {
     // featSide: long side of the images used for features and carving masks
     // depthViews: frames that get an AI depth map (0 = off, saves memory/time)
-    low: { featSide: 560, segSide: 320, maxFeatures: 700, gridRes: 96, colorSide: 720, depthViews: 0, refineSide: 360, atlasSize: 1024, textureSide: 960 },
-    mid: { featSide: 640, segSide: 384, maxFeatures: 900, gridRes: 128, colorSide: 960, depthViews: 8, refineSide: 480, atlasSize: 2048, textureSide: 1280 },
-    high: { featSide: 800, segSide: 448, maxFeatures: 1100, gridRes: 150, colorSide: 1280, depthViews: 10, refineSide: 560, atlasSize: 2048, textureSide: 1280 },
+    low: { featSide: 560, segSide: 320, maxFeatures: 700, gridRes: 96, colorSide: 720, depthViews: 0, refineSide: 360, atlasSize: 1024, textureSide: 960, mvsSide: 240, mvsPlanes: 56 },
+    mid: { featSide: 640, segSide: 384, maxFeatures: 900, gridRes: 128, colorSide: 960, depthViews: 8, refineSide: 480, atlasSize: 2048, textureSide: 1280, mvsSide: 320, mvsPlanes: 72 },
+    high: { featSide: 800, segSide: 448, maxFeatures: 1100, gridRes: 150, colorSide: 1280, depthViews: 10, refineSide: 560, atlasSize: 2048, textureSide: 1280, mvsSide: 400, mvsPlanes: 88 },
 };
 
 /** Features of one frame, only where the object mask says "object". */
@@ -631,7 +631,12 @@ export async function carveInBox(scene, box) {
             refineInfo.depthRemoved = depthCarve(grid, dviews, { minViews: 2, log });
         }
         // dense depth on the GPU (plane sweep) → carve what lies in front of it
-        if (opts.mvs && await gpuAvailable()) {
+        if (opts.mvs && scene.mvsCache) {
+            // box rebuild: the depth maps don't depend on the box — reuse them
+            const dv = scene.mvsCache.map(d => ({ ...d, R: poses[d.frame].R, t: poses[d.frame].t }));
+            refineInfo.mvsViews = dv.length;
+            refineInfo.mvsRemoved = dv.length >= 2 ? depthCarve(grid, dv, { minViews: opts.mvsMinViews ?? 2 }) : 0;
+        } else if (opts.mvs && await gpuAvailable()) {
             const tm = Date.now();
             const side = opts.mvsSide || 320;
             const mv = [], useReg = reg;
@@ -645,8 +650,10 @@ export async function carveInBox(scene, box) {
             const ranges = mv.map(v => depthRange(grid, v, width, height));
             const maps = [];
             const step = Math.max(1, Math.ceil(mv.length / (opts.mvsViews || mv.length)));
+            // time budget: a slow GPU must not make the scan take forever
+            const budget = opts.mvsBudgetMs ?? 45000, t1 = Date.now();
             for (let k = 0; k < mv.length; k++) {
-                if (k % step || nbrs[k].length < 2) { maps.push(null); continue; }
+                if (k % step || nbrs[k].length < 2 || Date.now() - t1 > budget) { maps.push(null); continue; }
                 const m = await planeSweep(mv[k], nbrs[k].map(j => mv[j]), ranges[k], { planes: opts.mvsPlanes || 80 });
                 maps.push(m);
                 if (opts.debugMvs) {
@@ -667,9 +674,10 @@ export async function carveInBox(scene, box) {
                 for (let q = 0; q < d.length; q++) if (d[q] > 0) { inv[q] = 1 / d[q]; n++; }
                 if (n < 50) return;
                 const i = useReg[k];
-                dv.push({ depth: inv, dW: mv[k].width, dH: mv[k].height, R: mv[k].R, t: mv[k].t, f: sfm.f, width, height, mask: erodeForeground(labels[i], width, height, 3), fit: { a: 1, b: 0, spread: 0.004 } });
+                dv.push({ frame: i, depth: inv, dW: mv[k].width, dH: mv[k].height, R: mv[k].R, t: mv[k].t, f: sfm.f, width, height, mask: erodeForeground(labels[i], width, height, 3), fit: { a: 1, b: 0, spread: 0.004 } });
             });
             refineInfo.mvsViews = dv.length;
+            scene.mvsCache = dv;
             refineInfo.mvsRemoved = dv.length >= 2 ? depthCarve(grid, dv, { minViews: opts.mvsMinViews ?? 2, log: opts.debugMvs ? log : null }) : 0;
             refineInfo.mvsMs = Date.now() - tm;
         }
