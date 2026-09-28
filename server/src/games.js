@@ -18,6 +18,7 @@
 
 import * as igisoro from '../../games/igisoro/engine.js';
 import * as ludo from '../../games/ludo/engine.js';
+import * as draughts from '../../games/draughts/engine.js';
 
 const DRAW = -1;
 
@@ -67,6 +68,28 @@ export const GAMES = {
         reason: () => 'finished',
         botMove: (state, level, rng) => ludo.chooseBotAction(state, level, rng),
         nextFirst: (prev, seats) => seats[(seats.indexOf(prev) + 1) % seats.length],
+    },
+
+    draughts: {
+        turnMs: 60_000,
+        botDelayMs: 900,
+        maxTimeouts: 2,
+        maxSeats: 2,
+        seatOrder: () => [0, 1],
+        normalizeRules: draughts.normalizeRules,
+        normalizeOptions: () => ({ players: 2 }),
+        // firstPlayer gets White; rematches swap colours.
+        create: ({ rules, firstPlayer }) => draughts.createGame({ rules, firstPlayer }),
+        // Phones send { move: { path: [from, ..., to] } }; the engine finds the captures.
+        parseMove: (msg) => draughts.parseMove(msg.move),
+        isLegal: (state, move) => draughts.isLegalMove(state, move),
+        apply: (state, move) => draughts.applyMove(state, move),
+        turn: (state) => state.turn,
+        counter: (state) => state.moveCount,
+        winner: (state) => state.winner,
+        reason: (state) => state.reason || 'no_moves',
+        botMove: (state, level, rng) => draughts.chooseBotMove(state, level, rng),
+        nextFirst: (prev) => 1 - prev,
     },
 };
 
