@@ -6,7 +6,7 @@ import { chromium } from 'playwright-core'; import fs from 'fs'; import { execSy
 const arg = (k, d) => process.argv.find(a => a.startsWith(`--${k}=`))?.split('=')[1] ?? d;
 const mode = arg('mode', 'walk'), obj = arg('obj', 'sneaker'), masks = arg('masks', 'rmbg'), n = +arg('n', 30);
 const throttle = +arg('throttle', 1), profile = arg('profile', 'mid');
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', ...(process.argv.includes('--gpu') ? ['--enable-unsafe-webgpu'] : [])] });
 const page = await browser.newPage();
 page.on('pageerror', e => console.log('pageerror', e.message));
 page.on('console', m => (m.type() === 'error' || m.type() === 'warning') && console.log('console', m.text().slice(0, 300)));
@@ -27,7 +27,7 @@ const timer = setInterval(sample, 500);
 const t0 = Date.now();
 const res = await page.evaluate((o) => window.runFree(o), {
     mode, n, masks, profile, maskEval: process.argv.includes('--maskEval'), gtPoseCheck: process.argv.includes('--gtPoses'), groundCheck: process.argv.includes('--groundCheck'),
-    keepMesh: process.argv.includes('--mesh'), render: arg('loops') ? { loops: arg('loops').split(',').map(Number) } : {}, sfm: { debug: process.argv.includes('--debug'), ...JSON.parse(arg('sfm', '{}')) }, similarK: +arg('similarK', 2), depth: process.argv.includes('--depth'), refine: process.argv.includes('--refine'), colour: !process.argv.includes('--nocolour'), colourT: +arg('colourT', 24), trueFit: process.argv.includes('--trueFit'), texture: process.argv.includes('--texture'), field: !process.argv.includes('--nofield'), norecrop: process.argv.includes('--norecrop'),
+    keepMesh: process.argv.includes('--mesh'), render: arg('loops') ? { loops: arg('loops').split(',').map(Number) } : {}, sfm: { debug: process.argv.includes('--debug'), ...JSON.parse(arg('sfm', '{}')) }, similarK: +arg('similarK', 2), depth: process.argv.includes('--depth'), refine: process.argv.includes('--refine'), colour: !process.argv.includes('--nocolour'), colourT: +arg('colourT', 24), trueFit: process.argv.includes('--trueFit'), texture: process.argv.includes('--texture'), field: !process.argv.includes('--nofield'), norecrop: process.argv.includes('--norecrop'), mvs: process.argv.includes('--mvs'), mvsSide: +arg('mvsSide', 240), mvsPlanes: +arg('mvsPlanes', 64), mvsViews: +arg('mvsViews', 0) || undefined, mvsMinViews: +arg('mvsMinViews', 2),
 });
 clearInterval(timer);
 const r = (x, d = 0) => (x == null ? '-' : (+x).toFixed(d));

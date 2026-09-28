@@ -106,6 +106,8 @@ export function fitDepth(view, pts) {
 
 function sampleF(a, w, x, y) {
     const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, i = y0 * w + x0;
+    // 0 = "no depth here" (dense-stereo maps): never blend it in
+    if (!(a[i] > 0 && a[i + 1] > 0 && a[i + w] > 0 && a[i + w + 1] > 0)) return 0;
     return (a[i] * (1 - fx) + a[i + 1] * fx) * (1 - fy) + (a[i + w] * (1 - fx) + a[i + w + 1] * fx) * fy;
 }
 

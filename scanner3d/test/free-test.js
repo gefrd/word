@@ -125,7 +125,7 @@ window.runFree = async (o = {}) => {
     try {
         out = await buildMarkerlessModel({ frames, width: w, height: h, getFrame }, {
             gridRes: o.gridRes || prof.gridRes, colorSide: prof.colorSide, log: (m) => logs.push(m), sfm: o.sfm || {}, similarK: o.similarK ?? 2,
-            field: o.field, recrop: o.masks === 'gt' || o.norecrop ? null : async (i, box) => segmentCrop(await decode(data.frames[i].url, w, h), w, h, box, o.segSide || prof.segSide), refine: o.refine, colourRefine: o.colour, colourThreshold: o.colourT, texture: !!o.texture,
+            debugMvs: true, mvs: o.mvs, mvsMinViews: o.mvsMinViews, mvsSide: o.mvsSide, mvsPlanes: o.mvsPlanes, mvsViews: o.mvsViews, field: o.field, recrop: o.masks === 'gt' || o.norecrop ? null : async (i, box) => segmentCrop(await decode(data.frames[i].url, w, h), w, h, box, o.segSide || prof.segSide), refine: o.refine, colourRefine: o.colour, colourThreshold: o.colourT, texture: !!o.texture,
         });
     } catch (e) { err = e.message + (e.stats ? ' ' + JSON.stringify(e.stats) : ''); }
     T.reconstruct = t() - t0;

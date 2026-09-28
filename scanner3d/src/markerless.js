@@ -15,6 +15,7 @@ import { runSfM, camCenter, eigenSym } from './sfm.js';
 import { detectFeatures, rgbaToGray } from './features.js';
 import { maskStats, planMaskFixes, isStillCamera, staticPixels, smallGrey } from './maskfix.js';
 import { bakeTexture, viewGains } from './texture.js';
+import { gpuAvailable, planeSweep, pickNeighbours, consistencyFilter } from './mvs.js';
 import { fitDepth, fitDepthToShape, depthCarve, erodeForeground, colourCarve, prepColourViews } from './refine.js';
 
 const mul3 = (A, B) => {
@@ -240,6 +241,37 @@ export function toObjectFrame(sfm, opts = {}) {
         poses, points: pts, scale: s, Rw, O,
         info: { coverageDeg: coverage(up), turnDeg: turn, turnSignedDeg: signed, planarity: planar, elevMin: Math.min(...elev), elevMax: Math.max(...elev), camDist },
     };
+}
+
+/** Per-pixel depth range (near, far) of the carved shape in a view, where the mask says "object". */
+function depthRange(grid, v, maskW, maskH) {
+    const { occ, nx, ny, nz, origin, voxel } = grid, W = v.width, H = v.height;
+    const near = new Float32Array(W * H).fill(Infinity), far = new Float32Array(W * H);
+    const { R, t, f } = v;
+    for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+        if (!occ[(k * ny + j) * nx + i]) continue;
+        const X = origin[0] + (i + 0.5) * voxel, Y = origin[1] + (j + 0.5) * voxel, Z = origin[2] + (k + 0.5) * voxel;
+        const z = R[6] * X + R[7] * Y + R[8] * Z + t[2];
+        if (z <= 1) continue;
+        const u = Math.round(f * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / z + W / 2), w = Math.round(f * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / z + H / 2);
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const uu = u + dx, ww = w + dy;
+            if (uu < 0 || ww < 0 || uu >= W || ww >= H) continue;
+            const q = ww * W + uu;
+            if (z < near[q]) near[q] = z;
+            if (z > far[q]) far[q] = z;
+        }
+    }
+    const out = new Float32Array(W * H * 2);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const q = y * W + x;
+        if (!isFinite(near[q])) continue;
+        const mq = Math.min(maskH - 1, Math.floor((y + 0.5) * maskH / H)) * maskW + Math.min(maskW - 1, Math.floor((x + 0.5) * maskW / W));
+        if (v.label[mq] !== FOREGROUND) continue;
+        out[2 * q] = Math.max(1, near[q] - 2 * voxel);
+        out[2 * q + 1] = far[q] + voxel;
+    }
+    return out;
 }
 
 /** Box hugging the carved object (model frame), floor kept at 0. */
@@ -576,7 +608,7 @@ export async function carveInBox(scene, box) {
         const before = grid.occ.reduce((a, v) => a + v, 0);
         // depth maps (only some frames have one)
         const dviews = [];
-        for (const i of reg) {
+        for (const i of opts.refine ? reg : []) {
             const d = frames[i].depth;
             if (!d) continue;
             const seen = [];
@@ -598,8 +630,51 @@ export async function carveInBox(scene, box) {
             refineInfo.depthSpread = +(dviews.reduce((a, v) => a + v.fit.spread, 0) / dviews.length).toFixed(4);
             refineInfo.depthRemoved = depthCarve(grid, dviews, { minViews: 2, log });
         }
+        // dense depth on the GPU (plane sweep) → carve what lies in front of it
+        if (opts.mvs && await gpuAvailable()) {
+            const tm = Date.now();
+            const side = opts.mvsSide || 320;
+            const mv = [], useReg = reg;
+            for (const i of useReg) {
+                const fr = await getFrame(i, side);
+                const grey = new Float32Array(fr.width * fr.height);
+                for (let q = 0; q < grey.length; q++) grey[q] = (fr.rgba[4 * q] * 0.299 + fr.rgba[4 * q + 1] * 0.587 + fr.rgba[4 * q + 2] * 0.114) / 255;
+                mv.push({ R: poses[i].R, t: poses[i].t, f: sfm.f * fr.width / width, width: fr.width, height: fr.height, grey, label: labels[i] });
+            }
+            const nbrs = pickNeighbours(mv, [0, 0, top / 2], 4);
+            const ranges = mv.map(v => depthRange(grid, v, width, height));
+            const maps = [];
+            const step = Math.max(1, Math.ceil(mv.length / (opts.mvsViews || mv.length)));
+            for (let k = 0; k < mv.length; k++) {
+                if (k % step || nbrs[k].length < 2) { maps.push(null); continue; }
+                const m = await planeSweep(mv[k], nbrs[k].map(j => mv[j]), ranges[k], { planes: opts.mvsPlanes || 80 });
+                maps.push(m);
+                if (opts.debugMvs) {
+                    let nr = 0, nd = 0, cs = [];
+                    for (let q = 0; q < m.depth.length; q++) { if (ranges[k][2 * q] > 0) nr++; if (m.depth[q] > 0) { nd++; cs.push(m.cost[q]); } }
+                    cs.sort((a, b) => a - b);
+                    log(`mvs view ${k}: nbrs ${nbrs[k].length}, in range ${nr}, depth ${nd}, cost median ${cs[cs.length >> 1]?.toFixed(3)}`);
+                }
+                report('refine', (k + 1) / mv.length * 0.8);
+            }
+            // views without their own map still help check the others
+            const good = consistencyFilter(maps.map((m, k) => m || null), mv, nbrs, { minAgree: 1 });
+            const dv = [];
+            good.forEach((d, k) => {
+                if (!d) return;
+                const inv = new Float32Array(d.length);
+                let n = 0;
+                for (let q = 0; q < d.length; q++) if (d[q] > 0) { inv[q] = 1 / d[q]; n++; }
+                if (n < 50) return;
+                const i = useReg[k];
+                dv.push({ depth: inv, dW: mv[k].width, dH: mv[k].height, R: mv[k].R, t: mv[k].t, f: sfm.f, width, height, mask: erodeForeground(labels[i], width, height, 3), fit: { a: 1, b: 0, spread: 0.004 } });
+            });
+            refineInfo.mvsViews = dv.length;
+            refineInfo.mvsRemoved = dv.length >= 2 ? depthCarve(grid, dv, { minViews: opts.mvsMinViews ?? 2, log: opts.debugMvs ? log : null }) : 0;
+            refineInfo.mvsMs = Date.now() - tm;
+        }
         // colour consistency
-        if (opts.colourRefine !== false) {
+        if (opts.refine && opts.colourRefine !== false) {
             const side = opts.refineSide || 480;
             const imgs = [];
             for (const i of reg) imgs.push(await getFrame(i, side));
@@ -620,7 +695,7 @@ export async function carveInBox(scene, box) {
         poses: regPoses, f: sfm.f, fullWidth: width, fullHeight: height,
     }, {
         bounds, voxel, bgFrac: opts.bgFrac ?? 0.08, keepFrac: 0.15, skipBg: 5, colorSide: opts.colorSide || 960,
-        smooth: opts.smooth ?? 4, onProgress: report, refineGrid: opts.refine ? refineGrid : null,
+        smooth: opts.smooth ?? 4, onProgress: report, refineGrid: opts.refine || opts.mvs ? refineGrid : null,
     });
     // photo texture (sharp colours instead of one colour per vertex)
     let textured = null;
