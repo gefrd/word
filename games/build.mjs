@@ -12,6 +12,7 @@ export const PAGES = {
     ludo: '../ludo.html',
     draughts: '../draughts.html',
     durak: '../durak.html',
+    connect4: '../connect-four.html',
 };
 
 export function inlineEngine(html, engine) {
