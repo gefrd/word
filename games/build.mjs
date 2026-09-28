@@ -14,6 +14,7 @@ export const PAGES = {
     durak: '../durak.html',
     connect4: '../connect-four.html',
     uno: '../uno.html',
+    battleship: '../battleship.html',
 };
 
 export function inlineEngine(html, engine) {

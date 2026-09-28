@@ -22,6 +22,7 @@ import * as draughts from '../../games/draughts/engine.js';
 import * as durak from '../../games/durak/engine.js';
 import * as connect4 from '../../games/connect4/engine.js';
 import * as uno from '../../games/uno/engine.js';
+import * as battleship from '../../games/battleship/engine.js';
 
 const DRAW = -1;
 
@@ -79,6 +80,8 @@ export const GAMES = {
 
     connect4: {
         turnMs: 30_000,
+    battleship: {
+        turnMs: 45_000,         // also the time to place your fleet
         botDelayMs: 900,
         maxTimeouts: 2,
         maxSeats: 2,
@@ -176,6 +179,31 @@ export const GAMES = {
         // Cards are secret: each phone gets only its own hand.
         viewFor: (state, seat) => uno.viewFor(state, seat),
         viewMove: (move, seat) => ({ ...move, events: uno.viewEvents(move.events, seat) }),
+        normalizeRules: battleship.normalizeRules,
+        normalizeOptions: () => ({ players: 2 }),
+        create: ({ rules, firstPlayer }) => battleship.createGame({ rules, firstPlayer }),
+        parseMove: (msg) => {
+            const m = msg.move;
+            if (!m || typeof m !== 'object') return null;
+            if (m.type === 'fire' && Number.isInteger(m.cell)) return { type: 'fire', cell: m.cell };
+            if (m.type === 'place' && Array.isArray(m.ships) && m.ships.length <= 10) {
+                const ships = m.ships.map((s) => (s && typeof s === 'object' ? { x: s.x, y: s.y, h: s.h } : null));
+                return { type: 'place', ships };
+            }
+            return null;
+        },
+        isLegal: (state, move) => battleship.isLegalMove(state, move),
+        apply: (state, move) => battleship.applyMove(state, move),
+        turn: (state) => state.turn,
+        counter: (state) => state.moveCount,
+        winner: (state) => state.winner,
+        reason: () => 'fleet_sunk',
+        botMove: (state, level, rng) => battleship.chooseBotMove(state, level, rng),
+        nextFirst: (prev) => 1 - prev,
+        // Ships are secret: each phone gets its own fleet and only the sunk
+        // enemy ships, and never sees the other player's placement move.
+        viewFor: (state, seat) => battleship.viewFor(state, seat),
+        viewMove: (move, seat) => battleship.viewMove(move, seat),
     },
 };
 
