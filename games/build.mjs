@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 export const PAGES = {
     igisoro: '../igisoro.html',
     ludo: '../ludo.html',
+    uno: '../uno.html',
 };
 
 export function inlineEngine(html, engine) {

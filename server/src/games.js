@@ -18,6 +18,7 @@
 
 import * as igisoro from '../../games/igisoro/engine.js';
 import * as ludo from '../../games/ludo/engine.js';
+import * as uno from '../../games/uno/engine.js';
 
 const DRAW = -1;
 
@@ -67,6 +68,39 @@ export const GAMES = {
         reason: () => 'finished',
         botMove: (state, level, rng) => ludo.chooseBotAction(state, level, rng),
         nextFirst: (prev, seats) => seats[(seats.indexOf(prev) + 1) % seats.length],
+    },
+
+    uno: {
+        turnMs: 25_000,
+        botDelayMs: 900,
+        maxTimeouts: 3,
+        maxSeats: 4,
+        seatOrder: (options) => uno.seatsFor(options.players),
+        normalizeRules: uno.normalizeRules,
+        normalizeOptions: (o = {}) => ({ players: [2, 3, 4].includes(o.players) ? o.players : 4 }),
+        // The server shuffles the deck.
+        create: ({ rules, firstPlayer, seats }) => uno.createGame({ rules, players: seats, firstPlayer, rng: secureRandom }),
+        parseMove: (msg) => {
+            const m = msg.move;
+            if (!m || typeof m !== 'object') return null;
+            if (m.type === 'draw' || m.type === 'pass') return { type: m.type };
+            if (m.type !== 'play' || !Number.isInteger(m.card)) return null;
+            const move = { type: 'play', card: m.card };
+            if (uno.COLORS.includes(m.color)) move.color = m.color;
+            if (m.uno === true) move.uno = true;
+            return move;
+        },
+        isLegal: (state, move) => uno.isLegalMove(state, move),
+        apply: (state, move, rng) => uno.applyMove(state, move, rng),
+        turn: (state) => state.turn,
+        counter: (state) => state.actions,
+        winner: (state) => state.winner,
+        reason: () => 'finished',
+        botMove: (state, level, rng) => uno.chooseBotMove(state, level, rng),
+        nextFirst: (prev, seats) => seats[(seats.indexOf(prev) + 1) % seats.length],
+        // Cards are secret: each phone gets only its own hand.
+        viewFor: (state, seat) => uno.viewFor(state, seat),
+        viewMove: (move, seat) => ({ ...move, events: uno.viewEvents(move.events, seat) }),
     },
 };
 
