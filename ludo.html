@@ -1,0 +1,2065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0f172a">
+<title>Ludo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: #0f172a;
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    touch-action: manipulation;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  input { user-select: text; -webkit-user-select: text; }
+  [hidden] { display: none !important; }
+  .app {
+    height: 100%;
+    height: 100dvh;
+    width: 100%;
+    max-width: 520px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    padding: max(8px, env(safe-area-inset-top)) 8px max(8px, env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+
+  /* Header (same as the other games) */
+  .game-header {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+  .header-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 17px;
+    font-weight: 700;
+  }
+  .header-btn:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.2); }
+  .header-right { display: flex; gap: 6px; }
+  .title-wrap { display: flex; align-items: center; gap: 8px; }
+  .game-title { font-size: 19px; font-weight: 900; letter-spacing: 1px; color: #f59e0b; }
+
+  .mode-bar { display: flex; gap: 6px; flex-shrink: 0; }
+  .mode-btn, .count-select {
+    flex: 1;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    min-height: 40px;
+    padding: 6px 4px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    text-align: center;
+    font-family: inherit;
+  }
+  .mode-btn.active { background: #b45309; border-color: #f59e0b; color: #fff; box-shadow: 0 0 12px rgba(245, 158, 11, 0.3); }
+  .count-select { flex: 0 0 auto; width: 22%; color: #f8fafc; appearance: none; -webkit-appearance: none; text-align-last: center; }
+
+  /* Player panels */
+  .players { display: flex; gap: 8px; flex-shrink: 0; }
+  .pp {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    background: #1e293b;
+    border: 2px solid #334155;
+    border-radius: 12px;
+    padding: 5px 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 46px;
+    transition: border-color 0.25s, box-shadow 0.25s, opacity 0.25s;
+  }
+  .pp.empty { opacity: 0.25; }
+  .pp.active { border-color: var(--c); box-shadow: 0 0 14px color-mix(in srgb, var(--c) 45%, transparent); }
+  .pp .dot { width: 16px; height: 16px; border-radius: 50%; background: var(--c); flex-shrink: 0; border: 2px solid rgba(255, 255, 255, 0.7); }
+  .pp .info { display: flex; flex-direction: column; min-width: 0; }
+  .pp .name { font-size: 12px; font-weight: 800; color: #e2e8f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pp .sub { font-size: 11px; color: #94a3b8; white-space: nowrap; }
+  .bubble {
+    position: absolute;
+    left: 50%;
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 14px;
+    font-weight: 800;
+    padding: 6px 12px;
+    border-radius: 14px;
+    white-space: nowrap;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    z-index: 6;
+    transform: translate(-50%, 0) scale(0.9);
+  }
+  .players.top .bubble { top: calc(100% + 4px); }
+  .players.bottom .bubble { bottom: calc(100% + 4px); }
+  .bubble.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+
+  .status-bar {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    border: 1px solid #475569;
+    border-radius: 10px;
+    padding: 6px 12px;
+    min-height: 34px;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--c, #f59e0b);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .status-bar.low { color: #f87171 !important; }
+
+  /* Board */
+  .board-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; position: relative; }
+  .board {
+    position: relative;
+    width: var(--size);
+    height: var(--size);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    touch-action: manipulation;
+  }
+  .board svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .token {
+    position: absolute;
+    width: calc(var(--size) / 15 * 0.82);
+    height: calc(var(--size) / 15 * 0.82);
+    margin: calc(var(--size) / 15 * -0.41) 0 0 calc(var(--size) / 15 * -0.41);
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--c) 55%, #fff) 0%, var(--c) 45%, color-mix(in srgb, var(--c) 70%, #000) 100%);
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+    transition: left 0.13s ease-out, top 0.13s ease-out, transform 0.2s;
+    z-index: 2;
+    cursor: pointer;
+  }
+  .token::after {
+    content: '';
+    position: absolute;
+    inset: 22%;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.55);
+  }
+  .token.movable { z-index: 4; animation: bob 0.8s ease-in-out infinite; box-shadow: 0 0 0 3px #fff, 0 0 14px 4px var(--c); }
+  @keyframes bob { 0%, 100% { transform: translateY(0) scale(var(--s, 1)); } 50% { transform: translateY(-18%) scale(var(--s, 1)); } }
+  .token.slow { transition: left 0.45s ease-in-out, top 0.45s ease-in-out, transform 0.2s; }
+  .token.home { opacity: 0.9; }
+
+  /* Dice */
+  .dice-row { display: flex; align-items: center; justify-content: center; gap: 14px; flex-shrink: 0; }
+  .dice {
+    width: 70px;
+    height: 70px;
+    border-radius: 16px;
+    background: #fff;
+    border: 4px solid var(--c, #f59e0b);
+    box-shadow: 0 6px 0 color-mix(in srgb, var(--c, #f59e0b) 60%, #000), 0 10px 20px rgba(0, 0, 0, 0.4);
+    display: grid;
+    grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+    padding: 9px;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.1s;
+  }
+  .dice:disabled { cursor: default; }
+  .dice.ready { animation: ready 1.1s ease-in-out infinite; }
+  @keyframes ready { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
+  .dice.rolling { animation: roll 0.45s linear infinite; }
+  @keyframes roll { 0% { transform: rotate(0); } 25% { transform: rotate(-14deg) scale(1.05); } 75% { transform: rotate(14deg) scale(1.05); } 100% { transform: rotate(0); } }
+  .dice:active:not(:disabled) { transform: translateY(3px); }
+  .pip { width: 12px; height: 12px; border-radius: 50%; background: #0f172a; place-self: center; visibility: hidden; }
+  .pip.on { visibility: visible; }
+  .dice-hint { font-size: 13px; font-weight: 700; color: #94a3b8; min-width: 92px; text-align: center; }
+
+  .controls { display: flex; gap: 8px; flex-shrink: 0; }
+  .ctrl-btn {
+    flex: 1;
+    min-height: 44px;
+    background: linear-gradient(135deg, #334155, #1e293b);
+    border: 1px solid #475569;
+    color: #f8fafc;
+    border-radius: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .ctrl-btn:active { transform: scale(0.97); }
+
+  /* Waiting card (online) */
+  .wait-card {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: min(320px, 92%);
+    height: fit-content;
+    background: rgba(15, 23, 42, 0.96);
+    border: 1px solid #475569;
+    border-radius: 18px;
+    padding: 18px 16px;
+    text-align: center;
+    z-index: 8;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  }
+  .wait-title { font-size: 16px; font-weight: 800; color: #e2e8f0; }
+  .wait-code { font-size: 46px; font-weight: 900; letter-spacing: 10px; color: #fbbf24; margin: 6px 0 2px; padding-left: 10px; }
+  .wait-hint { font-size: 13px; color: #94a3b8; margin-top: 6px; line-height: 1.4; }
+  .wait-seats { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
+  .wait-seats span { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--c); background: transparent; }
+  .wait-seats span.in { background: var(--c); }
+  .spinner { width: 40px; height: 40px; margin: 4px auto 10px; border: 4px solid #334155; border-top-color: #f59e0b; border-radius: 50%; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Sheets */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.75);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 20;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+  .overlay.open { opacity: 1; pointer-events: auto; }
+  .overlay.center { align-items: center; }
+  .sheet {
+    width: 100%;
+    max-width: 520px;
+    max-height: 88dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 18px 18px 0 0;
+    padding: 16px 16px max(16px, env(safe-area-inset-bottom));
+    transform: translateY(20px);
+    transition: transform 0.2s;
+  }
+  .overlay.open .sheet { transform: none; }
+  .overlay.center .sheet { border-radius: 18px; margin: 16px; text-align: center; }
+  .sheet h2 { font-size: 18px; color: #f59e0b; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .sheet h3 { font-size: 13px; color: #cbd5e1; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.6px; }
+  .sheet p, .sheet li { font-size: 14px; color: #cbd5e1; line-height: 1.45; }
+  .sheet ul { padding-left: 18px; }
+  .hint { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+  .close-x { background: none; border: none; color: #94a3b8; font-size: 22px; width: 40px; height: 40px; cursor: pointer; }
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .preset, .seg button {
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    border-radius: 10px;
+    padding: 8px 6px;
+    min-height: 44px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    text-align: center;
+  }
+  .preset small { display: block; font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
+  .preset.active, .seg button.active { background: #b45309; border-color: #f59e0b; color: #fff; }
+  .preset.active small { color: #fde68a; }
+  .seg { display: flex; gap: 6px; }
+  .seg button { flex: 1; }
+  .primary {
+    width: 100%;
+    margin-top: 16px;
+    min-height: 50px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f59e0b, #d97706);
+    color: #111827;
+    font-size: 16px;
+    font-weight: 900;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .primary:disabled { opacity: 0.5; }
+  .secondary {
+    width: 100%;
+    margin-top: 8px;
+    min-height: 46px;
+    border: 1px solid #475569;
+    border-radius: 12px;
+    background: transparent;
+    color: #cbd5e1;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .result-emoji { font-size: 56px; margin: 6px 0; }
+  .result-title { font-size: 24px; font-weight: 900; margin-bottom: 4px; }
+  .result-sub { font-size: 14px; color: #94a3b8; }
+  .ranking { list-style: none; padding: 0 !important; margin-top: 10px; text-align: left; }
+  .ranking li { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid #334155; font-size: 14px; }
+  .ranking .dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; }
+  .ranking .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stats { font-size: 13px; color: #94a3b8; margin-top: 10px; }
+  .lobby-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    text-align: left;
+    background: #0f172a;
+    border: 1px solid #334155;
+    color: #f8fafc;
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin-top: 10px;
+    min-height: 64px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .lobby-btn:active { transform: scale(0.98); }
+  .lobby-btn:disabled { opacity: 0.45; }
+  .lobby-btn .lb-icon { font-size: 26px; width: 34px; text-align: center; flex-shrink: 0; }
+  .lobby-btn b { display: block; font-size: 16px; }
+  .lobby-btn small { display: block; font-size: 12px; color: #94a3b8; margin-top: 2px; }
+  .lobby-btn.main { background: linear-gradient(135deg, #b45309, #92400e); border-color: #f59e0b; }
+  .lobby-btn.main small { color: #fde68a; }
+  .join-row { display: flex; gap: 8px; margin-top: 10px; }
+  .code-input {
+    flex: 1; min-width: 0; min-height: 54px;
+    background: #0f172a; border: 1px solid #475569; border-radius: 12px;
+    color: #fbbf24; font-size: 26px; font-weight: 900; letter-spacing: 8px; text-align: center; font-family: inherit;
+  }
+  .code-input::placeholder { color: #475569; letter-spacing: 2px; font-size: 16px; font-weight: 700; }
+  .join-btn { min-width: 96px; border: none; border-radius: 12px; background: #0284c7; color: #fff; font-size: 16px; font-weight: 800; cursor: pointer; font-family: inherit; }
+  .lobby-msg { font-size: 14px; color: #fca5a5; margin-bottom: 2px; }
+  .lobby-msg:empty { display: none; }
+  .emote-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .emote-grid button {
+    min-height: 52px; background: #0f172a; border: 1px solid #334155; color: #f8fafc;
+    border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+
+  @media (max-height: 700px) {
+    .app { gap: 6px; }
+    .game-header { padding: 4px 8px; }
+    .header-btn { width: 36px; height: 36px; font-size: 15px; }
+    .game-title { font-size: 17px; }
+    .mode-btn, .count-select { min-height: 34px; font-size: 11px; }
+    .pp { min-height: 38px; padding: 3px 8px; }
+    .status-bar { min-height: 28px; font-size: 12px; padding: 3px 10px; }
+    .dice { width: 58px; height: 58px; padding: 7px; }
+    .pip { width: 10px; height: 10px; }
+    .ctrl-btn { min-height: 38px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <div class="game-header">
+    <button class="header-btn" onclick="window.history.length > 1 ? window.history.back() : window.location.href='/arcade.html'" aria-label="Back">←</button>
+    <div class="title-wrap">
+      <span style="font-size: 20px;">🎲</span>
+      <span class="game-title">LUDO</span>
+    </div>
+    <div class="header-right">
+      <button class="header-btn" id="soundBtn" aria-label="Sound">🔊</button>
+      <button class="header-btn" id="rulesBtn" aria-label="Rules">⚙️</button>
+    </div>
+  </div>
+
+  <div class="mode-bar">
+    <button class="mode-btn" data-mode="bot">VS BOTS</button>
+    <button class="mode-btn" data-mode="local">PASS &amp; PLAY</button>
+    <button class="mode-btn" data-mode="online">🌐 ONLINE</button>
+    <select class="count-select" id="countSelect" aria-label="Number of players">
+      <option value="2">2 players</option>
+      <option value="3">3 players</option>
+      <option value="4">4 players</option>
+    </select>
+  </div>
+
+  <div class="players top">
+    <div class="pp" id="pp1"><div class="dot"></div><div class="info"><span class="name"></span><span class="sub"></span></div><div class="bubble"></div></div>
+    <div class="pp" id="pp2"><div class="dot"></div><div class="info"><span class="name"></span><span class="sub"></span></div><div class="bubble"></div></div>
+  </div>
+
+  <div class="board-wrap" id="boardWrap">
+    <div class="board" id="board"></div>
+    <div class="wait-card" id="waitCard" hidden>
+      <div class="spinner" id="waitSpinner"></div>
+      <div class="wait-title" id="waitTitle">Connecting…</div>
+      <div class="wait-code" id="waitCode" hidden></div>
+      <div class="wait-seats" id="waitSeats"></div>
+      <div class="wait-hint" id="waitHint"></div>
+      <button class="primary" id="shareBtn" hidden>📤 Send code to friends</button>
+      <button class="primary" id="startNowBtn" hidden>▶ Start now (bots fill empty seats)</button>
+      <button class="secondary" id="cancelWaitBtn">Cancel</button>
+    </div>
+  </div>
+
+  <div class="players bottom">
+    <div class="pp" id="pp0"><div class="dot"></div><div class="info"><span class="name"></span><span class="sub"></span></div><div class="bubble"></div></div>
+    <div class="pp" id="pp3"><div class="dot"></div><div class="info"><span class="name"></span><span class="sub"></span></div><div class="bubble"></div></div>
+  </div>
+
+  <div class="status-bar" id="status">Tap the dice to roll</div>
+
+  <div class="dice-row">
+    <div class="dice-hint" id="diceHintL"></div>
+    <button class="dice" id="dice" aria-label="Roll the dice">
+      <span class="pip"></span><span class="pip"></span><span class="pip"></span>
+      <span class="pip"></span><span class="pip"></span><span class="pip"></span>
+      <span class="pip"></span><span class="pip"></span><span class="pip"></span>
+    </button>
+    <div class="dice-hint" id="diceHintR"></div>
+  </div>
+
+  <div class="controls">
+    <button class="ctrl-btn" id="newBtn">🔄 New Game</button>
+    <button class="ctrl-btn" id="emoteBtn" hidden>😀 Say</button>
+    <button class="ctrl-btn" id="leaveBtn" hidden>🚪 Leave</button>
+  </div>
+</div>
+
+<!-- Rules & settings -->
+<div class="overlay" id="rulesOverlay">
+  <div class="sheet" role="dialog" aria-label="Rules">
+    <h2>Rules &amp; Settings <button class="close-x" data-close aria-label="Close">✕</button></h2>
+
+    <h3>Rule set</h3>
+    <div class="presets" id="presets"></div>
+
+    <h3>Leave the yard with</h3>
+    <div class="seg" data-rule="enter">
+      <button data-value="6">A 6</button>
+      <button data-value="1or6">A 1 or a 6</button>
+    </div>
+
+    <h3>Extra roll for capture / reaching home</h3>
+    <div class="seg" data-rule="bonus">
+      <button data-value="true">Yes</button>
+      <button data-value="false">No</button>
+    </div>
+
+    <h3>Three 6s in a row</h3>
+    <div class="seg" data-rule="threeSixes">
+      <button data-value="forfeit">Lose the turn</button>
+      <button data-value="allowed">Keep rolling</button>
+    </div>
+
+    <h3>Walls (2 tokens block the way)</h3>
+    <div class="seg" data-rule="blocks">
+      <button data-value="false">Off</button>
+      <button data-value="true">On</button>
+    </div>
+
+    <h3>Tokens needed to win</h3>
+    <div class="seg" data-rule="tokensToWin">
+      <button data-value="4">All 4</button>
+      <button data-value="2">2 (quick game)</button>
+    </div>
+
+    <h3>Bots</h3>
+    <div class="seg" data-setting="level">
+      <button data-value="easy">Easy</button>
+      <button data-value="medium">Medium</button>
+      <button data-value="hard">Hard</button>
+    </div>
+
+    <h3>Move automatically when only one token can move</h3>
+    <div class="seg" data-setting="autoMove">
+      <button data-value="true">Yes</button>
+      <button data-value="false">No</button>
+    </div>
+
+    <h3>Animation speed</h3>
+    <div class="seg" data-setting="speed">
+      <button data-value="normal">Normal</button>
+      <button data-value="fast">Fast</button>
+    </div>
+
+    <button class="primary" id="applyRules">Start new game with these rules</button>
+
+    <h3>How to play</h3>
+    <ul>
+      <li>Tap the dice to roll. Roll a 6 to bring a token out of your yard.</li>
+      <li>Tap a bouncing token to move it. Tokens go clockwise around the board, then up your coloured path to the middle.</li>
+      <li>Land on another colour to send it back to its yard. Squares with a ★ and the start squares are safe.</li>
+      <li>A 6 gives you another roll. You need the exact number to reach home.</li>
+      <li>The first player to bring their tokens home wins.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Online lobby -->
+<div class="overlay" id="lobbyOverlay">
+  <div class="sheet" role="dialog" aria-label="Play online">
+    <h2>Play online <button class="close-x" data-close aria-label="Close">✕</button></h2>
+    <div class="lobby-msg" id="lobbyMsg"></div>
+    <button class="lobby-btn main" id="quickBtn">
+      <span class="lb-icon">⚡</span>
+      <span><b>Quick match</b><small>Play with up to 3 people now. Bots fill empty seats after 15 seconds.</small></span>
+    </button>
+    <button class="lobby-btn" id="createBtn">
+      <span class="lb-icon">➕</span>
+      <span><b>Create room</b><small id="createSub">Get a 4-digit code for your friends</small></span>
+    </button>
+    <h3>Join a friend's room</h3>
+    <div class="join-row">
+      <input class="code-input" id="codeInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="Code">
+      <button class="join-btn" id="joinBtn">Join</button>
+    </div>
+    <p class="hint" style="margin-top:12px">No chat and no typing: you get a name like “Swift Lion 42” and can send quick emojis. Rooms you create use your rules from ⚙️.</p>
+  </div>
+</div>
+
+<!-- Emotes -->
+<div class="overlay" id="emoteOverlay">
+  <div class="sheet" role="dialog" aria-label="Send a message">
+    <h2>Say something <button class="close-x" data-close aria-label="Close">✕</button></h2>
+    <div class="emote-grid" id="emoteGrid"></div>
+  </div>
+</div>
+
+<!-- Game over -->
+<div class="overlay center" id="overOverlay">
+  <div class="sheet" role="dialog" aria-label="Game over">
+    <div class="result-emoji" id="resultEmoji">🎉</div>
+    <div class="result-title" id="resultTitle">You win!</div>
+    <div class="result-sub" id="resultSub"></div>
+    <ul class="ranking" id="ranking"></ul>
+    <div class="stats" id="resultStats"></div>
+    <button class="primary" id="againBtn">Play again</button>
+    <button class="secondary" id="leaveOverBtn" hidden>Leave</button>
+    <button class="secondary" data-close>View board</button>
+  </div>
+</div>
+
+<script>
+// ===== Game engine: generated from games/ludo/engine.js by games/build.mjs — edit that file, not this block =====
+// @engine-begin
+// games/ludo/engine.js
+// Ludo for 2–4 players. Pure game logic, no DOM — the same file runs in the
+// browser (offline play, bots) and on the server (online rooms), where the
+// server rolls the dice so nobody can fake a six.
+//
+// Board
+// -----
+// Seats 0..3 go clockwise: 0 bottom-left, 1 top-left, 2 top-right,
+// 3 bottom-right. The shared track has 52 squares (global index 0..51).
+// Seat p enters the track at START[p] = (40 + 13p) mod 52.
+//
+// A token's position is its `step` along its own path:
+//   -1        in the yard
+//   0..50     on the shared track (global square (START[p] + step) mod 52)
+//   51..55    in its own home column
+//   56        home (finished)
+//
+// Turn flow: phase 'roll' → roll the die → phase 'move' → pick a token.
+// If no token can move, the turn passes automatically.
+//
+// Rules that differ between places are options in `state.rules`:
+//   enter        '6'     a token leaves the yard on a 6
+//                '1or6'  on a 1 or a 6
+//   bonus        true    capturing or reaching home gives another roll
+//   threeSixes   'forfeit'  a third 6 in a row ends the turn
+//                'allowed'  keep rolling
+//   blocks       false   tokens may share squares freely
+//                true    two tokens of one colour on a square form a wall
+//                        that other colours can't land on or pass
+//   tokensToWin  4 | 2   how many tokens you must bring home to win
+
+const TRACK = 52;
+const HOME_STEP = 56;
+const LAST_TRACK_STEP = 50;
+const TOKENS = 4;
+const MAX_ACTIONS = 4000;
+
+const START = [40, 1, 14, 27];
+const SAFE = new Set([1, 9, 14, 22, 27, 35, 40, 48]); // starts + stars
+
+const DEFAULT_RULES = {
+    enter: '6',
+    bonus: true,
+    threeSixes: 'forfeit',
+    blocks: false,
+    tokensToWin: 4,
+};
+
+const RULE_OPTIONS = {
+    enter: ['6', '1or6'],
+    bonus: [true, false],
+    threeSixes: ['forfeit', 'allowed'],
+    blocks: [false, true],
+    tokensToWin: [4, 2],
+};
+
+function normalizeRules(rules = {}) {
+    const out = { ...DEFAULT_RULES };
+    for (const key of Object.keys(RULE_OPTIONS)) {
+        if (RULE_OPTIONS[key].includes(rules[key])) out[key] = rules[key];
+    }
+    return out;
+}
+
+// Which seats play for a given number of players (2 players sit opposite).
+function seatsFor(count) {
+    if (count === 2) return [0, 2];
+    if (count === 3) return [0, 1, 2];
+    return [0, 1, 2, 3];
+}
+
+function createGame({ rules, players = [0, 1, 2, 3], firstPlayer } = {}) {
+    const seats = players.filter((p, i) => Number.isInteger(p) && p >= 0 && p < 4 && players.indexOf(p) === i).sort();
+    if (seats.length < 2) throw new Error('Ludo needs at least 2 players');
+    return {
+        rules: normalizeRules(rules),
+        players: seats,
+        tokens: [0, 1, 2, 3].map(() => [-1, -1, -1, -1]),
+        turn: seats.includes(firstPlayer) ? firstPlayer : seats[0],
+        phase: 'roll',
+        dice: null,
+        sixes: 0,
+        winner: null,
+        actions: 0,
+        lastMove: null,
+    };
+}
+
+function cloneState(s) {
+    return {
+        rules: s.rules,
+        players: s.players,
+        tokens: s.tokens.map((t) => t.slice()),
+        turn: s.turn,
+        phase: s.phase,
+        dice: s.dice,
+        sixes: s.sixes,
+        winner: s.winner,
+        actions: s.actions,
+        lastMove: s.lastMove,
+    };
+}
+
+const onTrack = (step) => step >= 0 && step <= LAST_TRACK_STEP;
+const squareOf = (player, step) => (START[player] + step) % TRACK;
+
+function homeCount(state, player) {
+    return state.tokens[player].filter((s) => s === HOME_STEP).length;
+}
+
+// Total progress, used for bots and tie-breaks.
+function progress(state, player) {
+    return state.tokens[player].reduce((a, s) => a + (s < 0 ? 0 : s + 1), 0);
+}
+
+// Tokens of other players on global square `sq`: [{player, token}]
+function othersOn(state, player, sq) {
+    const out = [];
+    for (const p of state.players) {
+        if (p === player) continue;
+        state.tokens[p].forEach((s, t) => {
+            if (onTrack(s) && squareOf(p, s) === sq) out.push({ player: p, token: t });
+        });
+    }
+    return out;
+}
+
+function isWall(state, player, sq) {
+    if (!state.rules.blocks) return false;
+    for (const p of state.players) {
+        if (p === player) continue;
+        let n = 0;
+        for (const s of state.tokens[p]) if (onTrack(s) && squareOf(p, s) === sq) n++;
+        if (n >= 2) return true;
+    }
+    return false;
+}
+
+function canEnter(state, dice) {
+    return dice === 6 || (state.rules.enter === '1or6' && dice === 1);
+}
+
+// Where token `t` of `player` would go with `dice`, or null if it can't move.
+function targetStep(state, player, t, dice) {
+    const s = state.tokens[player][t];
+    if (s === HOME_STEP) return null;
+    if (s < 0) {
+        if (!canEnter(state, dice)) return null;
+        if (isWall(state, player, START[player])) return null;
+        return 0;
+    }
+    const to = s + dice;
+    if (to > HOME_STEP) return null; // exact roll needed to finish
+    if (state.rules.blocks) {
+        for (let k = s + 1; k <= Math.min(to, LAST_TRACK_STEP); k++) {
+            if (isWall(state, player, squareOf(player, k))) return null;
+        }
+    }
+    return to;
+}
+
+function legalTokens(state, player = state.turn) {
+    if (state.winner !== null || state.phase !== 'move' || player !== state.turn) return [];
+    const out = [];
+    for (let t = 0; t < TOKENS; t++) if (targetStep(state, player, t, state.dice) !== null) out.push(t);
+    return out;
+}
+
+function isLegalAction(state, action, player = state.turn) {
+    if (!action || state.winner !== null || player !== state.turn) return false;
+    if (action.type === 'roll') return state.phase === 'roll';
+    if (action.type === 'move') {
+        return state.phase === 'move' && Number.isInteger(action.token) && action.token >= 0 &&
+            action.token < TOKENS && targetStep(state, player, action.token, state.dice) !== null;
+    }
+    return false;
+}
+
+function nextPlayer(state, from) {
+    const i = state.players.indexOf(from);
+    return state.players[(i + 1) % state.players.length];
+}
+
+function passTurn(s, events) {
+    s.turn = nextPlayer(s, s.turn);
+    s.phase = 'roll';
+    s.dice = null;
+    s.sixes = 0;
+    if (events) events.push({ type: 'turn', player: s.turn });
+}
+
+function rollAgain(s, events) {
+    s.phase = 'roll';
+    s.dice = null;
+    if (events) events.push({ type: 'again', player: s.turn });
+}
+
+function finishByActions(s, events) {
+    // Safety valve for endless games: most progress wins.
+    let best = s.players[0];
+    for (const p of s.players) {
+        if (homeCount(s, p) * 100 + progress(s, p) > homeCount(s, best) * 100 + progress(s, best)) best = p;
+    }
+    s.winner = best;
+    if (events) events.push({ type: 'win', player: best });
+}
+
+/**
+ * Apply `action` for the player whose turn it is:
+ *   { type: 'roll' }                 uses rng() (server-side online)
+ *   { type: 'move', token }
+ * Returns { state, events } with a new state. Throws on illegal actions.
+ * Events: roll, move {token, from, to}, capture {victims}, home, forfeit,
+ * pass, again, turn, win.
+ */
+function applyAction(prev, action, rng = Math.random, { withEvents = true } = {}) {
+    if (!isLegalAction(prev, action)) throw new Error('Illegal action: ' + JSON.stringify(action));
+    const s = cloneState(prev);
+    const me = s.turn;
+    const events = withEvents ? [] : null;
+    s.actions++;
+
+    if (action.type === 'roll') {
+        const value = Math.min(6, 1 + Math.floor(rng() * 6));
+        s.dice = value;
+        if (events) events.push({ type: 'roll', player: me, value });
+        if (value === 6) s.sixes++;
+        s.lastMove = { player: me, type: 'roll', value };
+        if (value === 6 && s.sixes >= 3 && s.rules.threeSixes === 'forfeit') {
+            if (events) events.push({ type: 'forfeit', player: me });
+            passTurn(s, events);
+        } else {
+            s.phase = 'move';
+            if (legalTokens(s, me).length === 0) {
+                if (events) events.push({ type: 'pass', player: me });
+                if (value === 6) rollAgain(s, events);
+                else passTurn(s, events);
+            }
+        }
+    } else {
+        const t = action.token;
+        const from = s.tokens[me][t];
+        const to = targetStep(s, me, t, s.dice);
+        s.tokens[me][t] = to;
+        if (events) events.push({ type: 'move', player: me, token: t, from, to });
+        s.lastMove = { player: me, type: 'move', token: t, from, to };
+
+        let bonus = false;
+        if (onTrack(to)) {
+            const sq = squareOf(me, to);
+            if (!SAFE.has(sq)) {
+                const victims = othersOn(s, me, sq);
+                if (victims.length) {
+                    for (const v of victims) s.tokens[v.player][v.token] = -1;
+                    if (events) events.push({ type: 'capture', player: me, victims });
+                    bonus = s.rules.bonus;
+                }
+            }
+        }
+        if (to === HOME_STEP) {
+            if (events) events.push({ type: 'home', player: me, token: t });
+            bonus = bonus || s.rules.bonus;
+        }
+
+        if (homeCount(s, me) >= s.rules.tokensToWin) {
+            s.winner = me;
+            s.phase = 'over';
+            if (events) events.push({ type: 'win', player: me });
+            return { state: s, events };
+        }
+        if (s.dice === 6 || bonus) rollAgain(s, events);
+        else passTurn(s, events);
+    }
+
+    if (s.winner === null && s.actions >= MAX_ACTIONS) {
+        s.phase = 'over';
+        finishByActions(s, events);
+    }
+    return { state: s, events };
+}
+
+// ---------------------------------------------------------------------------
+// Bot
+// ---------------------------------------------------------------------------
+
+const BOT_LEVELS = ['easy', 'medium', 'hard'];
+
+// How likely an opponent token can land on global square `sq` next turn.
+function threatOn(state, player, sq, precise) {
+    let threat = 0;
+    for (const p of state.players) {
+        if (p === player) continue;
+        for (const s of state.tokens[p]) {
+            if (!onTrack(s)) continue; // yard tokens enter on a safe square
+            // Distance along p's path from its token to sq.
+            const d = (sq - squareOf(p, s) + TRACK) % TRACK;
+            if (d >= 1 && d <= 6 && s + d <= LAST_TRACK_STEP) threat += precise ? 1 / 6 : 1;
+            else if (precise && d >= 7 && d <= 12 && s + d <= LAST_TRACK_STEP) threat += 1 / 36;
+        }
+    }
+    return threat;
+}
+
+function scoreMove(state, player, t, precise) {
+    const from = state.tokens[player][t];
+    const to = targetStep(state, player, t, state.dice);
+    let score = to / 4; // progress
+    if (from < 0) score += 25; // leave the yard
+    if (to === HOME_STEP) score += 40;
+    else if (to > LAST_TRACK_STEP && from <= LAST_TRACK_STEP) score += 22; // safe in home column
+    if (onTrack(to)) {
+        const sq = squareOf(player, to);
+        const safe = SAFE.has(sq);
+        if (!safe) {
+            for (const v of othersOn(state, player, sq)) {
+                score += 45 + Math.max(0, state.tokens[v.player][v.token]) / 2;
+            }
+            score -= threatOn(state, player, sq, precise) * (precise ? 60 : 12) * (1 + to / 50);
+        } else {
+            score += 10;
+        }
+        if (state.rules.blocks && state.tokens[player].some((s, i) => i !== t && s === to)) score += 8;
+    }
+    if (onTrack(from)) {
+        const sq = squareOf(player, from);
+        if (!SAFE.has(sq)) score += threatOn(state, player, sq, precise) * (precise ? 50 : 10) * (1 + from / 50);
+    }
+    return score;
+}
+
+/** Returns the action the bot takes: { type: 'roll' } or { type: 'move', token }. */
+function chooseBotAction(state, level = 'medium', rng = Math.random) {
+    if (state.winner !== null) return null;
+    if (state.phase === 'roll') return { type: 'roll' };
+    const moves = legalTokens(state);
+    if (moves.length === 0) return null;
+    if (moves.length === 1) return { type: 'move', token: moves[0] };
+    if (level === 'easy' && rng() < 0.5) {
+        return { type: 'move', token: moves[Math.floor(rng() * moves.length)] };
+    }
+    const precise = level === 'hard';
+    let best = moves[0];
+    let bestScore = -Infinity;
+    for (const t of moves) {
+        const v = scoreMove(state, state.turn, t, precise) + rng() * 0.01;
+        if (v > bestScore) { bestScore = v; best = t; }
+    }
+    return { type: 'move', token: best };
+}
+// @engine-end
+// ===== End of engine =====
+
+(function () {
+    'use strict';
+
+    // Address of the online game server (the Cloudflare Worker in server/).
+    // Set it after `npx wrangler deploy`, e.g. 'https://kivu-games.YOUR-NAME.workers.dev'.
+    // For testing it can be overridden with localStorage 'igisoro_server'.
+    const ONLINE_SERVER = '';
+
+    // ---------- Storage ----------
+    const KEYS = { settings: 'ludo_settings_v1', save: 'ludo_save_v1', stats: 'ludo_stats_v1', room: 'ludo_online_room_v1' };
+    function load(key, fallback) {
+        try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+    }
+    function store(key, value) {
+        try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignore */ }
+    }
+
+    const PRESETS = [
+        { name: 'Classic', desc: 'Leave on a 6, all 4 home', rules: { enter: '6', bonus: true, threeSixes: 'forfeit', blocks: false, tokensToWin: 4 } },
+        { name: 'Quick', desc: '1 or 6 to leave, 2 home', rules: { enter: '1or6', bonus: true, threeSixes: 'forfeit', blocks: false, tokensToWin: 2 } },
+        { name: 'Traditional', desc: 'Walls, no bonus rolls', rules: { enter: '6', bonus: false, threeSixes: 'forfeit', blocks: true, tokensToWin: 4 } },
+        { name: 'Relaxed', desc: 'Easy start, keep rolling 6s', rules: { enter: '1or6', bonus: true, threeSixes: 'allowed', blocks: false, tokensToWin: 4 } },
+    ];
+
+    const settings = Object.assign(
+        { mode: 'bot', count: 4, level: 'medium', rules: Object.assign({}, DEFAULT_RULES), autoMove: true, speed: 'normal', sound: true },
+        load(KEYS.settings, {})
+    );
+    settings.rules = normalizeRules(settings.rules);
+    if (![2, 3, 4].includes(settings.count)) settings.count = 4;
+    let stats = load(KEYS.stats, {});
+    const saveSettings = () => store(KEYS.settings, settings);
+
+    const COLORS = ['#ef4444', '#22c55e', '#eab308', '#3b82f6'];
+    const COLOR_NAMES = ['Red', 'Green', 'Yellow', 'Blue'];
+
+    // ---------- Board geometry (15 × 15 grid) ----------
+    // Positions on screen: 0 bottom-left, 1 top-left, 2 top-right, 3 bottom-right.
+    // `viewSeat` (you) is always drawn bottom-left; the board is rotationally
+    // symmetric, so drawing seat s at position (s - viewSeat) mod 4 is exact.
+    const TRACK_XY = [];
+    (function () {
+        const add = (x, y) => TRACK_XY.push([x, y]);
+        for (let x = 0; x <= 5; x++) add(x, 6);
+        for (let y = 5; y >= 0; y--) add(6, y);
+        add(7, 0); add(8, 0);
+        for (let y = 1; y <= 5; y++) add(8, y);
+        for (let x = 9; x <= 14; x++) add(x, 6);
+        add(14, 7); add(14, 8);
+        for (let x = 13; x >= 9; x--) add(x, 8);
+        for (let y = 9; y <= 14; y++) add(8, y);
+        add(7, 14); add(6, 14);
+        for (let y = 13; y >= 9; y--) add(6, y);
+        for (let x = 5; x >= 0; x--) add(x, 8);
+        add(0, 7);
+    })();
+    const HOME_XY = [
+        [[7, 13], [7, 12], [7, 11], [7, 10], [7, 9]],
+        [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7]],
+        [[7, 1], [7, 2], [7, 3], [7, 4], [7, 5]],
+        [[13, 7], [12, 7], [11, 7], [10, 7], [9, 7]],
+    ];
+    const YARD_ORIGIN = [[0, 9], [0, 0], [9, 0], [9, 9]];
+    const CENTER_XY = [[7.5, 8.35], [6.65, 7.5], [7.5, 6.65], [8.35, 7.5]];
+    const YARD_SPOTS = [[2, 2], [4, 2], [2, 4], [4, 4]];
+
+    // Centre of a token (in cell units, 0..15).
+    function tokenXY(pos, step, t) {
+        if (step < 0) {
+            const o = YARD_ORIGIN[pos];
+            return [o[0] + YARD_SPOTS[t][0], o[1] + YARD_SPOTS[t][1]];
+        }
+        if (step <= LAST_TRACK_STEP) {
+            const [x, y] = TRACK_XY[(START[pos] + step) % TRACK];
+            return [x + 0.5, y + 0.5];
+        }
+        if (step < HOME_STEP) {
+            const [x, y] = HOME_XY[pos][step - LAST_TRACK_STEP - 1];
+            return [x + 0.5, y + 0.5];
+        }
+        const c = CENTER_XY[pos];
+        const off = [[-0.3, -0.3], [0.3, -0.3], [-0.3, 0.3], [0.3, 0.3]][t];
+        return [c[0] + off[0] * 0.8, c[1] + off[1] * 0.8];
+    }
+
+    // ---------- Game state ----------
+    let game = null;
+    let view = null;          // token steps shown on screen (lag behind `game` during animations)
+    let viewSeat = 0;
+    let animating = false;
+    let botTimer = null;
+    let rolling = false;      // dice spinning while waiting for a result
+    let pendingRules = null;
+
+    const online = {
+        ws: null, room: null, connected: false, retries: 0, retryTimer: null, pingTimer: null,
+        status: null, kind: null, code: null, you: 0, seats: [null, null, null, null], seatOrder: [],
+        result: null, rematch: [], pending: false, pendingTimer: null,
+        queue: [], busy: false, turnEnd: null, waitEnd: null, lastEmote: 0, notice: '',
+    };
+    const isOnline = () => settings.mode === 'online';
+
+    function isHuman(seat) {
+        if (isOnline()) return seat === online.you;
+        if (settings.mode === 'local') return true;
+        return seat === 0;
+    }
+    function myTurn() {
+        if (!game || game.winner !== null || animating) return false;
+        if (isOnline()) return online.connected && online.status === 'playing' && game.turn === online.you && !online.pending;
+        return isHuman(game.turn);
+    }
+    function seatName(seat) {
+        if (isOnline()) {
+            const s = online.seats[seat];
+            if (!s) return COLOR_NAMES[seat];
+            if (seat === online.you) return 'You · ' + s.name;
+            if (s.bot && !s.away) return '🤖 Bot';
+            if (s.away) return '🤖 ' + s.name;
+            return (s.online ? '' : '⚠️ ') + s.name;
+        }
+        if (settings.mode === 'local') return COLOR_NAMES[seat];
+        return seat === 0 ? 'You' : 'Bot ' + COLOR_NAMES[seat];
+    }
+    const shortName = (seat) => {
+        if (isOnline() && seat === online.you) return 'You';
+        if (!isOnline() && settings.mode === 'bot' && seat === 0) return 'You';
+        const s = isOnline() ? online.seats[seat] : null;
+        if (s && s.bot && !s.away) return 'Bot';
+        return s ? s.name : seatName(seat);
+    };
+
+    // ---------- DOM ----------
+    const $ = (id) => document.getElementById(id);
+    const board = $('board');
+    const boardWrap = $('boardWrap');
+    const diceEl = $('dice');
+    let tokenEls = [[], [], [], []];
+
+    const posOf = (seat) => (seat - viewSeat + 4) % 4;
+    const seatAt = (pos) => (pos + viewSeat) % 4;
+
+    function buildBoard() {
+        const NS = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 15 15');
+        const el = (tag, attrs, parent) => {
+            const e = document.createElementNS(NS, tag);
+            for (const k in attrs) e.setAttribute(k, attrs[k]);
+            (parent || svg).appendChild(e);
+            return e;
+        };
+        const active = new Set(game ? game.players : [0, 1, 2, 3]);
+        const colorAt = (pos) => COLORS[seatAt(pos)];
+        const faded = (pos) => (active.has(seatAt(pos)) ? 1 : 0.35);
+        el('rect', { x: 0, y: 0, width: 15, height: 15, fill: '#fdf8ee' });
+        // Yards
+        for (let pos = 0; pos < 4; pos++) {
+            const [ox, oy] = YARD_ORIGIN[pos];
+            el('rect', { x: ox, y: oy, width: 6, height: 6, fill: colorAt(pos), opacity: faded(pos) });
+            el('rect', { x: ox + 0.8, y: oy + 0.8, width: 4.4, height: 4.4, rx: 0.6, fill: '#fff', opacity: 0.95 });
+            for (const [sx, sy] of YARD_SPOTS) {
+                el('circle', { cx: ox + sx, cy: oy + sy, r: 0.55, fill: colorAt(pos), opacity: 0.35 * faded(pos) + 0.1 });
+            }
+        }
+        // Track
+        TRACK_XY.forEach(([x, y], i) => {
+            let fill = '#fff';
+            for (let pos = 0; pos < 4; pos++) if (i === START[pos]) fill = colorAt(pos);
+            el('rect', { x: x, y: y, width: 1, height: 1, fill: fill, stroke: '#cbd5e1', 'stroke-width': 0.04 });
+            if (SAFE.has(i) && fill === '#fff') {
+                const t = el('text', { x: x + 0.5, y: y + 0.72, 'text-anchor': 'middle', 'font-size': 0.62, fill: '#94a3b8' });
+                t.textContent = '★';
+            }
+        });
+        // Home columns
+        for (let pos = 0; pos < 4; pos++) {
+            for (const [x, y] of HOME_XY[pos]) {
+                el('rect', { x: x, y: y, width: 1, height: 1, fill: colorAt(pos), opacity: 0.25 + 0.6 * faded(pos), stroke: '#fff', 'stroke-width': 0.04 });
+            }
+        }
+        // Centre
+        const tri = [
+            [[6, 9], [9, 9], [7.5, 7.5]],
+            [[6, 6], [6, 9], [7.5, 7.5]],
+            [[6, 6], [9, 6], [7.5, 7.5]],
+            [[9, 6], [9, 9], [7.5, 7.5]],
+        ];
+        tri.forEach((pts, pos) => el('polygon', { points: pts.map((p) => p.join(',')).join(' '), fill: colorAt(pos), opacity: faded(pos) }));
+        // Arrows into each start square
+        board.innerHTML = '';
+        board.appendChild(svg);
+
+        tokenEls = [[], [], [], []];
+        for (let seat = 0; seat < 4; seat++) {
+            for (let t = 0; t < TOKENS; t++) {
+                const d = document.createElement('div');
+                d.className = 'token';
+                d.style.setProperty('--c', COLORS[seat]);
+                d.hidden = !active.has(seat);
+                d.addEventListener('click', (e) => { e.stopPropagation(); onTokenTap(seat, t); });
+                board.appendChild(d);
+                tokenEls[seat][t] = d;
+            }
+        }
+    }
+
+    function layout() {
+        const w = boardWrap.clientWidth;
+        const h = boardWrap.clientHeight;
+        const size = Math.max(200, Math.floor(Math.min(w, h)));
+        board.style.setProperty('--size', size + 'px');
+    }
+
+    // ---------- Rendering ----------
+    function renderTokens() {
+        if (!game || !view) return;
+        const movable = new Set(myTurn() && game.phase === 'move' ? legalTokens(game).map((t) => game.turn + ':' + t) : []);
+        // Group tokens by square so stacked tokens can be spread out.
+        const groups = new Map();
+        const pos = [];
+        for (const seat of game.players) {
+            for (let t = 0; t < TOKENS; t++) {
+                const [x, y] = tokenXY(posOf(seat), view[seat][t], t);
+                const key = view[seat][t] >= 0 && view[seat][t] < HOME_STEP ? x.toFixed(2) + ',' + y.toFixed(2) : seat + ':' + t;
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push([seat, t]);
+                pos.push([seat, t, x, y, key]);
+            }
+        }
+        for (const [seat, t, x, y, key] of pos) {
+            const g = groups.get(key);
+            const el = tokenEls[seat][t];
+            let dx = 0, dy = 0, scale = 1;
+            if (g.length > 1) {
+                const i = g.findIndex(([s, k]) => s === seat && k === t);
+                const off = [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2], [0, 0]][i % 5];
+                dx = off[0]; dy = off[1];
+                scale = 0.72;
+            }
+            if (view[seat][t] === HOME_STEP) scale = 0.6;
+            el.style.left = ((x + dx) / 15 * 100) + '%';
+            el.style.top = ((y + dy) / 15 * 100) + '%';
+            el.style.setProperty('--s', scale);
+            el.style.transform = 'scale(' + scale + ')';
+            el.classList.toggle('movable', movable.has(seat + ':' + t));
+            el.classList.toggle('home', view[seat][t] === HOME_STEP);
+        }
+    }
+
+    const PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+    function showDice(value) {
+        const on = new Set(PIPS[value] || []);
+        diceEl.querySelectorAll('.pip').forEach((p, i) => p.classList.toggle('on', on.has(i)));
+    }
+
+    function renderPanels() {
+        for (let pos = 0; pos < 4; pos++) {
+            const seat = seatAt(pos);
+            const el = $('pp' + pos);
+            el.style.setProperty('--c', COLORS[seat]);
+            const playing = game && game.players.includes(seat);
+            el.classList.toggle('empty', !playing);
+            el.classList.toggle('active', !!playing && game.winner === null && game.turn === seat);
+            el.querySelector('.name').textContent = playing ? seatName(seat) : '—';
+            el.querySelector('.sub').textContent = playing ? '🏠 ' + homeCountView(seat) + '/' + game.rules.tokensToWin : '';
+        }
+    }
+    const homeCountView = (seat) => (view ? view[seat].filter((s) => s === HOME_STEP).length : 0);
+
+    function renderDice() {
+        const c = game ? COLORS[game.turn] : '#f59e0b';
+        diceEl.style.setProperty('--c', c);
+        document.documentElement.style.setProperty('--turn', c);
+        const canRoll = myTurn() && game.phase === 'roll';
+        diceEl.disabled = !canRoll;
+        diceEl.classList.toggle('ready', canRoll && !rolling);
+        diceEl.classList.toggle('rolling', rolling);
+        if (!rolling) showDice(game && game.dice ? game.dice : (game && game.lastMove && game.lastMove.type === 'roll' ? game.lastMove.value : 6));
+    }
+
+    function render() {
+        renderTokens();
+        renderPanels();
+        renderDice();
+    }
+
+    function setStatus(text, color) {
+        const el = $('status');
+        el.textContent = text;
+        el.style.setProperty('--c', color || '#f59e0b');
+        el.classList.remove('low');
+    }
+
+    function updateStatus() {
+        if (!game) return;
+        if (isOnline()) return updateOnlineStatus();
+        if (game.winner !== null) return setStatus(shortName(game.winner) + (game.winner === 0 && settings.mode === 'bot' ? ' win!' : ' wins!'), COLORS[game.winner]);
+        const c = COLORS[game.turn];
+        if (!isHuman(game.turn)) return setStatus(seatName(game.turn) + ' is playing…', c);
+        const who = settings.mode === 'local' ? COLOR_NAMES[game.turn] : 'Your turn';
+        if (game.phase === 'roll') setStatus(who + ' — tap the dice', c);
+        else setStatus(who + ' — tap a bouncing token', c);
+    }
+
+    // ---------- Sound ----------
+    let audio = null;
+    function beep(freq, dur, vol) {
+        if (!settings.sound) return;
+        try {
+            audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+            if (audio.state === 'suspended') audio.resume();
+            const o = audio.createOscillator();
+            const g = audio.createGain();
+            o.type = 'triangle';
+            o.frequency.value = freq;
+            g.gain.setValueAtTime(vol || 0.06, audio.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
+            o.connect(g).connect(audio.destination);
+            o.start();
+            o.stop(audio.currentTime + dur);
+        } catch (e) { /* no audio */ }
+    }
+    function vibrate(ms) {
+        try {
+            if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
+            if (navigator.vibrate) navigator.vibrate(ms);
+        } catch (e) { /* ignore */ }
+    }
+
+    // ---------- Animation ----------
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const SPEED = () => (settings.speed === 'fast' ? { step: 70, roll: 300, pause: 250 } : { step: 140, roll: 500, pause: 450 });
+
+    async function animate(events) {
+        const sp = SPEED();
+        for (const e of events) {
+            if (e.type === 'roll') {
+                if (!rolling) { rolling = true; renderDice(); }
+                beep(300, 0.05, 0.04);
+                await sleep(sp.roll);
+                rolling = false;
+                diceEl.classList.remove('rolling');
+                showDice(e.value);
+                beep(e.value === 6 ? 880 : 520, 0.08, 0.06);
+                if (e.value === 6) vibrate(20);
+                renderDice();
+                showDice(e.value);
+                await sleep(sp.pause / 2);
+            } else if (e.type === 'move') {
+                const el = tokenEls[e.player][e.token];
+                if (e.from < 0) {
+                    view[e.player][e.token] = 0;
+                    renderTokens();
+                    beep(660, 0.07, 0.05);
+                    await sleep(sp.step * 2);
+                } else {
+                    for (let k = e.from + 1; k <= e.to; k++) {
+                        view[e.player][e.token] = k;
+                        renderTokens();
+                        beep(440 + (k % 6) * 40, 0.04, 0.035);
+                        await sleep(sp.step);
+                    }
+                }
+                el.classList.remove('slow');
+            } else if (e.type === 'capture') {
+                for (const v of e.victims) {
+                    tokenEls[v.player][v.token].classList.add('slow');
+                    view[v.player][v.token] = -1;
+                }
+                renderTokens();
+                setStatus(shortName(e.player) + ' captured ' + e.victims.map((v) => COLOR_NAMES[v.player]).join(' & ') + '!', COLORS[e.player]);
+                beep(180, 0.3, 0.1);
+                vibrate(60);
+                await sleep(sp.pause + 200);
+                for (const v of e.victims) tokenEls[v.player][v.token].classList.remove('slow');
+            } else if (e.type === 'home') {
+                beep(990, 0.15, 0.07);
+                setTimeout(() => beep(1320, 0.2, 0.06), 120);
+                await sleep(sp.pause / 2);
+            } else if (e.type === 'pass') {
+                setStatus(shortName(e.player) + ': no move possible', COLORS[e.player]);
+                await sleep(sp.pause + 250);
+            } else if (e.type === 'forfeit') {
+                setStatus('Three 6s! ' + shortName(e.player) + ' loses the turn', COLORS[e.player]);
+                await sleep(sp.pause + 400);
+            } else if (e.type === 'again') {
+                setStatus(shortName(e.player) + ' rolls again!', COLORS[e.player]);
+            }
+        }
+    }
+
+    // ---------- Offline play ----------
+    async function doAction(action) {
+        const { state, events } = applyAction(game, action);
+        animating = true;
+        render();
+        await animate(events);
+        game = state;
+        view = game.tokens.map((t) => t.slice());
+        animating = false;
+        saveGame();
+        render();
+        updateStatus();
+        afterAction();
+    }
+
+    function afterAction() {
+        clearTimeout(botTimer);
+        if (!game || isOnline()) return;
+        if (game.winner !== null) return onGameOver();
+        if (!isHuman(game.turn)) {
+            botTimer = setTimeout(() => {
+                if (!game || animating || game.winner !== null || isHuman(game.turn)) return;
+                const a = chooseBotAction(game, settings.level);
+                if (a) doAction(a);
+            }, game.phase === 'roll' ? 550 : 350);
+        } else if (game.phase === 'move' && settings.autoMove) {
+            const moves = legalTokens(game);
+            if (moves.length === 1 || (moves.length > 1 && allSameSquare(moves))) {
+                botTimer = setTimeout(() => { if (myTurn() && game.phase === 'move') act({ type: 'move', token: moves[0] }); }, 450);
+            }
+        }
+    }
+
+    // Several tokens but all in the yard (or stacked): any choice is the same.
+    function allSameSquare(moves) {
+        const p = game.turn;
+        const first = game.tokens[p][moves[0]];
+        return moves.every((t) => game.tokens[p][t] === first);
+    }
+
+    function act(action) {
+        if (!myTurn()) return;
+        if (isOnline()) return sendAction(action);
+        doAction(action);
+    }
+
+    function onDiceTap() {
+        if (!myTurn() || game.phase !== 'roll') return;
+        clearTimeout(botTimer);
+        act({ type: 'roll' });
+    }
+
+    function onTokenTap(seat, t) {
+        if (!myTurn() || game.phase !== 'move' || seat !== game.turn) return;
+        if (!legalTokens(game).includes(t)) {
+            // Tapped a token that can't move: maybe the player meant a stacked one.
+            return nearestMove(tokenEls[seat][t]);
+        }
+        clearTimeout(botTimer);
+        act({ type: 'move', token: t });
+    }
+
+    // Tapping near a movable token counts (tokens are small on phones).
+    function nearestMove(targetEl, point) {
+        const moves = legalTokens(game);
+        if (!moves.length) return;
+        const rect = board.getBoundingClientRect();
+        let px, py;
+        if (point) { px = point.x; py = point.y; } else {
+            const r = targetEl.getBoundingClientRect();
+            px = r.left + r.width / 2; py = r.top + r.height / 2;
+        }
+        const cell = rect.width / 15;
+        let best = null, bestD = Infinity;
+        for (const t of moves) {
+            const r = tokenEls[game.turn][t].getBoundingClientRect();
+            const d = Math.hypot(r.left + r.width / 2 - px, r.top + r.height / 2 - py);
+            if (d < bestD) { bestD = d; best = t; }
+        }
+        if (best !== null && bestD <= cell * 1.6) {
+            clearTimeout(botTimer);
+            act({ type: 'move', token: best });
+        }
+    }
+
+    board.addEventListener('click', (e) => {
+        if (!myTurn() || game.phase !== 'move') return;
+        nearestMove(null, { x: e.clientX, y: e.clientY });
+    });
+    diceEl.addEventListener('click', onDiceTap);
+
+    function playersForMode() {
+        return seatsFor(settings.count);
+    }
+
+    function newGame(rules) {
+        clearTimeout(botTimer);
+        if (rules) settings.rules = normalizeRules(rules);
+        saveSettings();
+        if (isOnline()) return;
+        viewSeat = 0;
+        game = createGame({ rules: settings.rules, players: playersForMode() });
+        view = game.tokens.map((t) => t.slice());
+        animating = false;
+        rolling = false;
+        closeOverlay('overOverlay');
+        buildBoard();
+        layout();
+        saveGame();
+        render();
+        updateStatus();
+        afterAction();
+    }
+
+    function saveGame() {
+        if (isOnline() || !game) return;
+        store(KEYS.save, { game: game, mode: settings.mode, count: settings.count });
+    }
+
+    function ranking() {
+        return game.players.slice().sort((a, b) => {
+            if (a === game.winner) return -1;
+            if (b === game.winner) return 1;
+            return (homeCount(game, b) * 100 + progress(game, b)) - (homeCount(game, a) * 100 + progress(game, a));
+        });
+    }
+
+    function fillRanking() {
+        const ul = $('ranking');
+        ul.innerHTML = '';
+        ranking().forEach((seat, i) => {
+            const li = document.createElement('li');
+            const medal = ['🥇', '🥈', '🥉', '4.'][i];
+            li.innerHTML = '<span>' + medal + '</span><span class="dot" style="background:' + COLORS[seat] + '"></span><span class="grow"></span><span>🏠 ' + homeCount(game, seat) + '</span>';
+            li.querySelector('.grow').textContent = seatName(seat);
+            ul.appendChild(li);
+        });
+    }
+
+    function onGameOver() {
+        if (isOnline()) return onOnlineGameOver();
+        const w = game.winner;
+        const youWon = settings.mode === 'bot' && w === 0;
+        $('resultEmoji').textContent = settings.mode === 'bot' ? (youWon ? '🎉' : '🤖') : '🏆';
+        $('resultTitle').textContent = settings.mode === 'bot' ? (youWon ? 'You win!' : shortName(w) + ' wins') : COLOR_NAMES[w] + ' wins!';
+        $('resultSub').textContent = 'After ' + game.actions + ' moves';
+        fillRanking();
+        let statsText = '';
+        if (settings.mode === 'bot') {
+            const k = settings.level + '_' + settings.count;
+            const st = stats[k] || { w: 0, l: 0 };
+            if (youWon) st.w++; else st.l++;
+            stats[k] = st;
+            store(KEYS.stats, stats);
+            statsText = 'vs ' + (settings.count - 1) + ' ' + settings.level + ' bot' + (settings.count > 2 ? 's' : '') + ': ' + st.w + ' won · ' + st.l + ' lost';
+        }
+        $('resultStats').textContent = statsText;
+        $('againBtn').textContent = 'Play again';
+        $('againBtn').disabled = false;
+        $('leaveOverBtn').hidden = true;
+        if (youWon || settings.mode === 'local') { beep(660, 0.15, 0.08); setTimeout(() => beep(880, 0.25, 0.08), 150); }
+        setTimeout(() => openOverlay('overOverlay'), 600);
+    }
+
+    // ---------- Overlays ----------
+    function openOverlay(id) { $(id).classList.add('open'); }
+    function closeOverlay(id) { $(id).classList.remove('open'); }
+    document.querySelectorAll('.overlay').forEach((ov) => {
+        ov.addEventListener('click', (e) => {
+            if (e.target === ov || e.target.closest('[data-close]')) closeOverlay(ov.id);
+        });
+    });
+
+    const parseVal = (key, v) => (key === 'tokensToWin' ? Number(v) : (v === 'true' ? true : v === 'false' ? false : v));
+
+    function renderRulesSheet() {
+        const r = pendingRules;
+        const presets = $('presets');
+        presets.innerHTML = '';
+        for (const p of PRESETS) {
+            const b = document.createElement('button');
+            b.className = 'preset';
+            b.classList.toggle('active', Object.keys(p.rules).every((k) => p.rules[k] === r[k]));
+            b.innerHTML = p.name + '<small>' + p.desc + '</small>';
+            b.addEventListener('click', () => { pendingRules = Object.assign({}, p.rules); renderRulesSheet(); });
+            presets.appendChild(b);
+        }
+        document.querySelectorAll('.seg[data-rule]').forEach((seg) => {
+            seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.value === String(r[seg.dataset.rule])));
+        });
+        document.querySelectorAll('.seg[data-setting]').forEach((seg) => {
+            seg.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.value === String(settings[seg.dataset.setting])));
+        });
+    }
+    document.querySelectorAll('.seg[data-rule] button').forEach((b) => {
+        b.addEventListener('click', () => {
+            const key = b.parentElement.dataset.rule;
+            pendingRules[key] = parseVal(key, b.dataset.value);
+            renderRulesSheet();
+        });
+    });
+    document.querySelectorAll('.seg[data-setting] button').forEach((b) => {
+        b.addEventListener('click', () => {
+            const key = b.parentElement.dataset.setting;
+            settings[key] = parseVal(key, b.dataset.value);
+            saveSettings();
+            renderRulesSheet();
+        });
+    });
+    $('rulesBtn').addEventListener('click', () => {
+        pendingRules = Object.assign({}, settings.rules);
+        renderRulesSheet();
+        $('applyRules').textContent = isOnline() ? 'Use these rules for rooms I create' : 'Start new game with these rules';
+        openOverlay('rulesOverlay');
+    });
+    $('applyRules').addEventListener('click', () => {
+        closeOverlay('rulesOverlay');
+        newGame(pendingRules);
+    });
+
+    // ---------- Online ----------
+    const EMOTES = {
+        nice: '👍 Nice move!', wow: '😮 Wow!', laugh: '😂 Haha', fire: '🔥 On fire',
+        thanks: '🙏 Thanks', hurry: '⏰ Your turn!', gg: '🤝 Good game', again: '🔁 Again?',
+    };
+
+    function serverUrl() {
+        let s = '';
+        try { s = localStorage.getItem('igisoro_server') || ''; } catch (e) { /* ignore */ }
+        return (s || ONLINE_SERVER).replace(/\/+$/, '');
+    }
+
+    function playerToken() {
+        let t = load('kivu_player_token', '');
+        if (!/^[a-f0-9]{32}$/.test(t)) {
+            const b = new Uint8Array(16);
+            crypto.getRandomValues(b);
+            t = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+            store('kivu_player_token', t);
+        }
+        return t;
+    }
+
+    async function api(path, body) {
+        const res = await fetch(serverUrl() + path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {}),
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+    }
+
+    function openLobby(msg) {
+        const ready = !!serverUrl();
+        $('lobbyMsg').textContent = msg || (ready ? '' : 'Online play is not set up yet. Play vs bots or pass & play for now.');
+        $('createSub').textContent = 'Room for ' + settings.count + ' players. You get a 4-digit code for your friends.';
+        ['quickBtn', 'createBtn', 'joinBtn'].forEach((id) => { $(id).disabled = !ready; });
+        openOverlay('lobbyOverlay');
+    }
+    function lobbyBusy(busy) {
+        ['quickBtn', 'createBtn', 'joinBtn'].forEach((id) => { $(id).disabled = busy || !serverUrl(); });
+    }
+    function networkError() {
+        return navigator.onLine === false
+            ? 'No internet connection. Check your data or Wi-Fi.'
+            : 'Could not reach the game server. Please try again.';
+    }
+
+    async function quickMatch() {
+        lobbyBusy(true);
+        try {
+            const r = await api('/quick', { game: 'ludo' });
+            closeOverlay('lobbyOverlay');
+            connectRoom(r.room);
+        } catch (e) { openLobby(networkError()); } finally { lobbyBusy(false); }
+    }
+    async function createRoom() {
+        lobbyBusy(true);
+        try {
+            const r = await api('/rooms', { game: 'ludo', players: settings.count, rules: settings.rules });
+            closeOverlay('lobbyOverlay');
+            connectRoom(r.room);
+        } catch (e) { openLobby(networkError()); } finally { lobbyBusy(false); }
+    }
+    function joinRoom() {
+        const code = $('codeInput').value.replace(/\D/g, '');
+        if (code.length !== 4) { $('lobbyMsg').textContent = 'Enter the 4-digit code from your friend.'; return; }
+        $('codeInput').blur();
+        closeOverlay('lobbyOverlay');
+        connectRoom(code);
+    }
+
+    function resetOnlineState(room) {
+        Object.assign(online, {
+            room: room, retries: 0, status: null,
+            kind: room && /^\d{4}$/.test(room) ? 'private' : 'quick',
+            code: room && /^\d{4}$/.test(room) ? room : null,
+            you: 0, seats: [null, null, null, null], seatOrder: [], result: null, rematch: [],
+            pending: false, queue: [], turnEnd: null, waitEnd: null, notice: '',
+        });
+    }
+
+    function showEmptyBoard(rules, players) {
+        game = createGame({ rules: rules || settings.rules, players: players || [0, 1, 2, 3] });
+        view = game.tokens.map((t) => t.slice());
+        buildBoard();
+        layout();
+    }
+
+    function connectRoom(room) {
+        disconnect(false);
+        resetOnlineState(room);
+        store(KEYS.room, { room: room, at: Date.now() });
+        closeOverlay('overOverlay');
+        viewSeat = 0;
+        showEmptyBoard();
+        openSocket();
+        refreshOnlineUI();
+    }
+
+    function openSocket() {
+        if (!online.room || !serverUrl()) return;
+        const url = serverUrl().replace(/^http/, 'ws') + '/rooms/' + online.room + '/ws?token=' + playerToken();
+        let ws;
+        try { ws = new WebSocket(url); } catch (e) { scheduleReconnect(); return; }
+        online.ws = ws;
+        ws.onopen = () => {
+            if (online.ws !== ws) return;
+            online.connected = true;
+            online.retries = 0;
+            clearInterval(online.pingTimer);
+            online.pingTimer = setInterval(() => sendOnline({ t: 'ping' }), 25000);
+            refreshOnlineUI();
+        };
+        ws.onmessage = (e) => {
+            if (online.ws !== ws) return;
+            let m;
+            try { m = JSON.parse(e.data); } catch (x) { return; }
+            onServerMessage(m);
+        };
+        ws.onclose = (e) => {
+            if (online.ws !== ws) return;
+            online.ws = null;
+            online.connected = false;
+            online.pending = false;
+            rolling = false;
+            clearInterval(online.pingTimer);
+            if (e.code === 4001) forgetRoom('This game is open on another screen.');
+            else if (e.code !== 4000 && e.code !== 1000 && isOnline() && online.room) scheduleReconnect();
+            refreshOnlineUI();
+        };
+    }
+
+    function scheduleReconnect() {
+        clearTimeout(online.retryTimer);
+        const delay = Math.min(10000, 800 * Math.pow(2, online.retries++));
+        online.retryTimer = setTimeout(() => { if (isOnline() && online.room && !online.ws) openSocket(); }, delay);
+    }
+    function reconnectNow() {
+        if (isOnline() && online.room && !online.ws) { clearTimeout(online.retryTimer); openSocket(); }
+    }
+    window.addEventListener('online', reconnectNow);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reconnectNow(); });
+
+    function sendOnline(msg) {
+        if (online.ws && online.ws.readyState === 1) { online.ws.send(JSON.stringify(msg)); return true; }
+        return false;
+    }
+    function disconnect(sendLeave) {
+        clearTimeout(online.retryTimer);
+        clearInterval(online.pingTimer);
+        const ws = online.ws;
+        online.ws = null;
+        online.connected = false;
+        if (ws) {
+            try {
+                if (sendLeave && ws.readyState === 1) ws.send(JSON.stringify({ t: 'leave' }));
+                ws.close(1000);
+            } catch (e) { /* ignore */ }
+        }
+    }
+    function forgetRoom(notice) {
+        disconnect(false);
+        online.room = null;
+        online.notice = notice || '';
+        try { localStorage.removeItem(KEYS.room); } catch (e) { /* ignore */ }
+    }
+    function leaveOnline(ask) {
+        if (online.room && online.status === 'playing' && ask) {
+            const two = online.seatOrder.length === 2;
+            if (!window.confirm(two ? 'Leave this game? It will count as a loss.' : 'Leave this game? A bot will play for you.')) return false;
+        }
+        disconnect(!!online.room);
+        forgetRoom('');
+        closeOverlay('overOverlay');
+        return true;
+    }
+
+    function sendAction(action) {
+        if (!sendOnline({ t: 'move', move: action, n: game.actions })) return;
+        online.pending = true;
+        if (action.type === 'roll') { rolling = true; }
+        clearTimeout(online.pendingTimer);
+        online.pendingTimer = setTimeout(() => { online.pending = false; rolling = false; render(); updateStatus(); }, 8000);
+        render();
+        updateStatus();
+    }
+
+    function onServerMessage(m) {
+        if (m.t === 'state') {
+            online.queue.push(m);
+            processQueue();
+        } else if (m.t === 'emote') {
+            showBubble(m.seat, EMOTES[m.id] || '');
+        } else if (m.t === 'error') {
+            if (m.code === 'not_found' || m.code === 'full' || m.code === 'bad_token') {
+                const text = m.code === 'not_found' ? 'Room not found. Check the code and try again.'
+                    : m.code === 'full' ? 'That room is already full.' : 'Something went wrong. Please try again.';
+                forgetRoom('');
+                refreshOnlineUI();
+                openLobby(text);
+            } else {
+                online.pending = false;
+                rolling = false;
+                render();
+                updateStatus();
+            }
+        }
+    }
+
+    async function processQueue() {
+        if (online.busy) return;
+        online.busy = true;
+        try {
+            while (online.queue.length) await applyServerState(online.queue.shift());
+        } finally {
+            online.busy = false;
+        }
+    }
+
+    async function applyServerState(s) {
+        if (s.type && s.type !== 'ludo') return;
+        const prevStatus = online.status;
+        const prevGame = game;
+        Object.assign(online, {
+            you: s.you, seats: s.seats, seatOrder: s.seatOrder, kind: s.kind, code: s.code,
+            rematch: s.rematch, result: s.result,
+        });
+        if (viewSeat !== s.you) { viewSeat = s.you; buildBoard(); layout(); }
+
+        if (s.state) {
+            const mv = s.move;
+            const animateIt = mv && prevGame && prevStatus === 'playing' && mv.n === prevGame.actions + 1 &&
+                online.queue.length < 4 && prevGame.players.join() === s.state.players.join();
+            if (animateIt) {
+                clearTimeout(online.pendingTimer);
+                online.pending = false;
+                animating = true;
+                render();
+                await animate(mv.events);
+                animating = false;
+            }
+            const rebuild = !prevGame || prevGame.players.join() !== s.state.players.join();
+            game = s.state;
+            view = game.tokens.map((t) => t.slice());
+            if (rebuild) { buildBoard(); layout(); }
+        } else if (!prevGame || prevGame.actions > 0 || prevGame.players.join() !== s.seatOrder.join()) {
+            showEmptyBoard(s.rules, s.seatOrder);
+        }
+        online.status = s.status;
+        online.pending = false;
+        rolling = false;
+        online.turnEnd = s.turnMsLeft != null ? Date.now() + s.turnMsLeft : null;
+        online.waitEnd = s.waitMsLeft != null ? Date.now() + s.waitMsLeft : null;
+
+        if (s.status === 'playing' && prevStatus !== 'playing') {
+            closeOverlay('overOverlay');
+            closeOverlay('lobbyOverlay');
+            beep(520, 0.1, 0.07);
+            setTimeout(() => beep(780, 0.15, 0.07), 110);
+            vibrate(60);
+        }
+        if (s.status === 'playing' && game.turn === s.you && game.phase === 'roll' && prevGame && prevGame.turn !== s.you) vibrate(25);
+        if (s.status === 'over' && prevStatus === 'playing') onGameOver();
+        if (s.status === 'over' && $('overOverlay').classList.contains('open')) updateRematchButton();
+        render();
+        refreshOnlineUI();
+        if (s.status === 'playing' && myTurn() && game.phase === 'move' && settings.autoMove) {
+            const moves = legalTokens(game);
+            if (moves.length === 1 || allSameSquare(moves)) {
+                clearTimeout(botTimer);
+                botTimer = setTimeout(() => { if (myTurn() && game.phase === 'move') act({ type: 'move', token: moves[0] }); }, 450);
+            }
+        }
+    }
+
+    function onOnlineGameOver() {
+        const r = online.result || { winner: -1, reason: 'abandoned' };
+        const won = r.winner === online.you;
+        $('resultEmoji').textContent = r.winner < 0 ? '🤝' : won ? '🎉' : '😔';
+        $('resultTitle').textContent = r.winner < 0 ? 'Game ended' : won ? 'You win!' : shortName(r.winner) + ' wins';
+        $('resultSub').textContent = r.reason === 'resign' ? (won ? 'The other player left.' : 'You left the game.')
+            : r.reason === 'timeout' ? (won ? 'The other player ran out of time.' : 'You ran out of time.')
+            : r.reason === 'abandoned' ? 'Everyone left.' : 'After ' + game.actions + ' moves';
+        fillRanking();
+        const st = stats.online || { w: 0, l: 0 };
+        if (won) st.w++; else st.l++;
+        stats.online = st;
+        store(KEYS.stats, stats);
+        $('resultStats').textContent = 'Online: ' + st.w + ' won · ' + st.l + ' lost';
+        $('leaveOverBtn').hidden = false;
+        $('leaveOverBtn').textContent = online.kind === 'quick' ? '⚡ Find new players' : 'Leave room';
+        updateRematchButton();
+        if (won) { beep(660, 0.15, 0.08); setTimeout(() => beep(880, 0.25, 0.08), 150); }
+        setTimeout(() => openOverlay('overOverlay'), 600);
+    }
+
+    function updateRematchButton() {
+        const btn = $('againBtn');
+        const humans = online.seatOrder.filter((i) => online.seats[i] && !online.seats[i].bot && i !== online.you);
+        const gone = humans.filter((i) => !online.seats[i].online);
+        if (online.rematch[online.you]) {
+            btn.textContent = 'Waiting for the others…';
+            btn.disabled = true;
+        } else if (humans.length && gone.length === humans.length) {
+            btn.textContent = 'The others left';
+            btn.disabled = true;
+        } else {
+            btn.textContent = humans.some((i) => online.rematch[i]) ? '✅ Accept rematch' : '🔁 Rematch';
+            btn.disabled = false;
+        }
+    }
+    function requestRematch() {
+        if (sendOnline({ t: 'rematch' })) {
+            online.rematch[online.you] = true;
+            updateRematchButton();
+        }
+    }
+
+    const bubbleTimers = {};
+    function showBubble(seat, text) {
+        if (!text) return;
+        const el = $('pp' + posOf(seat)).querySelector('.bubble');
+        el.textContent = text;
+        el.classList.add('show');
+        clearTimeout(bubbleTimers[seat]);
+        bubbleTimers[seat] = setTimeout(() => el.classList.remove('show'), 2600);
+        if (seat !== online.you) beep(880, 0.08, 0.05);
+    }
+
+    function updateOnlineStatus() {
+        const el = $('status');
+        if (!online.room) return setStatus(online.notice || 'Tap 🌐 ONLINE to find a game');
+        if (!online.connected) return setStatus(online.retries > 0 ? 'Connection lost — reconnecting…' : 'Connecting…');
+        if (online.status === 'waiting') return setStatus(online.kind === 'private' ? 'Waiting for friends…' : 'Looking for players…');
+        if (online.status === 'over') {
+            const r = online.result;
+            return setStatus(!r || r.winner < 0 ? 'Game over' : r.winner === online.you ? 'You win!' : shortName(r.winner) + ' wins', r && r.winner >= 0 ? COLORS[r.winner] : null);
+        }
+        if (online.status === 'playing') {
+            const secs = online.turnEnd ? Math.max(0, Math.ceil((online.turnEnd - Date.now()) / 1000)) : null;
+            const t = secs !== null ? ' · ' + secs + 's' : '';
+            const c = COLORS[game.turn];
+            if (game.turn === online.you) {
+                setStatus(online.pending ? '…' : (game.phase === 'roll' ? 'Your turn — tap the dice' : 'Tap a bouncing token') + t, c);
+                if (secs !== null && secs <= 5) el.classList.add('low');
+            } else {
+                setStatus(shortName(game.turn) + ' is playing…' + t, c);
+            }
+            return;
+        }
+        setStatus('Connecting…');
+    }
+
+    function refreshOnlineUI() {
+        const on = isOnline();
+        let show = false;
+        const code = $('waitCode');
+        const share = $('shareBtn');
+        const startBtn = $('startNowBtn');
+        const seatsEl = $('waitSeats');
+        code.hidden = true; share.hidden = true; startBtn.hidden = true; seatsEl.innerHTML = '';
+        $('waitSpinner').hidden = false;
+        if (on && online.room) {
+            if (!online.connected && online.status !== 'playing' && online.status !== 'over') {
+                show = true;
+                $('waitTitle').textContent = online.retries > 0 ? 'Reconnecting…' : 'Connecting…';
+                $('waitHint').textContent = navigator.onLine === false ? 'You are offline. Waiting for internet…' : '';
+            } else if (online.status === 'waiting') {
+                show = true;
+                for (const i of online.seatOrder) {
+                    const d = document.createElement('span');
+                    d.style.setProperty('--c', COLORS[i]);
+                    if (online.seats[i]) d.classList.add('in');
+                    seatsEl.appendChild(d);
+                }
+                const joined = online.seatOrder.filter((i) => online.seats[i]).length;
+                if (online.kind === 'private') {
+                    $('waitSpinner').hidden = true;
+                    $('waitTitle').textContent = 'Room code · ' + joined + '/' + online.seatOrder.length + ' joined';
+                    code.hidden = false;
+                    code.textContent = online.code;
+                    share.hidden = false;
+                    startBtn.hidden = online.you !== online.seatOrder[0];
+                    $('waitHint').textContent = 'Friends open Ludo → 🌐 ONLINE → Join and type this code.';
+                } else {
+                    const secs = online.waitEnd ? Math.max(0, Math.ceil((online.waitEnd - Date.now()) / 1000)) : null;
+                    $('waitTitle').textContent = 'Looking for players… ' + joined + '/' + online.seatOrder.length;
+                    $('waitHint').textContent = secs ? 'Bots fill the empty seats in ' + secs + ' s.' : 'Starting…';
+                }
+            }
+        }
+        $('waitCard').hidden = !show;
+        updateControls();
+        if (game) { render(); updateStatus(); }
+    }
+
+    function updateControls() {
+        const m = settings.mode;
+        document.querySelectorAll('.mode-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === m));
+        $('countSelect').value = String(settings.count);
+        $('newBtn').hidden = m === 'online';
+        $('emoteBtn').hidden = m !== 'online';
+        $('leaveBtn').hidden = m !== 'online';
+        $('soundBtn').textContent = settings.sound ? '🔊' : '🔇';
+    }
+
+    function enterOnline() {
+        clearTimeout(botTimer);
+        resetOnlineState(null);
+        viewSeat = 0;
+        showEmptyBoard();
+        refreshOnlineUI();
+        const saved = load(KEYS.room, null);
+        if (saved && saved.room && Date.now() - saved.at < 2 * 3600 * 1000 && serverUrl()) connectRoom(saved.room);
+        else openLobby();
+    }
+
+    async function shareCode() {
+        const text = "Let's play Ludo! Open Ludo → 🌐 ONLINE → Join and enter code " + online.code;
+        try { if (navigator.share) { await navigator.share({ title: 'Ludo', text: text }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+        try {
+            await navigator.clipboard.writeText(online.code);
+            $('waitHint').textContent = 'Code copied. Send it to your friends.';
+        } catch (e) {
+            $('waitHint').textContent = 'Tell your friends the code: ' + online.code;
+        }
+    }
+
+    Object.keys(EMOTES).forEach((id) => {
+        const b = document.createElement('button');
+        b.textContent = EMOTES[id];
+        b.addEventListener('click', () => {
+            closeOverlay('emoteOverlay');
+            const now = Date.now();
+            if (now - online.lastEmote < 1600) return;
+            online.lastEmote = now;
+            sendOnline({ t: 'emote', id: id });
+        });
+        $('emoteGrid').appendChild(b);
+    });
+
+    $('quickBtn').addEventListener('click', quickMatch);
+    $('createBtn').addEventListener('click', createRoom);
+    $('joinBtn').addEventListener('click', joinRoom);
+    $('codeInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
+    $('codeInput').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4); });
+    $('shareBtn').addEventListener('click', shareCode);
+    $('startNowBtn').addEventListener('click', () => sendOnline({ t: 'start' }));
+    $('cancelWaitBtn').addEventListener('click', () => { leaveOnline(false); refreshOnlineUI(); openLobby(); });
+    $('emoteBtn').addEventListener('click', () => { if (online.status === 'playing' || online.status === 'over') openOverlay('emoteOverlay'); });
+    $('leaveBtn').addEventListener('click', () => {
+        if (!online.room) return openLobby();
+        if (leaveOnline(true)) { refreshOnlineUI(); openLobby(); }
+    });
+    $('leaveOverBtn').addEventListener('click', () => {
+        const quick = online.kind === 'quick';
+        leaveOnline(false);
+        refreshOnlineUI();
+        if (quick) quickMatch(); else openLobby();
+    });
+    setInterval(() => {
+        if (isOnline() && !animating && online.room) {
+            updateStatus();
+            if (online.status === 'waiting' && online.kind === 'quick') refreshOnlineUI();
+        }
+    }, 500);
+
+    // ---------- Controls ----------
+    document.querySelectorAll('.mode-btn').forEach((b) => {
+        b.addEventListener('click', () => {
+            if (animating) return;
+            if (settings.mode === b.dataset.mode) {
+                if (isOnline() && !online.room) openLobby();
+                return;
+            }
+            if (isOnline() && !leaveOnline(true)) return;
+            settings.mode = b.dataset.mode;
+            saveSettings();
+            updateControls();
+            if (isOnline()) enterOnline();
+            else { refreshOnlineUI(); newGame(); }
+        });
+    });
+    $('countSelect').addEventListener('change', (e) => {
+        settings.count = Number(e.target.value);
+        saveSettings();
+        if (isOnline()) {
+            if (!online.room) openLobby();
+            return;
+        }
+        newGame();
+    });
+    $('soundBtn').addEventListener('click', () => {
+        settings.sound = !settings.sound;
+        saveSettings();
+        updateControls();
+    });
+    $('newBtn').addEventListener('click', () => { if (!animating) newGame(); });
+    $('againBtn').addEventListener('click', () => (isOnline() ? requestRematch() : newGame()));
+
+    let resizeTimer = null;
+    window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { layout(); renderTokens(); }, 80); });
+
+    // ---------- Start ----------
+    updateControls();
+    const saved = load(KEYS.save, null);
+    if (isOnline()) {
+        enterOnline();
+    } else if (saved && saved.game && saved.game.tokens && saved.mode === settings.mode && saved.count === settings.count && saved.game.winner === null) {
+        game = saved.game;
+        game.rules = normalizeRules(game.rules);
+        view = game.tokens.map((t) => t.slice());
+        buildBoard();
+        layout();
+        render();
+        updateStatus();
+        afterAction();
+    } else {
+        newGame();
+    }
+})();
+</script>
+</body>
+</html>

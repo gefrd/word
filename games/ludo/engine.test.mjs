@@ -178,3 +178,11 @@ test('hard bot beats random movers most of the time (4 players)', () => {
     // A random player would win ~25%.
     assert.ok(wins >= games * 0.45, `hard bot won ${wins}/${games}`);
 });
+
+test('ludo.html carries the current engine (run games/build.mjs if this fails)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { inlineEngine, pagePaths } = await import('../build.mjs');
+    const p = pagePaths('ludo');
+    const html = readFileSync(p.html, 'utf8');
+    assert.equal(inlineEngine(html, readFileSync(p.engine, 'utf8')), html);
+});

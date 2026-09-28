@@ -243,10 +243,10 @@ test('every rule combination: seeds conserved, games finish, bot legal', () => {
     }
 });
 
-test('igisoro.html carries the current engine (run build.mjs if this fails)', async () => {
+test('igisoro.html carries the current engine (run games/build.mjs if this fails)', async () => {
     const { readFileSync } = await import('node:fs');
-    const { inlineEngine } = await import('./build.mjs');
-    const html = readFileSync(new URL('../../igisoro.html', import.meta.url), 'utf8');
-    const engine = readFileSync(new URL('./engine.js', import.meta.url), 'utf8');
-    assert.equal(inlineEngine(html, engine), html);
+    const { inlineEngine, pagePaths } = await import('../build.mjs');
+    const p = pagePaths('igisoro');
+    const html = readFileSync(p.html, 'utf8');
+    assert.equal(inlineEngine(html, readFileSync(p.engine, 'utf8')), html);
 });
