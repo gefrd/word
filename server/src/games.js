@@ -19,6 +19,7 @@
 import * as igisoro from '../../games/igisoro/engine.js';
 import * as ludo from '../../games/ludo/engine.js';
 import * as draughts from '../../games/draughts/engine.js';
+import * as durak from '../../games/durak/engine.js';
 
 const DRAW = -1;
 
@@ -90,6 +91,38 @@ export const GAMES = {
         reason: (state) => state.reason || 'no_moves',
         botMove: (state, level, rng) => draughts.chooseBotMove(state, level, rng),
         nextFirst: (prev) => 1 - prev,
+    },
+
+    durak: {
+        turnMs: 30_000,
+        botDelayMs: 900,
+        maxTimeouts: 3,
+        maxSeats: 4,
+        seatOrder: (options) => durak.seatsFor(options.players),
+        normalizeRules: durak.normalizeRules,
+        normalizeOptions: (o = {}) => ({ players: [2, 3, 4].includes(o.players) ? o.players : 2 }),
+        // The server shuffles; the deck stays on the server (see viewFor).
+        create: ({ rules, firstPlayer, seats }) => durak.createGame({ rules, players: seats, firstPlayer, rng: secureRandom }),
+        parseMove: (msg) => {
+            const m = msg.move;
+            if (!m || typeof m !== 'object') return null;
+            const card = durak.isCard;
+            if (m.type === 'pass' || m.type === 'take') return { type: m.type };
+            if (m.type === 'defend' && card(m.card) && Number.isInteger(m.target)) return { type: 'defend', card: m.card, target: m.target };
+            if (m.type === 'transfer' && card(m.card)) return { type: 'transfer', card: m.card };
+            if (m.type === 'attack' && Array.isArray(m.cards) && m.cards.length <= 6 && m.cards.every(card)) return { type: 'attack', cards: m.cards.slice() };
+            return null;
+        },
+        isLegal: (state, move) => durak.isLegalAction(state, move),
+        apply: (state, move, rng) => durak.applyAction(state, move, rng),
+        turn: (state) => state.turn,
+        counter: (state) => state.actions,
+        winner: (state) => state.winner,
+        reason: (state) => (state.loser === null ? 'draw' : 'finished'),
+        botMove: (state, level, rng) => durak.chooseBotAction(durak.viewFor(state, state.turn), level, rng),
+        nextFirst: (prev, seats) => seats[(seats.indexOf(prev) + 1) % seats.length],
+        viewFor: (state, seat) => durak.viewFor(state, seat),
+        viewMove: (move, seat) => ({ ...move, events: durak.viewEvents(move.events, seat) }),
     },
 };
 

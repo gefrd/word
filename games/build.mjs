@@ -11,6 +11,7 @@ export const PAGES = {
     igisoro: '../igisoro.html',
     ludo: '../ludo.html',
     draughts: '../draughts.html',
+    durak: '../durak.html',
 };
 
 export function inlineEngine(html, engine) {
