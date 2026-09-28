@@ -1,86 +1,4 @@
 const STRINGS = {
-    ru: {
-        appTitle: 'Kivu 3D Скан',
-        tagline: 'Превращайте предметы в 3D-модели прямо на телефоне — без интернета и сервера.',
-        device: 'Устройство',
-        tierLow: 'экономный режим', tierMid: 'стандартный режим', tierHigh: 'максимальное качество',
-        scan360Title: '360° скан по листу',
-        scan360Desc: 'Лучшее качество. Поставьте предмет на лист с метками и обойдите его с камерой. Работает на любом телефоне.',
-        startLive: 'Сканировать камерой',
-        fromVideo: 'Из видео',
-        fromPhotos: 'Из фото (15–40)',
-        getSheet: 'Лист с метками',
-        photoTitle: 'Фото → 3D (ИИ)',
-        photoDesc: 'Один снимок, нейросеть достраивает объём. Первый запуск скачивает ~50 МБ моделей, дальше работает офлайн.',
-        pickPhoto: 'Выбрать фото',
-        takePhoto: 'Сделать фото',
-        demoTitle: 'Демо-модель',
-        demoDesc: 'Проверьте просмотр и AR на этом телефоне прямо сейчас.',
-        openDemo: 'Открыть демо',
-        myModels: 'Мои модели',
-        noModels: 'Пока пусто — отсканируйте что-нибудь.',
-        sheetTitle: 'Лист с метками',
-        sheetHelp: 'Распечатайте на A4 в масштабе 100% (без «вписать в страницу»). Нет принтера — откройте лист на ноутбуке или планшете, положите экран горизонтально и ставьте предмет на него (размер модели будет неточным, форма — правильной).',
-        downloadPdf: 'Скачать PDF',
-        fullscreenSheet: 'Показать на весь экран',
-        tipsTitle: 'Советы для хорошего скана',
-        tip1: 'Предмет — в центре листа, внутри пунктирной рамки.',
-        tip2: 'Предмет не должен быть белым, как бумага. Прозрачные и зеркальные предметы не получатся.',
-        tip3: 'Ровный свет без резких теней. Метки должны быть видны в кадре.',
-        tip4: 'Три круга: низко (почти с уровня стола), средне и сверху. Двигайтесь медленно.',
-        back: 'Назад',
-        done: 'Готово',
-        shots: 'кадров',
-        hint_noMarkers: 'Наведите камеру так, чтобы были видны метки листа',
-        hint_moreMarkers: 'Отодвиньтесь — нужно видеть больше меток',
-        hint_slow: 'Медленнее',
-        hint_blurry: 'Кадр смазан — держите телефон ровнее',
-        hint_raise: 'Поднимите телефон выше',
-        hint_lower: 'Опустите телефон ниже',
-        hint_good: 'Отлично! Обходите предмет по кругу',
-        hint_needLow: 'Теперь низкий круг — почти с уровня стола',
-        hint_needMid: 'Сделайте круг под углом ~45°',
-        hint_needHigh: 'Теперь круг сверху',
-        hint_enough: 'Достаточно кадров — можно нажать «Готово»',
-        bandLow: 'низ', bandMid: 'середина', bandHigh: 'верх',
-        cameraError: 'Нет доступа к камере. Разрешите камеру в настройках браузера.',
-        processing: 'Создаём 3D-модель…',
-        stage_prepare: 'Подготовка кадров',
-        stage_pose: 'Положение камеры',
-        stage_segment: 'Выделение предмета',
-        stage_carve: 'Вырезание объёма',
-        stage_mesh: 'Построение поверхности',
-        stage_color: 'Раскраска',
-        stage_depth: 'Нейросеть глубины',
-        stage_mask: 'Удаление фона',
-        stage_download: 'Загрузка модели ИИ',
-        stage_video: 'Анализ видео',
-        stage_photos: 'Анализ фото',
-        viewer: '3D-модель',
-        arView: 'Смотреть в AR',
-        arLite: 'AR (камера)',
-        glb: 'GLB', stl: 'STL', obj: 'OBJ',
-        share: 'Поделиться',
-        save: 'Сохранить',
-        saved: 'Сохранено в «Мои модели»',
-        newScan: 'Новый скан',
-        stats: '{v} вершин · {w}×{d}×{h} мм',
-        arliteHint: 'Ведите пальцем — вращать, двумя пальцами — масштаб',
-        arUnsupported: 'Этот телефон не поддерживает AR с привязкой к столу — открываю AR через камеру.',
-        errorPrefix: 'Ошибка',
-        tooFew: 'Мало кадров с видимым листом. Снимите ещё.',
-        videoHelp: 'Снимите видео 30–60 с, медленно обходя предмет на листе: низкий круг, средний и сверху.',
-        photosHelp: 'Выберите 15–40 фото предмета на листе с разных сторон.',
-        depthHelp: 'Лучше всего: один предмет крупно, простой фон.',
-        depthNote: 'Модель из одного фото — «объёмный рельеф»: задняя сторона достроена симметрично.',
-        noDepth: 'Модель глубины не загрузилась (нет сети?) — объём построен по силуэту. Откройте снова при интернете для полной версии.',
-        thickness: 'Толщина',
-        detail: 'Детализация',
-        lang: 'EN',
-        deleteModel: 'Удалить',
-        open: 'Открыть',
-        installHint: 'Можно установить как приложение: меню браузера → «Добавить на главный экран».',
-    },
     en: {
         appTitle: 'Kivu 3D Scan',
         tagline: 'Turn objects into 3D models right on your phone — no internet or server needed.',
@@ -150,7 +68,7 @@ const STRINGS = {
         arliteHint: 'Drag to rotate, pinch to resize',
         arUnsupported: 'This phone does not support surface-tracked AR — opening camera AR instead.',
         errorPrefix: 'Error',
-        tooFew: 'Too few frames with the sheet visible. Capture more.',
+        tooFew: 'Too few frames with the marker sheet visible. The object must stand on the printed sheet ("Marker sheet" button). Capture more.',
         videoHelp: 'Record 30–60 s slowly walking around the object on the sheet: a low, a middle and a top circle.',
         photosHelp: 'Pick 15–40 photos of the object on the sheet from all sides.',
         depthHelp: 'Best: one object, close up, plain background.',
@@ -158,28 +76,17 @@ const STRINGS = {
         noDepth: 'The depth model did not load (no connection?) — the shape is built from the outline. Try again online for the full version.',
         thickness: 'Thickness',
         detail: 'Detail',
-        lang: 'RU',
         deleteModel: 'Delete',
         open: 'Open',
         installHint: 'Install as an app: browser menu → "Add to Home screen".',
     },
 };
 
-let lang = (() => {
-    try { const s = localStorage.getItem('k3d_lang'); if (s) return s; } catch (_) {}
-    return /^ru|^uk|^be|^kk/i.test(navigator.language || '') ? 'ru' : 'en';
-})();
-
+// English only (owner's decision 2026-09-28)
 export function t(key, vars) {
-    let s = (STRINGS[lang] && STRINGS[lang][key]) || STRINGS.en[key] || key;
+    let s = STRINGS.en[key] || key;
     if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace('{' + k + '}', v);
     return s;
-}
-
-export function getLang() { return lang; }
-export function toggleLang() {
-    lang = lang === 'ru' ? 'en' : 'ru';
-    try { localStorage.setItem('k3d_lang', lang); } catch (_) {}
 }
 
 /** Fill every [data-i18n] element under root. */

@@ -229,80 +229,138 @@ function waitEvent(el, name, timeout = 8000) {
     });
 }
 
+// Some Android WebViews never decode frames for a <video> that is not in
+// the page, so the sampler keeps a tiny invisible one attached.
+function hiddenVideo(url) {
+    const v = document.createElement('video');
+    v.muted = true; v.playsInline = true; v.preload = 'auto';
+    v.setAttribute('muted', ''); v.setAttribute('playsinline', '');
+    v.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.appendChild(v);
+    v.src = url;
+    return v;
+}
+
+function dropVideo(v) {
+    v.pause(); v.removeAttribute('src'); v.load(); v.remove();
+}
+
+async function seekTo(video, time, timeout) {
+    video.currentTime = time;
+    try { await waitEvent(video, 'seeked', timeout); return true; } catch (_) { return false; }
+}
+
+const VIDEO_UNREADABLE = 'This phone cannot read this video. Try "Scan with camera", or record the video in 1080p.';
+
 /**
- * Sample a recorded walk-around video, keep the sharpest frame per coverage
+ * Plan B for phones where seeking hangs: play the video once and take a
+ * frame every `step` seconds while it runs.
+ */
+function sampleByPlayback(video, step, onFrame, onProgress) {
+    return new Promise((resolve, reject) => {
+        let next = 0, lastT = -1, lastMove = performance.now();
+        const finish = (err) => { clearInterval(timer); video.onended = null; video.pause(); err ? reject(err) : resolve(); };
+        const timer = setInterval(() => {
+            const tNow = video.currentTime;
+            if (tNow !== lastT) { lastT = tNow; lastMove = performance.now(); }
+            else if (performance.now() - lastMove > 10000) { finish(next > 0 ? null : new Error(VIDEO_UNREADABLE)); return; }
+            if (tNow >= next && video.readyState >= 2) { next = tNow + step; onFrame(tNow); onProgress(tNow / video.duration); }
+        }, 80);
+        video.onended = () => finish();
+        video.play().catch(() => finish(new Error(VIDEO_UNREADABLE)));
+    });
+}
+
+/**
+ * Sample a recorded walk-around video, keep the sharpest frames per coverage
  * cell. onProgress(p, state).
  */
 export async function keyframesFromVideo(file, opts = {}) {
     const longSide = opts.longSide || 1280;
-    const video = document.createElement('video');
-    video.muted = true; video.playsInline = true; video.preload = 'auto';
     const url = URL.createObjectURL(file);
-    video.src = url;
+    let video = hiddenVideo(url);
     try {
-        await waitEvent(video, 'loadedmetadata', 15000);
+        await waitEvent(video, 'loadedmetadata', 15000).catch(() => { throw new Error(VIDEO_UNREADABLE); });
         if (video.duration === Infinity) {
             // Browser-recorded WebM often has no duration until you seek to the end.
             video.currentTime = 1e7;
             await waitEvent(video, 'seeked', 15000).catch(() => {});
         }
-        if (!video.duration || !isFinite(video.duration)) throw new Error('Could not read this video.');
+        if (!video.duration || !isFinite(video.duration) || !video.videoWidth) throw new Error(VIDEO_UNREADABLE);
         // Some mobile browsers only decode frames after a play() attempt.
         try { await video.play(); video.pause(); } catch (_) {}
+        const duration = video.duration;
         const vw = video.videoWidth, vh = video.videoHeight;
         const s = Math.min(1, longSide / Math.max(vw, vh));
         const w = Math.round(vw * s), h = Math.round(vh * s);
         const ds = Math.min(1, 640 / Math.max(vw, vh));
         const [dc, dctx] = canvas2d(Math.round(vw * ds), Math.round(vh * ds));
         const [fc, fctx] = canvas2d(w, h);
-        const samples = Math.min(160, Math.max(40, Math.round(video.duration * 4)));
+        const samples = Math.min(160, Math.max(40, Math.round(duration * 4)));
         const f0 = 0.8 * Math.max(w, h);
         // Keep up to two frames per coverage cell (the sharpest, at least
-        // 0.4 s apart): more views carve a tighter shape.
-        const best = new Map(); // cell → [candidates]
+        // 0.4 s apart): more views carve a tighter shape. A candidate's
+        // full-size frame is encoded right away, so no second pass of seeks.
+        const best = new Map(); // cell → [candidates], sharpest first
         const coverage = new Coverage();
-        for (let i = 0; i < samples; i++) {
-            video.currentTime = Math.min(video.duration - 0.05, (i + 0.5) * video.duration / samples);
-            await waitEvent(video, 'seeked');
+        const onFrame = (time) => {
             dctx.drawImage(video, 0, 0, dc.width, dc.height);
             const small = dctx.getImageData(0, 0, dc.width, dc.height);
             const det = detectMarkers(small, w / dc.width);
-            if (det.ids.length >= 3) {
-                const pose = poseFromDetections(det, f0, w, h);
-                if (pose) {
-                    const ang = viewAngles(pose);
-                    const key = coverage.key(ang.az, ang.el);
-                    const sharp = sharpness(small);
-                    if (key) {
-                        const list = best.get(key) || [];
-                        const cand = { time: video.currentTime, sharp, ang };
-                        const near = list.findIndex(c => Math.abs(c.time - cand.time) < 0.4);
-                        if (near >= 0) { if (list[near].sharp < sharp) list[near] = cand; }
-                        else list.push(cand);
-                        list.sort((a, b) => b.sharp - a.sharp);
-                        best.set(key, list.slice(0, 2));
-                    }
-                    if (key) coverage.add(ang.az, ang.el, 0);
-                }
-            }
-            opts.onProgress && opts.onProgress((i + 1) / samples * 0.7, { cells: best.size });
-        }
-        // Grab the chosen frames at full keyframe resolution.
-        const keyframes = [];
-        let n = 0;
-        const chosen = [...best.values()].flat().sort((a, b) => a.time - b.time);
-        for (const c of chosen) {
-            video.currentTime = c.time;
-            await waitEvent(video, 'seeked');
+            if (det.ids.length < 3) return;
+            const pose = poseFromDetections(det, f0, w, h);
+            if (!pose) return;
+            const ang = viewAngles(pose);
+            const key = coverage.key(ang.az, ang.el);
+            if (!key) return;
+            const sharp = sharpness(small);
+            const list = best.get(key) || [];
+            const near = list.findIndex(c => Math.abs(c.time - time) < 0.4);
+            if (near >= 0 ? list[near].sharp >= sharp : list.length >= 2 && list[1].sharp >= sharp) return;
             fctx.drawImage(video, 0, 0, w, h);
-            const img = fctx.getImageData(0, 0, w, h);
-            const det = detectMarkers(img, 1);
-            if (det.ids.length >= 2) keyframes.push({ blob: await toBlob(fc, 0.9), width: w, height: h, det, sharpness: c.sharp });
+            const cand = { time, sharp, blob: toBlob(fc, 0.9) };
+            if (near >= 0) list[near] = cand; else list.push(cand);
+            list.sort((a, b) => b.sharp - a.sharp);
+            best.set(key, list.slice(0, 2));
+        };
+        const progress = (p) => opts.onProgress && opts.onProgress(Math.min(1, p) * 0.7, { cells: best.size });
+
+        let seeks = 0;
+        for (let i = 0; i < samples; i++) {
+            // Allow a slow first seek (big file, cold decoder); after that skip
+            // a frame that hangs instead of failing the whole scan.
+            if (await seekTo(video, Math.min(duration - 0.05, (i + 0.5) * duration / samples), seeks ? 6000 : 12000)) {
+                seeks++;
+                onFrame(video.currentTime);
+            } else if (!seeks && i >= 1) break;
+            progress((i + 1) / samples);
+        }
+        if (!seeks) {
+            // Seeking does not work in this browser — play the video through instead.
+            dropVideo(video);
+            video = hiddenVideo(url);
+            await waitEvent(video, 'loadedmetadata', 15000).catch(() => { throw new Error(VIDEO_UNREADABLE); });
+            await sampleByPlayback(video, duration / samples, onFrame, progress);
+        }
+
+        // Full-resolution detection on the chosen frames.
+        const keyframes = [];
+        const chosen = [...best.values()].flat().sort((a, b) => a.time - b.time);
+        let n = 0;
+        for (const c of chosen) {
+            const blob = await c.blob;
+            if (blob) {
+                const bmp = await createImageBitmap(blob);
+                fctx.drawImage(bmp, 0, 0, w, h);
+                bmp.close && bmp.close();
+                const det = detectMarkers(fctx.getImageData(0, 0, w, h), 1);
+                if (det.ids.length >= 2) keyframes.push({ blob, width: w, height: h, det, sharpness: c.sharp });
+            }
             opts.onProgress && opts.onProgress(0.7 + 0.3 * (++n) / chosen.length, { cells: best.size });
         }
         return keyframes;
     } finally {
-        video.removeAttribute('src'); video.load();
+        dropVideo(video);
         URL.revokeObjectURL(url);
     }
 }

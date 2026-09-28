@@ -1,6 +1,6 @@
 // Kivu 3D Scan — app shell and flows.
 import './style.css';
-import { t, applyI18n, toggleLang, getLang } from './i18n.js';
+import { t, applyI18n } from './i18n.js';
 import { boardSVG } from './board.js';
 import { sheetPDF } from './sheet-pdf.js';
 import { LiveCapture, BANDS, SECTORS, solveKeyframes, keyframesFromVideo, keyframesFromPhotos } from './capture.js';
@@ -83,7 +83,6 @@ async function home() {
     <div class="screen"><div class="page">
       <div class="topbar">
         <div class="brand">${ICON.logo}<h1 data-i18n="appTitle"></h1></div>
-        <button class="btn ghost" id="lang" style="min-height:38px;padding:6px 12px">${t('lang')}</button>
       </div>
       <p class="muted" data-i18n="tagline"></p>
       <span class="device-chip">${t('device')}: <b>${PROFILE.mem ? PROFILE.mem + ' GB' : '—'} · ${PROFILE.cores} CPU</b> · ${t(tierLabel)}</span>
@@ -125,7 +124,6 @@ async function home() {
       </section>
       <footer class="note" data-i18n="installHint"></footer>
     </div></div>`);
-    node.querySelector('#lang').onclick = () => { toggleLang(); document.documentElement.lang = getLang(); home(); };
     node.querySelector('#live').onclick = () => liveScan();
     node.querySelector('#sheet').onclick = () => sheetScreen();
     node.querySelector('#video').onclick = async () => { const [f] = await pickFiles('video/*'); if (f) fromVideo(f); };
@@ -623,7 +621,7 @@ async function viewerScreen({ mesh, name, kind, note, rebuild, saved }) {
 }
 
 // ---------------------------------------------------------------------
-document.documentElement.lang = getLang();
+document.documentElement.lang = 'en';
 home();
 if ('serviceWorker' in navigator && location.protocol === 'https:' && window.top === window) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});

@@ -16,6 +16,7 @@ export default defineConfig({
     base: './',
     plugins: [dropUnusedOrtWasm],
     worker: { format: 'es', plugins: () => [dropUnusedOrtWasm] },
-    build: { target: 'es2020', chunkSizeWarningLimit: 2000 },
+    // Готовый сканер кладём в public/scan3d главного сайта → kivu.site/scan3d/
+    build: { target: 'es2020', chunkSizeWarningLimit: 2000, outDir: '../public/scan3d', emptyOutDir: true },
     server: { fs: { allow: ['.'] } },
 });
