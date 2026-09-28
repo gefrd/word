@@ -18,6 +18,7 @@
 
 import * as igisoro from '../../games/igisoro/engine.js';
 import * as ludo from '../../games/ludo/engine.js';
+import * as connect4 from '../../games/connect4/engine.js';
 
 const DRAW = -1;
 
@@ -67,6 +68,27 @@ export const GAMES = {
         reason: () => 'finished',
         botMove: (state, level, rng) => ludo.chooseBotAction(state, level, rng),
         nextFirst: (prev, seats) => seats[(seats.indexOf(prev) + 1) % seats.length],
+    },
+
+    connect4: {
+        turnMs: 30_000,
+        botDelayMs: 900,
+        maxTimeouts: 2,
+        maxSeats: 2,
+        seatOrder: () => [0, 1],
+        normalizeRules: connect4.normalizeRules,
+        normalizeOptions: () => ({ players: 2 }),
+        create: ({ rules, firstPlayer }) => connect4.createGame({ rules, firstPlayer }),
+        // Clients send { move: col }; accept { col } too.
+        parseMove: (msg) => (Number.isInteger(msg.move) ? msg.move : Number.isInteger(msg.col) ? msg.col : null),
+        isLegal: (state, move) => connect4.isLegalMove(state, move),
+        apply: (state, move) => connect4.applyMove(state, move),
+        turn: (state) => state.turn,
+        counter: (state) => state.moveCount,
+        winner: (state) => state.winner,
+        reason: (state) => (state.winner === connect4.DRAW ? 'draw' : 'four'),
+        botMove: (state, level, rng) => connect4.chooseBotMove(state, level, rng),
+        nextFirst: (prev) => 1 - prev,
     },
 };
 
