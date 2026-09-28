@@ -14,10 +14,11 @@ import * as THREE from 'three';
 const params = new URLSearchParams(location.search);
 const OBJ = params.get('obj') || 'sneaker';
 const PLAIN = params.get('plain') === '1';
+const NOSHADOW = params.get('noshadow') === '1';
 let W = 1280, H = 720;
 const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setSize(W, H);
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = !NOSHADOW;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
@@ -79,6 +80,12 @@ const mat = (base, n, rep = 1) => {
     return m;
 };
 function add(geo, material, pos, rot = [0, 0, 0], scale = [1, 1, 1]) {
+    // boxes: a different texture on each face (a real box never repeats one
+    // picture on all six sides)
+    if (geo.type === 'BoxGeometry' && !PLAIN && material.map) {
+        const base = '#' + material.map.image.getContext('2d').getImageData(1, 1, 1, 1).data.slice(0, 3).reduce((a, v) => a + v.toString(16).padStart(2, '0'), '');
+        material = Array.from({ length: 6 }, () => mat(base, 260));
+    }
     const m = new THREE.Mesh(geo, material);
     m.position.set(...pos); m.rotation.set(...rot); m.scale.set(...scale);
     m.castShadow = true; m.receiveShadow = true;
@@ -101,7 +108,7 @@ if (OBJ === 'sneaker') {
 } else {
     // bottle: body + shoulder + neck + cap, label texture
     add(new THREE.CylinderGeometry(38, 38, 150, 40), mat('#3aa655', 400, 1), [0, 0, 75], [Math.PI / 2, 0, 0]);
-    add(new THREE.SphereGeometry(38, 40, 20, 0, Math.PI * 2, 0, Math.PI / 2), mat('#3aa655', 200), [0, 0, 150], [Math.PI / 2, 0, 0]);
+    add(new THREE.SphereGeometry(38, 40, 20), mat('#3aa655', 200), [0, 0, 150]);
     add(new THREE.CylinderGeometry(14, 14, 45, 24), mat('#3aa655', 100), [0, 0, 200], [Math.PI / 2, 0, 0]);
     add(new THREE.CylinderGeometry(16, 16, 18, 24), mat('#c0392b', 80), [0, 0, 230], [Math.PI / 2, 0, 0]);
 }
@@ -148,13 +155,14 @@ function maskURL() {
     scene.background = new THREE.Color(0x000000);
     scene.traverse(o => { if (o.isMesh || o.isLight) { saved.push([o, o.visible]); if (!objects.children.includes(o)) o.visible = false; } });
     const mats = objects.children.map(o => o.material);
+    // (array materials are restored below as well)
     objects.children.forEach(o => { o.material = white; o.visible = true; });
     renderer.shadowMap.enabled = false;
     renderer.render(scene, camera);
     const url = renderer.domElement.toDataURL('image/png');
     objects.children.forEach((o, i) => { o.material = mats[i]; });
     saved.forEach(([o, v]) => { o.visible = v; });
-    scene.background = bg; renderer.shadowMap.enabled = true;
+    scene.background = bg; renderer.shadowMap.enabled = !NOSHADOW;
     return url;
 }
 
@@ -175,6 +183,10 @@ function turntableCamera(u, opts) {
     camera.position.set(0, -d * Math.cos(el), ctrZ + d * Math.sin(el));
     camera.lookAt(0, 0, ctrZ);
     objects.rotation.z = u * Math.PI * 2;
+    if (params.get('lightrot') === '1') {
+        const a = u * Math.PI * 2;
+        sun.position.set(-300 * Math.cos(a) - 200 * Math.sin(a), -300 * Math.sin(a) + 200 * Math.cos(a), 700);
+    }
 }
 
 window.renderWalk = (n = 30, opts = {}) => {
@@ -234,11 +246,12 @@ window.recordVideo = async (mode = 'walk', opts = {}) => {
 const ray = new THREE.Raycaster();
 window.gtInside = (pts) => {
     objects.rotation.z = 0; objects.updateMatrixWorld(true);
-    objects.traverse(o => { if (o.material) o.material.side = THREE.DoubleSide; });
+    const setSide = (side) => objects.traverse(o => { if (o.material) [].concat(o.material).forEach(m => { m.side = side; }); });
+    setSide(THREE.DoubleSide);
     const dir = new THREE.Vector3(0.123, 0.456, 0.88).normalize();
     // inside the union of the parts: odd hit count for at least one part
     const r = pts.map(p => { ray.set(new THREE.Vector3(p[0], p[1], p[2]), dir); return objects.children.some(o => ray.intersectObject(o, false).length % 2 === 1); });
-    objects.traverse(o => { if (o.material) o.material.side = THREE.FrontSide; });
+    setSide(THREE.FrontSide);
     return r;
 };
 window.gtBox = () => { objects.rotation.z = 0; const b = new THREE.Box3().setFromObject(objects); return [b.min.toArray(), b.max.toArray()]; };

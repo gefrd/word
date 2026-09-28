@@ -391,3 +391,231 @@ export async function keyframesFromPhotos(files, opts = {}) {
     }
     return keyframes;
 }
+
+// ---------------------------------------------------------------------
+// No-sheet scan: plain frames (no markers needed)
+// ---------------------------------------------------------------------
+
+/** Sharpness on a small grey copy (variance of the Laplacian over the whole frame). */
+function smallStats(ctx, w, h) {
+    const img = ctx.getImageData(0, 0, w, h);
+    return { sharp: sharpness(img), grey: grey(img) };
+}
+function grey(img) {
+    const { data, width, height } = img, g = new Uint8Array(width * height);
+    for (let i = 0; i < g.length; i++) g[i] = (data[i * 4] * 77 + data[i * 4 + 1] * 150 + data[i * 4 + 2] * 29) >> 8;
+    return g;
+}
+function meanAbsDiff(a, b) {
+    let s = 0;
+    for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]);
+    return s / a.length;
+}
+
+/**
+ * Pick `count` sharp frames spread evenly over a walk-around or turntable
+ * video. Same decoding strategy as keyframesFromVideo: a hidden <video> kept
+ * in the page, seeking first and playing it through where seeking hangs
+ * (Android WebView "timeout seeked").
+ */
+export async function framesFromVideo(file, opts = {}) {
+    const longSide = opts.longSide || 1280, count = opts.count || 36;
+    const url = URL.createObjectURL(file);
+    let video = hiddenVideo(url);
+    try {
+        await waitEvent(video, 'loadedmetadata', 15000).catch(() => { throw new Error(VIDEO_UNREADABLE); });
+        if (video.duration === Infinity) {
+            video.currentTime = 1e7;
+            await waitEvent(video, 'seeked', 15000).catch(() => {});
+        }
+        if (!video.duration || !isFinite(video.duration) || !video.videoWidth) throw new Error(VIDEO_UNREADABLE);
+        try { await video.play(); video.pause(); } catch (_) {}
+        const duration = video.duration;
+        const vw = video.videoWidth, vh = video.videoHeight;
+        const s = Math.min(1, longSide / Math.max(vw, vh));
+        const w = Math.round(vw * s), h = Math.round(vh * s);
+        const ss = Math.min(1, 200 / Math.max(vw, vh));
+        const [sc, sctx] = canvas2d(Math.round(vw * ss), Math.round(vh * ss));
+        const [fc, fctx] = canvas2d(w, h);
+        // 3 candidates per output frame; keep the sharpest in each time bin
+        const samples = Math.min(150, count * 3);
+        const bins = new Array(count).fill(null);
+        const onFrame = (time) => {
+            const b = Math.min(count - 1, Math.floor(time / duration * count));
+            sctx.drawImage(video, 0, 0, sc.width, sc.height);
+            const { sharp } = smallStats(sctx, sc.width, sc.height);
+            if (bins[b] && bins[b].sharp >= sharp) return;
+            fctx.drawImage(video, 0, 0, w, h);
+            bins[b] = { time, sharp, blob: toBlob(fc, 0.9) };
+        };
+        const progress = (p) => opts.onProgress && opts.onProgress(Math.min(1, p), { frames: bins.filter(Boolean).length });
+        let seeks = 0;
+        for (let i = 0; i < samples; i++) {
+            if (await seekTo(video, Math.min(duration - 0.05, (i + 0.5) * duration / samples), seeks ? 6000 : 12000)) {
+                seeks++;
+                onFrame(video.currentTime);
+            } else if (!seeks && i >= 1) break;
+            progress((i + 1) / samples);
+        }
+        if (!seeks) {
+            dropVideo(video);
+            video = hiddenVideo(url);
+            await waitEvent(video, 'loadedmetadata', 15000).catch(() => { throw new Error(VIDEO_UNREADABLE); });
+            await sampleByPlayback(video, duration / samples, onFrame, progress);
+        }
+        const out = [];
+        for (const b of bins) if (b) { const blob = await b.blob; if (blob) out.push({ blob, width: w, height: h, time: b.time }); }
+        return out;
+    } finally {
+        dropVideo(video);
+        URL.revokeObjectURL(url);
+    }
+}
+
+/** 35 mm-equivalent focal length from a JPEG's EXIF (0 if absent). */
+export async function exifFocal35(file) {
+    try {
+        const buf = new DataView(await file.slice(0, 131072).arrayBuffer());
+        if (buf.getUint16(0) !== 0xffd8) return 0;
+        let o = 2;
+        while (o + 4 < buf.byteLength) {
+            const marker = buf.getUint16(o), len = buf.getUint16(o + 2);
+            if (marker === 0xffe1 && buf.getUint32(o + 4) === 0x45786966) { // "Exif"
+                const t = o + 10, le = buf.getUint16(t) === 0x4949;
+                const u16 = (p) => buf.getUint16(t + p, le), u32 = (p) => buf.getUint32(t + p, le);
+                const findTag = (ifd, tag) => {
+                    const n = u16(ifd);
+                    for (let i = 0; i < n; i++) { const e = ifd + 2 + i * 12; if (u16(e) === tag) return e; }
+                    return -1;
+                };
+                const ifd0 = u32(4);
+                const ex = findTag(ifd0, 0x8769);
+                if (ex < 0) return 0;
+                const e = findTag(u32(ex + 8), 0xa405);
+                return e < 0 ? 0 : u16(e + 8);
+            }
+            o += 2 + len;
+        }
+    } catch (_) { /* not a JPEG / no EXIF */ }
+    return 0;
+}
+
+/**
+ * Photos for the no-sheet scan: sorted by capture time, orientation fixed,
+ * re-encoded at longSide. Also returns f/longSide from EXIF when present.
+ */
+export async function framesFromPhotos(files, opts = {}) {
+    const longSide = opts.longSide || 1280;
+    const list = [...files].sort((a, b) => (a.lastModified - b.lastModified) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const out = [];
+    let size = null, fRatio = 0;
+    for (let i = 0; i < list.length; i++) {
+        const bmp = await createImageBitmap(list[i], { imageOrientation: 'from-image' }).catch(() => createImageBitmap(list[i]));
+        const s = Math.min(1, longSide / Math.max(bmp.width, bmp.height));
+        let w = Math.round(bmp.width * s), h = Math.round(bmp.height * s);
+        if (!size) {
+            size = { w, h };
+            const f35 = await exifFocal35(list[i]);
+            // 35 mm film diagonal is 43.27 mm
+            if (f35 > 10 && f35 < 200) fRatio = f35 * Math.hypot(w, h) / 43.27 / Math.max(w, h);
+        }
+        if (Math.abs(w / h - size.w / size.h) > 0.02) { bmp.close && bmp.close(); continue; } // other orientation/camera
+        w = size.w; h = size.h;
+        const [c, ctx] = canvas2d(w, h);
+        ctx.drawImage(bmp, 0, 0, w, h);
+        bmp.close && bmp.close();
+        out.push({ blob: await toBlob(c, 0.9), width: w, height: h });
+        opts.onProgress && opts.onProgress((i + 1) / list.length, { frames: out.length });
+    }
+    return { frames: out, fRatio };
+}
+
+/**
+ * Live camera for the no-sheet scan: takes a frame automatically whenever
+ * the view has changed enough and the picture is sharp. onFrame(blob) is
+ * called for each one (the page sends it to the worker right away).
+ */
+export class LiveFreeCapture {
+    constructor(video, opts = {}) {
+        this.video = video;
+        this.opts = { longSide: 1280, target: 32, max: 40, minGap: 700, ...opts };
+        this.count = 0;
+        this.running = false;
+        this.lastGrey = null;
+        this.lastShot = 0;
+        this.prevGrey = null;
+    }
+
+    async start() {
+        const long = this.opts.longSide >= 1600 ? 1920 : 1280;
+        this.stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: long }, height: { ideal: Math.round(long * 9 / 16) } },
+        });
+        this.video.srcObject = this.stream;
+        this.video.playsInline = true; this.video.muted = true;
+        await this.video.play();
+        const track = this.stream.getVideoTracks()[0];
+        try {
+            const caps = track.getCapabilities ? track.getCapabilities() : {};
+            if (caps.focusMode && caps.focusMode.includes('continuous')) await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+        } catch (_) {}
+        this.running = true;
+        this.timer = setInterval(() => this.tick(), 150);
+    }
+
+    stop() {
+        this.running = false;
+        clearInterval(this.timer);
+        if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+        this.stream = null;
+    }
+
+    async toggleTorch(on) {
+        const track = this.stream && this.stream.getVideoTracks()[0];
+        if (!track) return false;
+        try { await track.applyConstraints({ advanced: [{ torch: on }] }); return true; } catch (_) { return false; }
+    }
+
+    tick() {
+        const v = this.video;
+        if (!this.running || v.readyState < 2 || !v.videoWidth || this.busy) return;
+        const s = 160 / Math.max(v.videoWidth, v.videoHeight);
+        const w = Math.round(v.videoWidth * s), h = Math.round(v.videoHeight * s);
+        if (!this.sctx) [this.sc, this.sctx] = canvas2d(w, h);
+        this.sctx.drawImage(v, 0, 0, w, h);
+        const { sharp, grey: g } = smallStats(this.sctx, w, h);
+        // motion since the previous tick (too fast = blur) and change since the last shot
+        const motion = this.prevGrey ? meanAbsDiff(g, this.prevGrey) : 0;
+        this.prevGrey = g;
+        const change = this.lastGrey ? meanAbsDiff(g, this.lastGrey) : Infinity;
+        const now = performance.now();
+        let hint = 'move';
+        if (motion > 22) hint = 'slow';
+        else if (sharp < 12) hint = 'blurry';
+        else if (this.count >= this.opts.max) hint = 'enough';
+        // a big change (walking around) shoots quickly; a small one (object
+        // turning on a stool in a fixed view) after a longer pause
+        else if (now - this.lastShot > this.opts.minGap && (change > 7 || (now - this.lastShot > 1400 && change > 2.5))) { this.shoot(g); hint = 'shot'; }
+        else if (this.count >= this.opts.target) hint = 'enough';
+        this.opts.onUpdate && this.opts.onUpdate({ count: this.count, hint, motion, change });
+    }
+
+    async shoot(g) {
+        this.busy = true;
+        try {
+            const v = this.video;
+            const s = Math.min(1, this.opts.longSide / Math.max(v.videoWidth, v.videoHeight));
+            const [c, ctx] = canvas2d(Math.round(v.videoWidth * s), Math.round(v.videoHeight * s));
+            ctx.drawImage(v, 0, 0, c.width, c.height);
+            const blob = await toBlob(c, 0.9);
+            if (!blob) return;
+            this.lastGrey = g || this.prevGrey;
+            this.lastShot = performance.now();
+            this.count++;
+            this.opts.onFrame && this.opts.onFrame(blob, this.count);
+        } finally { this.busy = false; }
+    }
+
+    manualShot() { return this.shoot(this.prevGrey); }
+}

@@ -2,8 +2,8 @@
 import { buildMarkerlessModel, frameFeatures, PROFILES } from '/src/markerless.js';
 import { loadRMBG, segmentObject } from '/src/rmbg.js';
 import { reconstructWithMasks } from '/src/reconstruct.js';
-import { poseErrors, gridIoU } from './eval-util.js';
-import { labelMask } from '/src/markerless.js';
+import { poseErrors, gridIoU, gridIoUScaleFit } from './eval-util.js';
+import { labelMask, objectThumb } from '/src/markerless.js';
 
 async function decode(url, w, h) {
     const img = new Image(); img.src = url; await img.decode();
@@ -45,7 +45,7 @@ window.runFree = async (o = {}) => {
         t0 = t();
         const feat = frameFeatures(rgba, w, h, prob, { maxFeatures: prof.maxFeatures });
         T.features += t() - t0;
-        frames.push({ feat, prob });
+        frames.push({ feat, prob, thumb: objectThumb(rgba, w, h, prob) });
     }
     // mask quality vs ground truth (needs a second render with masks)
     if (o.masks !== 'gt' && o.maskEval) {
@@ -57,6 +57,7 @@ window.runFree = async (o = {}) => {
             maskIoU.push(a / u);
         }
     }
+    const logs = [];
     if (o.dumpPair) {
         const { matchFeatures } = await import('/src/features.js');
         const [i, j] = o.dumpPair;
@@ -64,7 +65,6 @@ window.runFree = async (o = {}) => {
         return { dump: { m: Array.from(m), fi: { x: Array.from(frames[i].feat.x), y: Array.from(frames[i].feat.y), level: Array.from(frames[i].feat.level) }, fj: { x: Array.from(frames[j].feat.x), y: Array.from(frames[j].feat.y) },
             Pi: { R: data.frames[i].R, t: data.frames[i].t }, Pj: { R: data.frames[j].R, t: data.frames[j].t }, f: data.f * s, w, h, urlI: data.frames[i].url, urlJ: data.frames[j].url } };
     }
-    const logs = [];
     const getFrame = async (i, side) => {
         const ss = side / Math.max(data.width, data.height);
         const ww = Math.round(data.width * ss), hh = Math.round(data.height * ss);
@@ -74,7 +74,7 @@ window.runFree = async (o = {}) => {
     let out = null, err = null;
     try {
         out = await buildMarkerlessModel({ frames, width: w, height: h, getFrame }, {
-            gridRes: o.gridRes || prof.gridRes, colorSide: prof.colorSide, log: (m) => logs.push(m), sfm: o.sfm || {},
+            gridRes: o.gridRes || prof.gridRes, colorSide: prof.colorSide, log: (m) => logs.push(m), sfm: o.sfm || {}, similarK: o.similarK ?? 2,
         });
     } catch (e) { err = e.message + (e.stats ? ' ' + JSON.stringify(e.stats) : ''); }
     T.reconstruct = t() - t0;
@@ -84,12 +84,31 @@ window.runFree = async (o = {}) => {
     if (out) {
         const pe = poseErrors(out.poses, gtPoses);
         res.pose = { ...pe, align: undefined, scale: pe.align.s };
+        // ground plane and up axis of the estimated object frame vs truth
+        const A = pe.align;
+        res.groundErrMm = A.t[2] / A.s;          // where the true ground (z=0) lands, in true mm
+        res.upErrDeg = Math.acos(Math.min(1, A.R[8])) * 180 / Math.PI;
         res.fEst = out.f / s; res.fGT = data.f;
         res.registered = out.registered.length;
         res.info = out.info;
         res.iou = gridIoU(out.grid, pe.align, window.gtInside, gtBox, o.evalStep || 3);
+        res.iouShape = gridIoUScaleFit(out.grid, pe.align, window.gtInside, gtBox, o.evalStep || 4);
         res.verts = out.positions.length / 3;
         res.mesh = o.keepMesh ? { positions: Array.from(out.positions), indices: Array.from(out.indices), colors: Array.from(out.colors) } : null;
+    }
+    if (o.groundCheck) {
+        const { createCarver } = await import('/src/reconstruct.js');
+        const { estimateGround } = await import('/src/markerless.js');
+        const labels = frames.map(fr => labelMask(fr.prob, w, h));
+        const [lo, hi] = gtBox;
+        const views = gtPoses.map((p, k) => ({ R: p.R, t: p.t, f: data.f * s, width: w, height: h, mask: labels[k] }));
+        for (const res of [56, 90, 130]) {
+            const b = { x0: lo[0] - 20, x1: hi[0] + 20, y0: lo[1] - 20, y1: hi[1] + 20, z0: -60, z1: hi[2] + 20 };
+            const c = createCarver({ bounds: b, voxel: Math.max(b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0) / res, bgFrac: 0.08, keepFrac: 0.2 });
+            for (const v of views) c.addView(v);
+            const g = estimateGround(c.finish(), views);
+            logs.push(`GT-pose ground check res ${res}: pcts ${g && g.pcts} (true 0)`);
+        }
     }
     // Upper bound: same masks, ground-truth poses (mask error only)
     if (o.gtPoseCheck) {

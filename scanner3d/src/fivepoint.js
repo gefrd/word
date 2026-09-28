@@ -19,25 +19,16 @@ const key = (a, b, c) => a * 16 + b * 4 + c;
 const COL = new Int8Array(64).fill(-1);
 MONO.forEach(([a, b, c], i) => { COL[key(a, b, c)] = i; });
 
-// Dense polynomials over exponents (a, b, c) ≤ 3 stored as Float64Array(64).
-function pmul(p, q) {
-    const r = new Float64Array(64);
-    for (let i = 0; i < 64; i++) {
-        const pi = p[i];
-        if (!pi) continue;
-        const a = i >> 4, b = (i >> 2) & 3, c = i & 3;
-        for (let j = 0; j < 64; j++) {
-            const qj = q[j];
-            if (!qj) continue;
-            const A = a + (j >> 4), B = b + ((j >> 2) & 3), C = c + (j & 3);
-            if (A > 3 || B > 3 || C > 3) continue; // never happens for total degree ≤ 3
-            r[key(A, B, C)] += pi * qj;
-        }
-    }
-    return r;
-}
-const padd = (p, q, s = 1) => { const r = new Float64Array(64); for (let i = 0; i < 64; i++) r[i] = p[i] + s * q[i]; return r; };
-const pscale = (p, s) => p.map(v => v * s);
+// Monomial bases: linear [x, y, z, 1], quadratic (10), cubic = MONO (20).
+// LL[i·4+j]: index in the quadratic basis of linear_i · linear_j;
+// QL[q·4+j]: index in MONO of quadratic_q · linear_j.
+const LIN = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [0, 0, 0]];
+const QUAD = [];
+for (let a = 0; a <= 2; a++) for (let b = 0; a + b <= 2; b++) for (let c = 0; a + b + c <= 2; c++) QUAD.push([a, b, c]);
+const qIndex = (e) => QUAD.findIndex(q => q[0] === e[0] && q[1] === e[1] && q[2] === e[2]);
+const LL = new Int8Array(16), QL = new Int8Array(40);
+for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) LL[i * 4 + j] = qIndex([0, 1, 2].map(k => LIN[i][k] + LIN[j][k]));
+for (let q = 0; q < 10; q++) for (let j = 0; j < 4; j++) { const e = [0, 1, 2].map(k => QUAD[q][k] + LIN[j][k]); QL[q * 4 + j] = COL[key(e[0], e[1], e[2])]; }
 
 // 1-D polynomials in z (coefficient index = power)
 function zmul(p, q) {
@@ -129,34 +120,36 @@ export function fivePoint(x1, x2) {
     // null space basis: the 4 smallest eigenvectors
     const basis = [0, 1, 2, 3].map(c => Array.from({ length: 9 }, (_, r) => vectors[r * 9 + c]));
     const [X, Y, Z, W] = basis;
-    // E entries as linear polynomials in x, y, z
-    const Ep = [];
-    for (let e = 0; e < 9; e++) {
-        const p = new Float64Array(64);
-        p[key(1, 0, 0)] = X[e]; p[key(0, 1, 0)] = Y[e]; p[key(0, 0, 1)] = Z[e]; p[key(0, 0, 0)] = W[e];
-        Ep.push(p);
+    // E entries as linear polynomials [x, y, z, 1]
+    const Lp = [];
+    for (let e = 0; e < 9; e++) Lp.push([X[e], Y[e], Z[e], W[e]]);
+    const quad = (p, q) => { const r = new Float64Array(10); for (let i = 0; i < 4; i++) { const pi = p[i]; for (let j = 0; j < 4; j++) r[LL[i * 4 + j]] += pi * q[j]; } return r; };
+    const cubic = (qd, l, out, s) => { for (let i = 0; i < 10; i++) { const v = qd[i] * s; if (!v) continue; for (let j = 0; j < 4; j++) out[QL[i * 4 + j]] += v * l[j]; } };
+    const A = [];
+    // det(E) = e00(e11e22 − e12e21) + e01(e12e20 − e10e22) + e02(e10e21 − e11e20)
+    {
+        const r = new Float64Array(20);
+        const m = (a, b) => quad(Lp[a], Lp[b]);
+        const sub = (p, q) => p.map((v, i) => v - q[i]);
+        cubic(sub(m(4, 8), m(5, 7)), Lp[0], r, 1);
+        cubic(sub(m(5, 6), m(3, 8)), Lp[1], r, 1);
+        cubic(sub(m(3, 7), m(4, 6)), Lp[2], r, 1);
+        A.push(r);
     }
-    const at = (r, c) => Ep[r * 3 + c];
-    // det(E)
-    let det = pmul(at(0, 0), padd(pmul(at(1, 1), at(2, 2)), pmul(at(1, 2), at(2, 1)), -1));
-    det = padd(det, pmul(at(0, 1), padd(pmul(at(1, 2), at(2, 0)), pmul(at(1, 0), at(2, 2)), -1)));
-    det = padd(det, pmul(at(0, 2), padd(pmul(at(1, 0), at(2, 1)), pmul(at(1, 1), at(2, 0)), -1)));
-    // EEt (quadratic)
+    // E·Eᵀ (quadratic) and the trace constraint 2·E·Eᵀ·E − tr(E·Eᵀ)·E = 0
     const EEt = [];
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
-        let s = new Float64Array(64);
-        for (let k = 0; k < 3; k++) s = padd(s, pmul(at(i, k), at(j, k)));
-        EEt.push(s);
+        const r = new Float64Array(10);
+        for (let k = 0; k < 3; k++) { const q = quad(Lp[i * 3 + k], Lp[j * 3 + k]); for (let t = 0; t < 10; t++) r[t] += q[t]; }
+        EEt.push(r);
     }
-    const trace = padd(padd(EEt[0], EEt[4]), EEt[8]);
-    const rows = [det];
+    const trace = EEt[0].map((v, t) => v + EEt[4][t] + EEt[8][t]);
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
-        let s = new Float64Array(64);
-        for (let k = 0; k < 3; k++) s = padd(s, pmul(EEt[i * 3 + k], at(k, j)));
-        rows.push(padd(pscale(s, 2), pmul(trace, at(i, j)), -1));
+        const r = new Float64Array(20);
+        for (let k = 0; k < 3; k++) cubic(EEt[i * 3 + k], Lp[k * 3 + j], r, 2);
+        cubic(trace, Lp[i * 3 + j], r, -1);
+        A.push(r);
     }
-    // 10×20 coefficient matrix
-    const A = rows.map(p => { const r = new Float64Array(20); for (let i = 0; i < 64; i++) if (p[i]) r[COL[i]] = p[i]; return r; });
     // Gauss-Jordan on the first 10 columns
     for (let c = 0; c < 10; c++) {
         let piv = c;

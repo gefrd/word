@@ -63,7 +63,7 @@ export function poseErrors(est, gt) {
         return rotAngle(mm(Gt, Rt));
     });
     const med = (v) => { const s = [...v].sort((a, b) => a - b); return s[s.length >> 1]; };
-    return { align: A, n: idx.length, posErrMedMm: med(posErr), posErrMaxMm: Math.max(...posErr), rotErrMedDeg: med(rotErr), rotErrMaxDeg: Math.max(...rotErr), camDistMm: dMed };
+    return { align: A, n: idx.length, perFrame: idx.map((i, k) => [i, +posErr[k].toFixed(1), +rotErr[k].toFixed(2)]), posErrMedMm: med(posErr), posErrMaxMm: Math.max(...posErr), rotErrMedDeg: med(rotErr), rotErrMaxDeg: Math.max(...rotErr), camDistMm: dMed };
 }
 
 /** IoU between the carved grid (est frame) and the ground-truth object (gt frame). */
@@ -101,4 +101,23 @@ export function gridIoU(grid, align, gtInside, gtBox, step = 3) {
     }
     uni += outside; extra += outside;
     return { iou: inter / uni, extraFrac: extra / gtN, missingFrac: missing / gtN, gtSamples: gtN };
+}
+
+/**
+ * IoU after also fitting the model's size (scale about the GT object's
+ * centre): the absolute size of a no-sheet scan is unknown anyway (the user
+ * types the real length), so this measures the shape alone.
+ */
+export function gridIoUScaleFit(grid, align, gtInside, gtBox, step = 3) {
+    const c = [(gtBox[0][0] + gtBox[1][0]) / 2, (gtBox[0][1] + gtBox[1][1]) / 2, 0];
+    let best = null;
+    for (const k of [0.84, 0.88, 0.92, 0.96, 1, 1.04, 1.08, 1.12, 1.16]) {
+        // gt point p → est: align(c + (p - c) / k)
+        const A2 = { s: align.s / k, R: align.R, t: null };
+        const Rc = mv(align.R, c);
+        A2.t = [0, 1, 2].map(i => align.t[i] + align.s * Rc[i] * (1 - 1 / k));
+        const r = gridIoU(grid, A2, gtInside, gtBox, step);
+        if (!best || r.iou > best.iou) best = { ...r, scale: k };
+    }
+    return best;
 }

@@ -56,6 +56,43 @@ function dilateBinary(prob, w, h, r, thr) {
     return m;
 }
 
+/** 12×12 grey thumbnail of the object's bounding box (to find similar views among photos). */
+export function objectThumb(rgba, w, h, prob) {
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) if (prob[y * w + x] >= 110) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) return null;
+    const T = 12, out = new Float32Array(T * T);
+    for (let j = 0; j < T; j++) for (let i = 0; i < T; i++) {
+        const x = Math.min(w - 1, Math.round(x0 + (i + 0.5) * (x1 - x0) / T)), y = Math.min(h - 1, Math.round(y0 + (j + 0.5) * (y1 - y0) / T));
+        const k = (y * w + x) * 4;
+        out[j * T + i] = prob[y * w + x] >= 110 ? (rgba[k] + rgba[k + 1] + rgba[k + 2]) / 3 : -1;
+    }
+    // zero-mean, unit-norm over object pixels
+    let m = 0, n = 0;
+    for (const v of out) if (v >= 0) { m += v; n++; }
+    m /= Math.max(1, n);
+    let s = 0;
+    for (let i = 0; i < out.length; i++) { out[i] = out[i] >= 0 ? out[i] - m : 0; s += out[i] * out[i]; }
+    s = Math.sqrt(s) || 1;
+    for (let i = 0; i < out.length; i++) out[i] /= s;
+    return out;
+}
+
+/** For unordered photos: each frame also gets matched with its most similar-looking frames. */
+export function similarNeighbours(list, k) {
+    return list.map((a, i) => {
+        if (!a.thumb) return [];
+        const sc = [];
+        list.forEach((b, j) => {
+            if (j === i || !b.thumb) return;
+            let d = 0;
+            for (let q = 0; q < a.thumb.length; q++) d += a.thumb[q] * b.thumb[q];
+            sc.push([d, j]);
+        });
+        return sc.sort((p, q) => q[0] - p[0]).slice(0, k).map(e => e[1]);
+    });
+}
+
 /**
  * Soft AI mask (0..255) → carving labels. Pixels just outside the object
  * edge become UNKNOWN (no vote) so small pose errors don't shave off thin
@@ -200,7 +237,7 @@ export function estimateGround(grid, views) {
         }
     }
     if (heights.length < 5) return null;
-    return { ground: pct(heights, 0.1), median: median(heights), n: heights.length };
+    return { q: pct(heights, 0.3), median: median(heights), n: heights.length, pcts: [0.05, 0.1, 0.25, 0.5, 0.75].map(q => +pct(heights, q).toFixed(1)) };
 }
 
 /**
@@ -212,9 +249,14 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
     const report = opts.onProgress || (() => {});
     const log = opts.log || (() => {});
     const t0 = Date.now();
-    // --- 1. camera poses
-    const sfm = runSfM(frames.map(fr => ({ feat: fr.feat, extraNeighbours: fr.extraNeighbours })), width, height, {
-        ...opts.sfm, log, onProgress: (stage, p) => report(stage, p),
+    // --- 1. camera poses. Besides neighbours in time, match each frame with
+    //     the frames that look most alike (the same side seen from another
+    //     height, or photos taken out of order).
+    // (look-alike sides of a symmetric object can fool this; sfm.js only
+    //  accepts such a pair when it shows real parallax)
+    const similar = opts.similarK && frames.every(fr => fr.thumb) ? similarNeighbours(frames, opts.similarK) : frames.map(() => []);
+    const sfm = runSfM(frames.map((fr, i) => ({ feat: fr.feat, extraNeighbours: [...(fr.extraNeighbours || []), ...similar[i]] })), width, height, {
+        closed: true, ...opts.sfm, log, onProgress: (stage, p) => report(stage, p),
     });
     const reg = [];
     sfm.cams.forEach((c, i) => { if (c) reg.push(i); });
@@ -250,11 +292,23 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
     }
     if (!cbox) throw new Error('EMPTY_HULL');
     report('carve', 0.1);
-    // --- ground
-    const g = estimateGround(coarse, views);
-    let ground = g ? g.ground : cbox.min[2];
-    ground = Math.max(ground, cbox.min[2]);
-    log(`coarse box ${cbox.min.map(v => v.toFixed(0))} … ${cbox.max.map(v => v.toFixed(0))}, ground ${ground.toFixed(1)} (${g ? g.n : 0} rays), lowest point ${pct(P.map(p => p[2]), 0.02).toFixed(1)}`);
+    // --- ground: rough from the coarse grid, then refined on a finer grid
+    //     inside the tight box (coarse voxels bias it downwards)
+    const g0 = estimateGround(coarse, views);
+    let ground = Math.max(g0 ? g0.median - 2 * coarse.voxel : cbox.min[2], cbox.min[2]);
+    {
+        const cvx = coarse.voxel;
+        const mb = { x0: cbox.min[0] - 2 * cvx, x1: cbox.max[0] + 2 * cvx, y0: cbox.min[1] - 2 * cvx, y1: cbox.max[1] + 2 * cvx, z0: ground - cvx, z1: cbox.max[2] + 2 * cvx };
+        const mv = Math.max(mb.x1 - mb.x0, mb.y1 - mb.y0, mb.z1 - mb.z0) / 90;
+        const carver = createCarver({ bounds: mb, voxel: mv, bgFrac: 0.08, keepFrac: 0.2 });
+        for (const v of views) carver.addView(v);
+        const mid = carver.finish();
+        const g1 = estimateGround(mid, views);
+        if (g1) ground = Math.max(mb.z0, g1.q);
+        log(`medium box z ${occupiedBox(mid).min[2].toFixed(1)} (grid z0 ${mb.z0.toFixed(1)}, voxel ${mv.toFixed(2)})`);
+        log(`ground coarse ${g0 && g0.pcts} → medium ${g1 && g1.pcts} (${g1 ? g1.n : 0} rays) → ${ground.toFixed(1)}`);
+    }
+    log(`coarse box ${cbox.min.map(v => v.toFixed(0))} … ${cbox.max.map(v => v.toFixed(0))}, lowest sparse point ${pct(P.map(p => p[2]), 0.02).toFixed(1)}`);
     // --- 4. fine carving in the tight box, ground at z = 0
     const cv = coarse.voxel;
     const shift = [(cbox.min[0] + cbox.max[0]) / 2, (cbox.min[1] + cbox.max[1]) / 2, ground];

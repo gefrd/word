@@ -103,6 +103,13 @@ p { margin: 0; }
 .model-card .meta .row { display: flex; gap: 6px; }
 .model-card .meta button { flex: 1; min-height: 34px; padding: 6px; font-size: 12px; }
 footer.note { font-size: 12px; color: var(--muted); }
+details.how { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+details.how summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--accent); min-height: 32px; display: flex; align-items: center; }
+details.how .tips { margin: 6px 0 8px; }
+.size-row { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.size-in { display: flex; gap: 8px; }
+.size-in input { flex: 1; min-width: 0; min-height: 42px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); padding: 8px 10px; font-size: 16px; }
+.size-in .btn { min-height: 42px; padding: 8px 14px; }
 
 /* ---------- sheet ---------- */
 .sheet-preview { background: #fff; border-radius: 8px; padding: 8px; }

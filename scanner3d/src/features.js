@@ -174,6 +174,7 @@ export function detectFeatures(gray, w, h, mask = null, opts = {}) {
     let tot = 0;
     for (let l = 0; l < levels; l++) { quotas.push(Math.pow(scale, -2 * l)); tot += quotas[l]; }
     const xs = [], ys = [], lv = [], sc = [], descs = [];
+    const taken = pointGrid(w, h, 8);
     let img = gray, msk = mask, lw = w, lh = h;
     for (let l = 0; l < levels; l++) {
         if (l > 0) {
@@ -214,16 +215,36 @@ export function detectFeatures(gray, w, h, mask = null, opts = {}) {
         const f = Math.pow(scale, l);
         for (const [s, i] of picked) {
             const x = i % lw, y = (i / lw) | 0;
+            // the same corner is often found on two pyramid levels; keep one,
+            // or neighbouring frames match different copies and tracks break
+            if (l > 0 && taken.near((x + 0.5) * f - 0.5, (y + 0.5) * f - 0.5, 1.5 * f)) continue;
             const d = new Uint32Array(NWORDS);
             describe(sm, lw, x, y, d, 0);
             // sub-pixel-ish centre of the level pixel mapped back to level 0
             xs.push((x + 0.5) * f - 0.5); ys.push((y + 0.5) * f - 0.5); lv.push(l); sc.push(s); descs.push(d);
+            taken.add(xs[xs.length - 1], ys[ys.length - 1]);
         }
     }
     const n = xs.length;
     const desc = new Uint32Array(n * NWORDS);
     descs.forEach((d, k) => desc.set(d, k * NWORDS));
     return { n, x: Float32Array.from(xs), y: Float32Array.from(ys), level: Uint8Array.from(lv), score: Float32Array.from(sc), desc, width: w, height: h };
+}
+
+/** Tiny spatial hash for "is there already a feature near (x, y)?" */
+function pointGrid(w, h, cell) {
+    const gw = Math.ceil(w / cell) + 1, cells = new Map();
+    return {
+        add(x, y) { const k = Math.floor(y / cell) * gw + Math.floor(x / cell); if (!cells.has(k)) cells.set(k, []); cells.get(k).push(x, y); },
+        near(x, y, r) {
+            const cx = Math.floor(x / cell), cy = Math.floor(y / cell), rc = Math.ceil(r / cell);
+            for (let j = cy - rc; j <= cy + rc; j++) for (let i = cx - rc; i <= cx + rc; i++) {
+                const a = cells.get(j * gw + i);
+                if (a) for (let q = 0; q < a.length; q += 2) if (Math.abs(a[q] - x) <= r && Math.abs(a[q + 1] - y) <= r) return true;
+            }
+            return false;
+        },
+    };
 }
 
 function popcnt(v) {

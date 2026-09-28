@@ -3,7 +3,8 @@ import './style.css';
 import { t, applyI18n } from './i18n.js';
 import { boardSVG } from './board.js';
 import { sheetPDF } from './sheet-pdf.js';
-import { LiveCapture, BANDS, SECTORS, solveKeyframes, keyframesFromVideo, keyframesFromPhotos } from './capture.js';
+import { LiveCapture, BANDS, SECTORS, solveKeyframes, keyframesFromVideo, keyframesFromPhotos, framesFromVideo, framesFromPhotos, LiveFreeCapture } from './capture.js';
+import { MarkerlessJob } from './markerless-client.js';
 import { scanVolume } from './reconstruct.js';
 import { projectPoint } from './geometry.js';
 import { downloadBlob } from './download.js';
@@ -71,6 +72,7 @@ const ICON = {
     photo: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="14" rx="3"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/></svg>`,
     cube: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>`,
     back: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>`,
+    sheet: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="3" width="14" height="18" rx="2"/><rect x="7.5" y="5.5" width="3" height="3"/><rect x="13.5" y="15.5" width="3" height="3"/></svg>`,
     torch: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>`,
 };
 
@@ -89,10 +91,26 @@ async function home() {
 
       <section class="mode featured">
         <div class="mode-head"><span class="glyph">${ICON.ring}</span>
-          <div><span class="tag">360°</span><h3 data-i18n="scan360Title"></h3><p class="muted small" data-i18n="scan360Desc"></p></div>
+          <div><span class="tag" data-i18n="freeTag"></span><h3 data-i18n="freeTitle"></h3><p class="muted small" data-i18n="freeDesc"></p></div>
+        </div>
+        <div class="btn-row"><button class="btn primary" id="freeLive" data-i18n="startLive"></button></div>
+        <div class="btn-row">
+          <button class="btn" id="freeVideo" data-i18n="fromVideo"></button>
+          <button class="btn" id="freePhotos" data-i18n="fromPhotos"></button>
+        </div>
+        <details class="how">
+          <summary data-i18n="freeHow"></summary>
+          <ul class="tips small"><li data-i18n="freeTip1"></li><li data-i18n="freeTip2"></li><li data-i18n="freeTip3"></li><li data-i18n="freeTip4"></li><li data-i18n="freeTip5"></li></ul>
+          <p class="muted small" data-i18n="freeModelNote"></p>
+        </details>
+      </section>
+
+      <section class="mode">
+        <div class="mode-head"><span class="glyph">${ICON.sheet}</span>
+          <div><span class="tag">360° · exact size</span><h3 data-i18n="scan360Title"></h3><p class="muted small" data-i18n="scan360Desc"></p></div>
         </div>
         <div class="btn-row">
-          <button class="btn primary" id="live" data-i18n="startLive"></button>
+          <button class="btn" id="live" data-i18n="startLive"></button>
           <button class="btn" id="sheet" data-i18n="getSheet"></button>
         </div>
         <div class="btn-row">
@@ -124,6 +142,9 @@ async function home() {
       </section>
       <footer class="note" data-i18n="installHint"></footer>
     </div></div>`);
+    node.querySelector('#freeLive').onclick = () => freeLive();
+    node.querySelector('#freeVideo').onclick = async () => { const [f] = await pickFiles('video/*'); if (f) freeFromVideo(f); };
+    node.querySelector('#freePhotos').onclick = async () => { const fs = await pickFiles('image/*', true); if (fs.length) freeFromPhotos(fs); };
     node.querySelector('#live').onclick = () => liveScan();
     node.querySelector('#sheet').onclick = () => sheetScreen();
     node.querySelector('#video').onclick = async () => { const [f] = await pickFiles('video/*'); if (f) fromVideo(f); };
@@ -340,12 +361,15 @@ function processingScreen(stages) {
             bar.style.width = (total * 100).toFixed(1) + '%';
             node.querySelector('#detail').textContent = detail || '';
         },
-        error(msg) {
+        error(msg, actions = []) {
             const box = el(`<div class="error-box"></div>`);
             box.textContent = `${t('errorPrefix')}: ${msg}`;
-            const back = el(`<button class="btn" style="margin-top:12px">${t('back')}</button>`);
+            const row = el(`<div class="btn-row" style="margin-top:12px"></div>`);
+            for (const a of actions) { const b = el(`<button class="btn primary"></button>`); b.textContent = a.label; b.onclick = a.run; row.appendChild(b); }
+            const back = el(`<button class="btn">${t('back')}</button>`);
             back.onclick = home;
-            node.querySelector('#err').replaceChildren(box, back);
+            row.appendChild(back);
+            node.querySelector('#err').replaceChildren(box, row);
         },
     };
 }
@@ -443,6 +467,152 @@ async function reconstructOnMainThread(job, onProgress) {
 }
 
 // ---------------------------------------------------------------------
+// No-sheet 360° scan (AI masks + structure from motion, all on the phone)
+// ---------------------------------------------------------------------
+const FREE_STAGES = ['download', 'mask', 'match', 'pose', 'carve', 'mesh', 'color'];
+
+function startFreeJob(ui, expected) {
+    let added = 0;
+    const job = new MarkerlessJob({
+        profile: PROFILE.tier,
+        onProgress: (stage, p) => {
+            if (stage === 'download') ui && ui.set('download', p, `AI model ${Math.round(p * 100)} %`);
+            else if (FREE_STAGES.includes(stage) && ui) ui.set(stage, p);
+        },
+        onAdded: () => { added++; if (ui) ui.set('mask', added / Math.max(1, expected()), `${added} / ${expected()}`); },
+        onLog: (m) => console.log('[scan]', m),
+    });
+    return job;
+}
+
+async function finishFreeJob(job, ui, opts = {}) {
+    const t0 = performance.now();
+    const r = await job.solve({ lowMemory: PROFILE.tier === 'low', ...opts });
+    const { buildMesh } = await lazyExport();
+    const mesh = buildMesh({ positions: r.positions, indices: r.indices, colors: r.colors, name: 'Kivu 3D Scan' });
+    const secs = ((performance.now() - t0) / 1000).toFixed(0);
+    const cov = Math.round(r.info.coverageDeg || 0);
+    viewerScreen({ mesh, name: 'Scan ' + new Date().toLocaleString(), kind: 'free', note: `${r.info.registered}/${r.info.frames} views · ${cov}° around · ${secs} s`, sizeEdit: true });
+}
+
+function freeFail(ui, e) {
+    const code = e && (e.code || e.message);
+    const known = t('freeFail_' + code);
+    const msg = `${t('freeFailTitle')} ${known !== 'freeFail_' + code ? known : (e && e.message) || ''} ${t('freeFailTry')}`;
+    ui.error(msg, [{ label: t('tryPhoto'), run: async () => { const [f] = await pickFiles('image/*'); if (f) photoTo3D(f); } }]);
+}
+
+async function freeFromVideo(file) {
+    const ui = processingScreen(['frames', ...FREE_STAGES]);
+    let job = null;
+    try {
+        const frames = await framesFromVideo(file, {
+            longSide: PROFILE.keyframeSide, count: { low: 30, mid: 36, high: 40 }[PROFILE.tier],
+            onProgress: (p, s) => ui.set('frames', p, `${s.frames} frames`),
+        });
+        if (frames.length < 8) throw Object.assign(new Error('TOO_FEW_FRAMES'), { code: 'TOO_FEW_FRAMES' });
+        job = startFreeJob(ui, () => frames.length);
+        for (const f of frames) job.add(f.blob);
+        await finishFreeJob(job, ui, {});
+    } catch (e) { freeFail(ui, e); }
+    finally { if (job) job.terminate(); }
+}
+
+async function freeFromPhotos(files) {
+    const ui = processingScreen(['photos', ...FREE_STAGES]);
+    let job = null;
+    try {
+        const { frames, fRatio } = await framesFromPhotos(files, {
+            longSide: PROFILE.keyframeSide,
+            onProgress: (p, s) => ui.set('photos', p, `${s.frames} / ${files.length}`),
+        });
+        if (frames.length < 8) throw Object.assign(new Error('TOO_FEW_FRAMES'), { code: 'TOO_FEW_FRAMES' });
+        job = startFreeJob(ui, () => frames.length);
+        for (const f of frames) job.add(f.blob);
+        // photos may be in any order; EXIF gives the lens focal length
+        await finishFreeJob(job, ui, { unordered: true, f0: fRatio || undefined });
+    } catch (e) { freeFail(ui, e); }
+    finally { if (job) job.terminate(); }
+}
+
+async function freeLive() {
+    const TARGET = 32;
+    const node = el(`
+    <div class="scan">
+      <video playsinline muted></video>
+      <div class="flash"></div>
+      <div class="hud-top">
+        <button class="icon-btn" id="back" aria-label="${t('back')}">${ICON.back}</button>
+        <div class="hint" id="hint">…</div>
+        <button class="icon-btn" id="torch" aria-label="torch">${ICON.torch}</button>
+      </div>
+      <div class="hud-bottom">
+        <svg class="dome" id="ring" viewBox="-54 -54 108 108"></svg>
+        <button class="shutter" id="shot" aria-label="capture"></button>
+        <div class="done-col">
+          <div class="count"><span id="count">0</span> ${t('shots')}</div>
+          <div class="count" id="dl"></div>
+          <button class="btn primary" id="done" disabled data-i18n="done"></button>
+        </div>
+      </div>
+    </div>`);
+    show(node);
+    const video = node.querySelector('video');
+    const hintEl = node.querySelector('#hint'), ring = node.querySelector('#ring'), flash = node.querySelector('.flash'), dl = node.querySelector('#dl');
+    let wakeLock = null;
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (_) {}
+    let processed = 0, count = 0, finished = false;
+    const job = new MarkerlessJob({
+        profile: PROFILE.tier,
+        onProgress: (stage, p) => { if (stage === 'download') dl.textContent = `AI ${Math.round(p * 100)} %`; },
+        onAdded: () => { processed++; },
+        onLog: (m) => console.log('[scan]', m),
+    });
+    const drawRing = () => {
+        const f = Math.min(1, count / TARGET), a = f * Math.PI * 2 - Math.PI / 2;
+        const large = f > 0.5 ? 1 : 0;
+        ring.innerHTML = `<circle r="53" fill="rgba(18,20,24,0.72)"/><circle r="40" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="10"/>` +
+            (f > 0 ? (f >= 1 ? `<circle r="40" fill="none" stroke="#4cc38a" stroke-width="10"/>` : `<path d="M0,-40 A40,40 0 ${large} 1 ${(40 * Math.cos(a)).toFixed(1)},${(40 * Math.sin(a)).toFixed(1)}" fill="none" stroke="#ff8a3d" stroke-width="10" stroke-linecap="round"/>`) : '') +
+            `<text y="6" text-anchor="middle" fill="#fff" font-size="18" font-family="monospace">${count}</text>`;
+    };
+    drawRing();
+    const cap = new LiveFreeCapture(video, {
+        longSide: PROFILE.keyframeSide, target: TARGET, max: 44,
+        onFrame: (blob) => {
+            job.add(blob); count++;
+            flash.classList.add('on'); setTimeout(() => flash.classList.remove('on'), 60);
+            if (navigator.vibrate) navigator.vibrate(15);
+            drawRing();
+        },
+        onUpdate: (st) => {
+            const key = 'hintFree_' + st.hint;
+            hintEl.textContent = t(key);
+            hintEl.className = 'hint ' + (st.hint === 'slow' || st.hint === 'blurry' ? 'warn' : st.hint === 'enough' || st.hint === 'shot' ? 'good' : '');
+            node.querySelector('#count').textContent = st.count;
+            node.querySelector('#done').disabled = st.count < 12;
+        },
+    });
+    screenCleanup = () => { cap.stop(); if (wakeLock) wakeLock.release().catch(() => {}); if (!finished) job.terminate(); };
+    node.querySelector('#back').onclick = () => home();
+    let torch = false;
+    node.querySelector('#torch').onclick = async () => { torch = !torch; if (!(await cap.toggleTorch(torch))) torch = false; };
+    node.querySelector('#shot').onclick = () => cap.manualShot();
+    node.querySelector('#done').onclick = async () => {
+        finished = true;
+        cap.stop();
+        const ui = processingScreen(FREE_STAGES);   // (replaces the camera screen)
+        ui.set('mask', processed / Math.max(1, count), `${processed} / ${count}`);
+        job.opts.onProgress = (stage, p) => { if (stage === 'download') ui.set('download', p); else if (FREE_STAGES.includes(stage)) ui.set(stage, p); };
+        job.opts.onAdded = () => { processed++; ui.set('mask', processed / Math.max(1, count), `${processed} / ${count}`); };
+        try { await finishFreeJob(job, ui, {}); }
+        catch (e) { freeFail(ui, e); }
+        finally { job.terminate(); }
+    };
+    try { await cap.start(); }
+    catch (e) { hintEl.textContent = t('cameraError'); hintEl.className = 'hint warn'; }
+}
+
+// ---------------------------------------------------------------------
 // Photo → 3D (AI)
 // ---------------------------------------------------------------------
 async function photoTo3D(file) {
@@ -520,7 +690,7 @@ function meshToScanModel(mesh) {
     return { positions, indices, colors };
 }
 
-async function viewerScreen({ mesh, name, kind, note, rebuild, saved }) {
+async function viewerScreen({ mesh, name, kind, note, rebuild, saved, sizeEdit }) {
     const [{ Viewer, arSupport, openQuickLook, startWebXR, startARLite }, { exportGLB, exportSTL, exportOBJ }] = await Promise.all([lazyViewer(), lazyExport()]);
     const node = el(`
     <div class="viewer-screen">
@@ -533,6 +703,7 @@ async function viewerScreen({ mesh, name, kind, note, rebuild, saved }) {
       <div class="viewer-panel">
         <div class="stats mono" id="stats"></div>
         ${note ? `<div class="stats" id="note"></div>` : ''}
+        ${sizeEdit ? `<div class="size-row"><label for="len" data-i18n="realLength"></label><div class="size-in"><input id="len" type="number" inputmode="decimal" min="1" max="500" step="0.1"><button class="btn" id="applyLen" data-i18n="applySize"></button></div><p class="muted small" data-i18n="freeSizeNote"></p></div>` : ''}
         ${rebuild ? `<div class="sliders"><label for="thick" data-i18n="thickness"></label><input type="range" id="thick" min="0.1" max="0.9" step="0.05" value="${rebuild.params.thickness}"></div>` : ''}
         <div class="btn-row">
           <button class="btn primary" id="ar" data-i18n="arView"></button>
@@ -562,6 +733,21 @@ async function viewerScreen({ mesh, name, kind, note, rebuild, saved }) {
     setMesh(mesh);
     screenCleanup = () => viewer.dispose();
 
+    if (sizeEdit) {
+        node.querySelector('#applyLen').onclick = () => {
+            const cm = parseFloat(String(node.querySelector('#len').value).replace(',', '.'));
+            if (!(cm > 0)) return;
+            const g = current.geometry;
+            g.computeBoundingBox();
+            const b = g.boundingBox, longest = Math.max(b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z);
+            if (!(longest > 0)) return;
+            const k = cm / 100 / longest;
+            g.scale(k, k, k);
+            g.computeBoundingBox(); g.computeBoundingSphere();
+            setMesh(current);
+            toast(t('sizeApplied'));
+        };
+    }
     if (rebuild) {
         let pending = null;
         node.querySelector('#thick').oninput = (e) => {

@@ -19,6 +19,7 @@
 import { rodriguesToMat } from './geometry.js';
 import { matchFeatures } from './features.js';
 import { fivePoint } from './fivepoint.js';
+import { pnpRansac } from './p3p.js';
 
 // ---------------------------------------------------------------------
 // Small dense linear algebra
@@ -351,6 +352,50 @@ export function relativePose(p1, p2, thr, opts = {}) {
     angles.sort((a, b) => a - b);
     const E = mul3([0, -ref.t[2], ref.t[1], ref.t[2], 0, -ref.t[0], -ref.t[1], ref.t[0], 0], ref.R);
     return { E, R: ref.R, t: ref.t, inliers: inl, cheirality: pose.good, parallax: angles[angles.length >> 1] || 0 };
+}
+
+/**
+ * Up to `k` distinct relative-pose hypotheses for a pair (best first).
+ * Near-planar views admit two poses that fit equally well; a third view
+ * decides (see the initial-pair search in runSfM).
+ */
+export function poseHypotheses(p1, p2, thr, k = 3, seed = 99) {
+    const n = p1.length / 2;
+    if (n < 12) return [];
+    const thr2 = thr * thr;
+    let rng = seed;
+    const rand = () => { rng = (rng * 1103515245 + 12345) & 0x7fffffff; return rng / 0x7fffffff; };
+    const pool = [];
+    const x1 = [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]], x2 = [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0]];
+    for (let it = 0; it < 250; it++) {
+        const smp = [];
+        while (smp.length < 5) { const q = Math.floor(rand() * n); if (!smp.includes(q)) smp.push(q); }
+        for (let s = 0; s < 5; s++) { const q = smp[s]; x1[s][0] = p1[2 * q]; x1[s][1] = p1[2 * q + 1]; x2[s][0] = p2[2 * q]; x2[s][1] = p2[2 * q + 1]; }
+        for (const E of fivePoint(x1, x2)) {
+            let score = 0;
+            for (let q = 0; q < n; q++) score += Math.min(thr2, sampson(E, p1[2 * q], p1[2 * q + 1], p2[2 * q], p2[2 * q + 1]));
+            pool.push({ E, score });
+        }
+    }
+    pool.sort((a, b) => a.score - b.score);
+    const out = [];
+    for (const h of pool.slice(0, 60)) {
+        const inl = [];
+        for (let q = 0; q < n; q++) if (sampson(h.E, p1[2 * q], p1[2 * q + 1], p2[2 * q], p2[2 * q + 1]) < thr2) inl.push(q);
+        if (inl.length < 12) continue;
+        const pose = poseFromE(h.E, p1, p2, inl);
+        if (!pose) continue;
+        const ref = refineRelative(pose.R, pose.t, p1, p2, inl, thr);
+        const dup = out.some(o => {
+            const D = mul3(tr3(o.R), ref.R);
+            const ang = Math.acos(Math.max(-1, Math.min(1, (D[0] + D[4] + D[8] - 1) / 2)));
+            return ang < 3 * Math.PI / 180 && dot(o.t, ref.t) > 0.97;
+        });
+        if (dup) continue;
+        out.push({ R: ref.R, t: ref.t, n: inl.length });
+        if (out.length >= k) break;
+    }
+    return out;
 }
 
 /** Homography inlier count (to spot near-planar or pure-rotation pairs). */
@@ -787,6 +832,9 @@ function registerFrame(S, c, opts) {
     if (n < opts.minRegister) return false;
     const thr = opts.inlierPx;
     const inits = [];
+    // Minimal-solver RANSAC (P3P): robust to the "flipped" pose of flat parts
+    const pr = pnpRansac(cor.pts, cor.obs, S.f, thr, svd3, { seed: c * 7 + 1 });
+    if (pr) inits.push({ R: pr.R, t: pr.t });
     // Neighbours: registered frames sharing the most matches.
     const shared = new Map();
     for (const pi of S.pointsOfFrame[c]) {
@@ -834,9 +882,79 @@ function registerFrame(S, c, opts) {
         const nin = countInliers(pose, S.f, cor.pts, cor.obs, thr);
         if (nin > bestIn) { bestIn = nin; best = pose; }
     }
+    S.lastInliers = `${bestIn}/${n}`; S.lastInlierFrac = bestIn / Math.max(1, n);
     if (bestIn < Math.max(opts.minRegister, 0.3 * n)) return false;
     S.cams[c] = best;
     return true;
+}
+
+/**
+ * Weak registration when a frame shares too few 3D points with the model
+ * (big steps between photos): rotation and direction from the pair's
+ * relative pose, distance from whatever 3D points it does see or else from
+ * the typical step between cameras. Bundle adjustment fixes it later.
+ */
+function registerFromPair(S, c, r, opts) {
+    const key = r < c ? r + ',' + c : c + ',' + r;
+    const rel = S.relPose.get(key);
+    if (!rel) return false;
+    let Rr = rel.R, tr = rel.t;
+    if (r > c) { Rr = tr3(rel.R); tr = mv3(Rr, rel.t).map(x => -x); }
+    const cam = S.cams[r];
+    const R = mul3(Rr, cam.R);
+    const Cr = camCenter(cam);
+    const dirW = mv3(tr3(cam.R), mv3(tr3(Rr), tr).map(x => -x)); // unit, world
+    const Rt = tr3(R);
+    // scale from 2D-3D: X = C + s·d + λ·ray
+    const cor = correspondences(S, c);
+    const ss = [];
+    for (let k = 0; k < cor.ids.length; k++) {
+        const ray = mv3(Rt, [cor.obs[2 * k] / S.f, cor.obs[2 * k + 1] / S.f, 1]);
+        const q = [cor.pts[3 * k] - Cr[0], cor.pts[3 * k + 1] - Cr[1], cor.pts[3 * k + 2] - Cr[2]];
+        // least squares for [s, λ] in s·d + λ·ray = q
+        const a = dot(dirW, dirW), b = dot(dirW, ray), cc = dot(ray, ray), d1 = dot(dirW, q), d2 = dot(ray, q);
+        const det = a * cc - b * b;
+        if (Math.abs(det) < 1e-9) continue;
+        const sv = (d1 * cc - b * d2) / det, lam = (a * d2 - b * d1) / det;
+        if (lam > 0 && sv > 0) ss.push(sv);
+    }
+    let scale;
+    if (ss.length >= 3) scale = ss.sort((x, y) => x - y)[ss.length >> 1];
+    else {
+        // typical distance between cameras that are neighbours in the chain
+        const steps = [];
+        for (const [k2, rp] of S.relPose) {
+            const [a, b] = k2.split(',').map(Number);
+            if (S.cams[a] && S.cams[b] && rp.n >= opts.minMatches) { const A = camCenter(S.cams[a]), B = camCenter(S.cams[b]); steps.push(Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]) / Math.max(1e-6, S.relPose.get(k2).parallax)); }
+        }
+        if (!steps.length) return false;
+        scale = steps.sort((x, y) => x - y)[steps.length >> 1] * rel.parallax;
+    }
+    const C = [Cr[0] + dirW[0] * scale, Cr[1] + dirW[1] * scale, Cr[2] + dirW[2] * scale];
+    S.cams[c] = { R, t: mv3(R, C).map(x => -x), weak: true };
+    // make 3D points from this pair right away
+    const m = S.pairMatches.get(key);
+    const Fc = S.frames[c].feat, Fr = S.frames[r].feat;
+    const Pc = Pmat(R, S.cams[c].t), Pr = Pmat(cam.R, cam.t);
+    let made = 0;
+    const madeIds = [];
+    const pairOf = new Map();
+    for (let k = 0; k < m.length; k += 2) { const ir = r < c ? m[k] : m[k + 1], ic = r < c ? m[k + 1] : m[k]; pairOf.set(ic, ir); }
+    for (const pi of S.pointsOfFrame[c]) {
+        const P = S.points[pi];
+        if (P.X) continue;
+        let jc = -1, jr = -1;
+        for (let k = 0; k < P.obs.length; k += 2) { if (P.obs[k] === c) jc = P.obs[k + 1]; if (P.obs[k] === r) jr = P.obs[k + 1]; }
+        if (jc < 0 || jr < 0 || pairOf.get(jc) !== jr) continue;
+        const X = triangulateDLT([Pr, Pc], [(Fr.x[jr] - S.cx) / S.f, (Fr.y[jr] - S.cy) / S.f, (Fc.x[jc] - S.cx) / S.f, (Fc.y[jc] - S.cy) / S.f]);
+        if (!X) continue;
+        if (reprojErr(S.cams[c], S.f, S.cx, S.cy, X, Fc.x[jc], Fc.y[jc]) > opts.inlierPx || reprojErr(cam, S.f, S.cx, S.cy, X, Fr.x[jr], Fr.y[jr]) > opts.inlierPx) continue;
+        P.X = X; made++; madeIds.push(pi);
+    }
+    if (made >= 8) return true;
+    for (const pi of madeIds) S.points[pi].X = null;
+    S.cams[c] = null;
+    return false;
 }
 
 function triangulateNew(S, c, opts) {
@@ -886,20 +1004,51 @@ function verifyPair(S, i, j, opts) {
     if (S.pairMatches.has(key) || S.triedPairs.has(key)) return S.pairMatches.get(key) || null;
     S.triedPairs.add(key);
     const A = S.frames[i].feat, B = S.frames[j].feat;
-    const m = matchFeatures(A, B, { radius: opts.matchRadius, maxDist: opts.maxHamming, ratio: opts.ratio });
+    let tm = Date.now();
+    let m = matchFeatures(A, B, { radius: opts.matchRadius, maxDist: opts.maxHamming, ratio: opts.ratio });
+    S.tMatch = (S.tMatch || 0) + Date.now() - tm; tm = Date.now();
     if (opts.debug) opts.log(`pair ${i},${j}: ${m.length / 2} matches`);
     if (m.length / 2 < opts.minMatches) return null;
-    const [p1, p2] = normPts(S, i, j, m);
-    // Drop matches that did not move while most others did: parts of the
-    // scene that stayed still (a stool top in a turntable video).
+    let [p1, p2] = normPts(S, i, j, m);
+    // Drop matches that did not move while most others did: things that
+    // stayed still behind the object's edge (a stool top in a turntable
+    // video). Any "no rotation" model explains them perfectly, which can
+    // fool RANSAC.
+    {
+        const nm = m.length / 2, disp = new Float64Array(nm);
+        for (let k = 0; k < nm; k++) disp[k] = Math.hypot(p2[2 * k] - p1[2 * k], p2[2 * k + 1] - p1[2 * k + 1]) * S.f;
+        const med = Float64Array.from(disp).sort()[nm >> 1];
+        const minD = Math.max(1.0, 0.12 * med);
+        const keep = [];
+        for (let k = 0; k < nm; k++) if (disp[k] >= minD) keep.push(k);
+        if (keep.length < nm) {
+            const m2 = new Int32Array(keep.length * 2);
+            keep.forEach((k, q) => { m2[2 * q] = m[2 * k]; m2[2 * q + 1] = m[2 * k + 1]; });
+            m = m2;
+            if (m.length / 2 < opts.minMatches) return null;
+            [p1, p2] = normPts(S, i, j, m);
+        }
+    }
     const rel = relativePose(p1, p2, opts.ransacPx / S.f, { seed: i * 7919 + j });
+    S.tRansac = (S.tRansac || 0) + Date.now() - tm;
     if (opts.debug) opts.log(`   → ${rel ? rel.inliers.length : 0} inliers, parallax ${rel ? (rel.parallax * 57.3).toFixed(1) : '-'}°`);
     if (!rel || rel.inliers.length < opts.minMatches) return null;
+    // Almost no parallax = the views are (nearly) identical or it is a false
+    // match between look-alike sides of a symmetric object: useless and risky.
+    if (rel.parallax < (opts.minParallaxDeg ?? 1) * Math.PI / 180) return null;
+    // Once cameras are known, a new pair must agree with them.
+    if (opts.checkPoses && S.cams[i] && S.cams[j]) {
+        const Rij = mul3(S.cams[j].R, tr3(S.cams[i].R));
+        const D = mul3(tr3(Rij), rel.R);
+        const ang = Math.acos(Math.max(-1, Math.min(1, (D[0] + D[4] + D[8] - 1) / 2))) * 180 / Math.PI;
+        if (ang > (opts.maxRotDisagreeDeg ?? 12)) { if (opts.debug) opts.log(`   ✗ disagrees with poses by ${ang.toFixed(1)}°`); return null; }
+    }
     const inl = new Int32Array(rel.inliers.length * 2);
     rel.inliers.forEach((k, q) => { inl[2 * q] = m[2 * k]; inl[2 * q + 1] = m[2 * k + 1]; });
     S.pairMatches.set(key, inl);
     const hIn = opts.checkPlanar ? homographyInliers(p1, p2, opts.ransacPx / S.f) : 0;
     S.relPose.set(key, { R: rel.R, t: rel.t, parallax: rel.parallax, n: rel.inliers.length, hRatio: hIn / rel.inliers.length });
+    if (opts.debug) opts.log(`   planar ${(hIn / rel.inliers.length).toFixed(2)}`);
     return inl;
 }
 
@@ -913,7 +1062,7 @@ export const DEFAULTS = {
     inlierPx: 4,
     minRegister: 15,
     loopAngleDeg: 40,
-    fPriorSigma: 0.15,
+    fPriorSigma: 0.06,   // phone cameras: f ≈ 0.8 × long side ± a few %; one ring of views barely constrains f
 };
 
 /**
@@ -937,42 +1086,84 @@ export function runSfM(frames, width, height, userOpts = {}) {
     for (let i = 0; i < N; i++) {
         for (let d = 1; d <= opts.window; d++) if (i + d < N) pairs.push([i, i + d]);
         if (opts.closed && N > opts.window + 2) for (let d = 1; d <= opts.window; d++) if (i + d >= N && (i + d) % N < i) pairs.push([(i + d) % N, i]);
-        for (const j of frames[i].extraNeighbours || []) if (j !== i) pairs.push(i < j ? [i, j] : [j, i]);
+        for (const j of frames[i].extraNeighbours || []) if (j !== i) pairs.push(i < j ? [i, j, 'similar'] : [j, i, 'similar']);
     }
     const seen = new Set();
     let done = 0;
-    for (const [i, j] of pairs) {
+    // sequential pairs first, then the look-alike ones
+    pairs.sort((a, b) => (a[2] ? 1 : 0) - (b[2] ? 1 : 0));
+    for (const [i, j, kind] of pairs) {
         const key = i + ',' + j;
         if (seen.has(key)) continue;
         seen.add(key);
-        verifyPair(S, i, j, { ...opts, checkPlanar: true });
+        // a look-alike pair must show real parallax: symmetric sides of an
+        // object "match" with almost none
+        verifyPair(S, i, j, { ...opts, checkPlanar: true, minParallaxDeg: kind === 'similar' && Math.abs(i - j) > opts.window ? 4 : 1 });
         progress('match', ++done / pairs.length);
     }
-    log(`matching: ${S.pairMatches.size} good pairs of ${seen.size} (${Date.now() - t0} ms)`);
+    log(`matching: ${S.pairMatches.size} good pairs of ${seen.size} (${Date.now() - t0} ms: descriptors ${S.tMatch} ms, RANSAC ${S.tRansac} ms)`);
 
     // 2. tracks
     S.points = buildTracks(frames, S.pairMatches);
     indexPoints(S);
     log(`tracks: ${S.points.length}`);
 
-    // 3. initial pair: many inliers, enough parallax, not explained by a homography
-    let bestPair = null, bestScore = -1;
-    for (const [key, rel] of S.relPose) {
-        const deg = rel.parallax * 180 / Math.PI;
-        if (deg < 2) continue;
-        const score = rel.n * Math.min(1, deg / 8) * (rel.hRatio > 0.9 ? 0.3 : rel.hRatio > 0.75 ? 0.7 : 1);
-        if (score > bestScore) { bestScore = score; bestPair = key; }
+    // 3. initial pair. Two-view poses of near-planar views are ambiguous, so
+    //    try a few pairs × pose hypotheses and keep the one that two more
+    //    views agree with best.
+    // (trials must not keep what the outlier filter removed from the tracks)
+    const obsBackup = S.points.map(P => P.obs.slice());
+    const resetState = () => { S.cams = frames.map(() => null); S.points.forEach((P, i) => { P.X = null; P.obs = obsBackup[i].slice(); }); S.fixedCam = -1; };
+    const setupInit = (a, b, hyp) => {
+        resetState();
+        S.cams[a] = { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] };
+        S.cams[b] = { R: hyp.R.slice(), t: hyp.t.slice() };
+        S.fixedCam = a;
+        for (const pi of S.pointsOfFrame[a]) triangulateTrack(S, S.points[pi], opts.inlierPx, 1);
+        bundleAdjust(S, { iters: 8 });
+        filterObservations(S, opts.inlierPx);
+    };
+    const trial = (a, b, hyp) => {
+        setupInit(a, b, hyp);
+        let got = 0, tot = 0, views = 0;
+        for (let k = 0; k < 2; k++) {
+            let cand = -1, candN = 0;
+            for (let c = 0; c < N; c++) {
+                if (S.cams[c]) continue;
+                let q = 0;
+                for (const pi of S.pointsOfFrame[c]) if (S.points[pi].X) q++;
+                if (q > candN) { candN = q; cand = c; }
+            }
+            if (cand < 0 || candN < opts.minRegister) break;
+            tot += candN;
+            if (registerFrame(S, cand, opts)) { got += S.lastInlierFrac * candN; views++; triangulateNew(S, cand, opts); }
+        }
+        const ba = views ? bundleAdjust(S, { iters: 6 }) : { rms: 9 };
+        return { score: tot ? got / tot : 0, views, rms: ba.rms };
+    };
+    const cands = [...S.relPose.entries()]
+        .filter(([, r]) => r.parallax * 180 / Math.PI >= 3 && r.parallax * 180 / Math.PI <= 60)
+        .sort((x, y) => y[1].n * Math.min(1, y[1].parallax * 180 / Math.PI / 10) - x[1].n * Math.min(1, x[1].parallax * 180 / Math.PI / 10))
+        .slice(0, opts.initCandidates ?? 5);
+    if (!cands.length) throw new Error('SFM_NO_INIT');
+    let bestInit = null;
+    for (const [key] of cands) {
+        const [a, b] = key.split(',').map(Number);
+        const m = S.pairMatches.get(key);
+        const [p1, p2] = normPts(S, a, b, m);
+        const hyps = poseHypotheses(p1, p2, opts.ransacPx / S.f, 3, a * 31 + b);
+        for (const h of hyps) {
+            const r = trial(a, b, h);
+            if (opts.debug) log(`  init try ${key}: views ${r.views}, agree ${(r.score * 100).toFixed(0)} %, rms ${r.rms.toFixed(2)}`);
+            if (r.views >= 1 && (!bestInit || r.score > bestInit.score)) bestInit = { a, b, h, ...r };
+        }
+        if (bestInit && bestInit.score > 0.9 && bestInit.views === 2) break;
     }
-    if (!bestPair) throw new Error('SFM_NO_INIT');
-    const [a, b] = bestPair.split(',').map(Number);
-    const rel = S.relPose.get(bestPair);
-    S.cams[a] = { R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0] };
-    S.cams[b] = { R: rel.R.slice(), t: rel.t.slice() };
-    S.fixedCam = a;
-    for (const pi of S.pointsOfFrame[a]) triangulateTrack(S, S.points[pi], opts.inlierPx, 1);
-    bundleAdjust(S, { iters: 10 });
-    filterObservations(S, opts.inlierPx);
-    log(`init pair ${a},${b}: parallax ${(rel.parallax * 180 / Math.PI).toFixed(1)}°, ${rel.n} inliers, planar ${rel.hRatio.toFixed(2)}`);
+    if (!bestInit) throw new Error('SFM_NO_INIT');
+    const { a, b } = bestInit;
+    setupInit(a, b, bestInit.h);
+    const rel = S.relPose.get(a + ',' + b);
+    log(`init pair ${a},${b}: parallax ${(rel.parallax * 180 / Math.PI).toFixed(1)}°, ${rel.n} inliers, planar ${rel.hRatio.toFixed(2)}, third-view agreement ${(bestInit.score * 100).toFixed(0)} %`);
 
     // 4. incremental registration
     let lastBA = 2;
@@ -987,15 +1178,35 @@ export function runSfM(frames, width, height, userOpts = {}) {
                 for (const pi of S.pointsOfFrame[c]) if (S.points[pi].X) k++;
                 if (k > candN) { candN = k; cand = c; }
             }
-            if (cand < 0 || candN < opts.minRegister) break;
-            if (!registerFrame(S, cand, opts)) { (S.failed ||= new Set()).add(cand); continue; }
+            if (cand < 0 || candN < opts.minRegister) {
+                // fall back to the strongest verified pair with a registered frame
+                let best = null;
+                for (const [k2, rp] of S.relPose) {
+                    const [a, b] = k2.split(',').map(Number);
+                    const [c2, r2] = S.cams[a] && !S.cams[b] ? [b, a] : S.cams[b] && !S.cams[a] ? [a, b] : [-1, -1];
+                    if (c2 < 0 || S.pairFailed?.has(k2) || rp.parallax < 2 * Math.PI / 180) continue;
+                    if (!best || rp.n > best.n) best = { c: c2, r: r2, n: rp.n, key: k2 };
+                }
+                if (!best || best.n < opts.minMatches * 1.5) break;
+                if (opts.debug) log(`  reg ${best.c} from pair with ${best.r} (${best.n} matches)`);
+                if (!registerFromPair(S, best.c, best.r, opts)) { S.cams[best.c] = null; (S.pairFailed ||= new Set()).add(best.key); continue; }
+                added++;
+                triangulateNew(S, best.c, opts);
+                bundleAdjust(S, { iters: 6 });
+                filterObservations(S, opts.inlierPx);
+                progress('pose', registeredCount(S) / N);
+                continue;
+            }
+            if (!registerFrame(S, cand, opts)) { (S.failed ||= new Set()).add(cand); if (opts.debug) log(`  reg ${cand}: failed (${candN} 2D-3D)`); continue; }
+            if (opts.debug) log(`  reg ${cand}: ${candN} 2D-3D, f=${S.f.toFixed(0)} inl=${S.lastInliers}`);
             added++;
             triangulateNew(S, cand, opts);
             const nreg = registeredCount(S);
             progress('pose', nreg / N);
             if (nreg >= Math.max(4, Math.ceil(lastBA * 1.3))) {
-                const optF = nreg >= 6 && opts.optimizeF !== false;
-                bundleAdjust(S, { iters: 8, optimizeF: optF, fPrior: { f0, sigma: opts.fPriorSigma * f0 } });
+                // focal stays at the phone-lens prior while the path is built
+                // (see focalCheck at the end)
+                bundleAdjust(S, { iters: 8 });
                 filterObservations(S, opts.inlierPx);
                 lastBA = nreg;
             }
@@ -1010,14 +1221,14 @@ export function runSfM(frames, width, height, userOpts = {}) {
     for (let round = 0; round < 2; round++) {
         const extra = loopClosureCandidates(S, opts);
         let added = 0;
-        for (const [i, j] of extra) if (verifyPair(S, i, j, opts)) added++;
+        for (const [i, j] of extra) if (verifyPair(S, i, j, { ...opts, checkPoses: true })) added++;
         if (!added && !S.failed?.size) break;
         if (added) {
             // rebuild tracks from all matches, keep cameras, re-triangulate
             S.points = buildTracks(frames, S.pairMatches);
             indexPoints(S);
             for (const P of S.points) triangulateTrack(S, P, opts.inlierPx * 3);
-            bundleAdjust(S, { iters: 12, optimizeF: registeredCount(S) >= 6 && opts.optimizeF !== false, fPrior: { f0, sigma: opts.fPriorSigma * f0 }, huber: 3 });
+            bundleAdjust(S, { iters: 12, huber: 3 });
             filterObservations(S, opts.inlierPx);
             for (const P of S.points) if (!P.X) triangulateTrack(S, P, opts.inlierPx);
         }
@@ -1026,11 +1237,12 @@ export function runSfM(frames, width, height, userOpts = {}) {
         log(`loop closure round ${round}: +${added} pairs, registered ${registeredCount(S)}/${N}`);
     }
 
-    // 6. final BA
-    const optF = registeredCount(S) >= 6 && opts.optimizeF !== false;
-    let ba = bundleAdjust(S, { iters: 20, optimizeF: optF, fPrior: { f0, sigma: opts.fPriorSigma * f0 } });
+    // 6. final BA (focal fixed), then see whether the views really determine
+    //    the focal length before trusting a different one
+    let ba = bundleAdjust(S, { iters: 20 });
     filterObservations(S, opts.inlierPx * 0.75);
-    ba = bundleAdjust(S, { iters: 15, optimizeF: optF, fPrior: { f0, sigma: opts.fPriorSigma * f0 } });
+    ba = bundleAdjust(S, { iters: 15 });
+    if (opts.optimizeF !== false && registeredCount(S) >= 8) ba = focalCheck(S, f0, ba, opts, log);
     const npts = S.points.filter(p => p.X).length;
     log(`final: ${registeredCount(S)}/${N} cams, ${npts} points, rms ${ba.rms.toFixed(2)} px, f=${S.f.toFixed(1)} (${Date.now() - t0} ms)`);
     return {
@@ -1038,6 +1250,48 @@ export function runSfM(frames, width, height, userOpts = {}) {
         points: S.points.filter(p => p.X),
         stats: { registered: registeredCount(S), total: N, points: npts, rms: ba.rms, pairs: S.pairMatches.size, ms: Date.now() - t0 },
     };
+}
+
+function snapshot(S) {
+    return { f: S.f, cams: S.cams.map(c => c && { R: c.R.slice(), t: c.t.slice() }), X: S.points.map(p => p.X && p.X.slice()) };
+}
+function restore(S, snap) {
+    S.f = snap.f;
+    S.cams = snap.cams.map(c => c && { R: c.R.slice(), t: c.t.slice() });
+    S.points.forEach((p, i) => { p.X = snap.X[i] && snap.X[i].slice(); });
+}
+
+/**
+ * A compact object seen from one ring of views hardly constrains the focal
+ * length, and small biases (lighting that turns with a turntable, edges of
+ * overlapping parts) can pull it far off. Adopt the data's focal only if
+ * the reprojection cost has a clear minimum there (±5 % profile) and it is
+ * a plausible phone lens.
+ */
+function focalCheck(S, f0, ba0, opts, log) {
+    const base = snapshot(S);
+    const free = bundleAdjust(S, { iters: 20, optimizeF: true });
+    const f1 = S.f;
+    if (!(f1 > 0.7 * f0 && f1 < 1.35 * f0)) {
+        log(`focal ${f1.toFixed(0)} from the views is implausible (lens prior ${f0.toFixed(0)}): keeping the prior`);
+        restore(S, base);
+        return ba0;
+    }
+    const atFree = snapshot(S);
+    const C1 = free.rms * free.rms * free.nobs;
+    const cost = (k) => { restore(S, atFree); S.f = f1 * k; const r = bundleAdjust(S, { iters: 8 }); return r.rms * r.rms * r.nobs; };
+    const cp = cost(1.05), cm = cost(0.95);
+    const curv = (cp + cm - 2 * C1) / (2 * (0.05 * f1) ** 2);
+    const sigma2 = C1 / Math.max(1, free.nobs);
+    const sd = curv > 0 ? Math.sqrt(sigma2 / curv) / f1 : Infinity;
+    if (sd < (opts.focalMaxSd ?? 0.01)) {
+        restore(S, atFree);
+        log(`focal ${f1.toFixed(0)} (±${(sd * 100).toFixed(2)} %) determined by the views (prior ${f0.toFixed(0)})`);
+        return free;
+    }
+    log(`focal not determined by the views (${f1.toFixed(0)} ±${(sd * 100).toFixed(1)} %): keeping the lens prior ${f0.toFixed(0)}`);
+    restore(S, base);
+    return ba0;
 }
 
 /** Frame pairs that see the object from similar directions (for loop closure). */

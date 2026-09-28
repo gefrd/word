@@ -10,7 +10,7 @@ const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromi
 const page = await browser.newPage();
 page.on('pageerror', e => console.log('pageerror', e.message));
 page.on('console', m => (m.type() === 'error' || m.type() === 'warning') && console.log('console', m.text().slice(0, 300)));
-await page.goto(`http://localhost:5190/test/free-test.html?obj=${obj}${process.argv.includes('--plain') ? '&plain=1' : ''}`);
+await page.goto(`http://localhost:5190/test/free-test.html?obj=${obj}${process.argv.includes('--plain') ? '&plain=1' : ''}${process.argv.includes('--noshadow') ? '&noshadow=1' : ''}${process.argv.includes('--lightrot') ? '&lightrot=1' : ''}`);
 await page.waitForFunction(() => window.ready && window.testReady, null, { timeout: 60000 });
 if (throttle > 1) { const cdp = await page.context().newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle }); }
 // peak memory of the browser's renderer processes (RSS, MB)
@@ -26,8 +26,8 @@ const sample = () => {
 const timer = setInterval(sample, 500);
 const t0 = Date.now();
 const res = await page.evaluate((o) => window.runFree(o), {
-    mode, n, masks, profile, maskEval: process.argv.includes('--maskEval'), gtPoseCheck: process.argv.includes('--gtPoses'),
-    keepMesh: process.argv.includes('--mesh'), render: arg('loops') ? { loops: arg('loops').split(',').map(Number) } : {}, sfm: { debug: process.argv.includes('--debug') },
+    mode, n, masks, profile, maskEval: process.argv.includes('--maskEval'), gtPoseCheck: process.argv.includes('--gtPoses'), groundCheck: process.argv.includes('--groundCheck'),
+    keepMesh: process.argv.includes('--mesh'), render: arg('loops') ? { loops: arg('loops').split(',').map(Number) } : {}, sfm: { debug: process.argv.includes('--debug'), ...JSON.parse(arg('sfm', '{}')) }, similarK: +arg('similarK', 2),
 });
 clearInterval(timer);
 const r = (x, d = 0) => (x == null ? '-' : (+x).toFixed(d));
@@ -39,8 +39,11 @@ console.log(`features/frame: median ${res.featCounts.sort((a, b) => a - b)[res.f
 if (res.maskIoU.length) console.log(`mask IoU vs truth: mean ${r(res.maskIoU.reduce((a, b) => a + b, 0) / res.maskIoU.length, 3)} min ${r(Math.min(...res.maskIoU), 3)}`);
 if (res.pose) {
     console.log(`registered ${res.registered}/${n}; camera position err median ${r(res.pose.posErrMedMm, 1)} mm (max ${r(res.pose.posErrMaxMm, 1)}) at ~${r(res.pose.camDistMm)} mm; rotation err median ${r(res.pose.rotErrMedDeg, 2)}° (max ${r(res.pose.rotErrMaxDeg, 2)}°)`);
+    if (process.argv.includes('--perFrame')) console.log('per frame [i, pos mm, rot °]:', JSON.stringify(res.pose.perFrame));
     console.log(`focal est ${r(res.fEst, 1)} vs true ${res.fGT} (${r((res.fEst / res.fGT - 1) * 100, 1)} %); scale est/true ${r(res.pose.scale, 3)}`);
+    console.log(`ground error ${r(res.groundErrMm, 1)} mm (+ = model floor too low), up-axis error ${r(res.upErrDeg, 2)}°`);
     console.log(`IoU ${r(res.iou.iou, 3)}  extra ${r(res.iou.extraFrac, 3)}  missing ${r(res.iou.missingFrac, 3)}  verts ${res.verts}`);
+    console.log(`shape IoU (size fitted ×${r(res.iouShape.scale, 2)}): ${r(res.iouShape.iou, 3)}`);
 }
 if (res.iouGTPoses) console.log(`IoU with true poses (mask error only): ${r(res.iouGTPoses.iou, 3)} extra ${r(res.iouGTPoses.extraFrac, 3)} missing ${r(res.iouGTPoses.missingFrac, 3)}`);
 console.log(`peak renderer RSS ≈ ${r(peak)} MB`);
