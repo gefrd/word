@@ -13,6 +13,7 @@ export const PAGES = {
     draughts: '../draughts.html',
     durak: '../durak.html',
     connect4: '../connect-four.html',
+    uno: '../uno.html',
 };
 
 export function inlineEngine(html, engine) {
