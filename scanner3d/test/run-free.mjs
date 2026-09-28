@@ -27,7 +27,7 @@ const timer = setInterval(sample, 500);
 const t0 = Date.now();
 const res = await page.evaluate((o) => window.runFree(o), {
     mode, n, masks, profile, maskEval: process.argv.includes('--maskEval'), gtPoseCheck: process.argv.includes('--gtPoses'), groundCheck: process.argv.includes('--groundCheck'),
-    keepMesh: process.argv.includes('--mesh'), render: arg('loops') ? { loops: arg('loops').split(',').map(Number) } : {}, sfm: { debug: process.argv.includes('--debug'), ...JSON.parse(arg('sfm', '{}')) }, similarK: +arg('similarK', 2), depth: process.argv.includes('--depth'), refine: !process.argv.includes('--norefine'), colour: !process.argv.includes('--nocolour'), colourT: +arg('colourT', 24), trueFit: process.argv.includes('--trueFit'),
+    keepMesh: process.argv.includes('--mesh'), render: arg('loops') ? { loops: arg('loops').split(',').map(Number) } : {}, sfm: { debug: process.argv.includes('--debug'), ...JSON.parse(arg('sfm', '{}')) }, similarK: +arg('similarK', 2), depth: process.argv.includes('--depth'), refine: process.argv.includes('--refine'), colour: !process.argv.includes('--nocolour'), colourT: +arg('colourT', 24), trueFit: process.argv.includes('--trueFit'),
 });
 clearInterval(timer);
 const r = (x, d = 0) => (x == null ? '-' : (+x).toFixed(d));

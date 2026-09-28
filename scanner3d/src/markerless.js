@@ -419,7 +419,7 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
             for (const i of reg) imgs.push(await getFrame(i, side));
             const col = prepColourViews(imgs, reg.map(i => ({ mask: labels[i], width, height })));
             const views = reg.map((i, k) => ({ R: poses[i].R, t: poses[i].t, f: sfm.f * col[k].width / width, width: col[k].width, height: col[k].height, rgb: col[k].rgb, gain: col[k].gain }));
-            const r = colourCarve(grid, views, { threshold: opts.colourThreshold ?? 30, passes: opts.colourPasses ?? 8 });
+            const r = colourCarve(grid, views, { threshold: opts.colourThreshold ?? 30, passes: opts.colourPasses ?? 8, maxTotalFrac: opts.colourMaxFrac ?? 0.1 });
             Object.assign(refineInfo, { colourRemoved: r.removed, colourPasses: r.passes, colourStopped: r.stopped });
         }
         const after = grid.occ.reduce((a, v) => a + v, 0);
@@ -434,7 +434,7 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
         poses: regPoses, f: sfm.f, fullWidth: width, fullHeight: height,
     }, {
         bounds, voxel, bgFrac: opts.bgFrac ?? 0.08, keepFrac: 0.15, skipBg: 5, colorSide: opts.colorSide || 960,
-        smooth: opts.smooth ?? 4, onProgress: report, refineGrid: opts.refine === false ? null : refineGrid,
+        smooth: opts.smooth ?? 4, onProgress: report, refineGrid: opts.refine ? refineGrid : null,
     });
     log(`fine grid voxel ${voxel.toFixed(2)} mm, total ${Date.now() - t0} ms`);
     return {

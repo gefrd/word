@@ -14,6 +14,7 @@ const STRINGS = {
         freeTip4: 'Keep the whole object in the picture. Even light, no hands in the frame.',
         freeTip5: 'Turning it on a stool? Keep the phone still and turn the object slowly by a full turn.',
         freeTip6: 'Do not zoom. Before recording, tap the object once so the camera focuses on it (on iPhone: press and hold to lock focus).',
+        refineToggle: 'Experimental: refine the shape by colour and AI depth (slower, may help with hollows)',
         freeModelNote: 'The first scan downloads the AI models (~70 MB, shared with Photo → 3D) once; after that it works offline.',
         freeSizeNote: 'Size is estimated — type the real length for an exact size.',
         realLength: 'Real length (longest side), cm',

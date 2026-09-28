@@ -103,6 +103,7 @@ async function home() {
           <ul class="tips small"><li data-i18n="freeTip1"></li><li data-i18n="freeTip2"></li><li data-i18n="freeTip3"></li><li data-i18n="freeTip4"></li><li data-i18n="freeTip5"></li><li data-i18n="freeTip6"></li></ul>
           <p class="muted small" data-i18n="freeModelNote"></p>
         </details>
+        <label class="check small"><input type="checkbox" id="refine"> <span data-i18n="refineToggle"></span></label>
       </section>
 
       <section class="mode">
@@ -142,6 +143,9 @@ async function home() {
       </section>
       <footer class="note" data-i18n="installHint"></footer>
     </div></div>`);
+    const refineBox = node.querySelector('#refine');
+    try { refineBox.checked = localStorage.getItem('k3d-refine') === '1'; } catch (_) {}
+    refineBox.onchange = () => { try { localStorage.setItem('k3d-refine', refineBox.checked ? '1' : '0'); } catch (_) {} };
     node.querySelector('#freeLive').onclick = () => freeLive();
     node.querySelector('#freeVideo').onclick = async () => { const [f] = await pickFiles('video/*'); if (f) freeFromVideo(f); };
     node.querySelector('#freePhotos').onclick = async () => { const fs = await pickFiles('image/*', true); if (fs.length) freeFromPhotos(fs); };
@@ -487,7 +491,9 @@ function startFreeJob(ui, expected) {
 
 async function finishFreeJob(job, ui, opts = {}) {
     const t0 = performance.now();
-    const r = await job.solve({ lowMemory: PROFILE.tier === 'low', ...opts });
+    let refine = false;
+    try { refine = localStorage.getItem('k3d-refine') === '1'; } catch (_) {}
+    const r = await job.solve({ lowMemory: PROFILE.tier === 'low', refine, ...opts });
     const { buildMesh } = await lazyExport();
     const mesh = buildMesh({ positions: r.positions, indices: r.indices, colors: r.colors, name: 'Kivu 3D Scan' });
     const secs = ((performance.now() - t0) / 1000).toFixed(0);

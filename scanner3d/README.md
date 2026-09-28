@@ -55,6 +55,8 @@ npm run build     # готовый сайт в dist/ (~2.4 МБ)
 | `src/sfm.js` | structure from motion: пары кадров, треки, выбор начальной пары по третьему кадру, регистрация кадров, разреженная связка (Левенберг–Марквардт с дополнением Шура), замыкание круга, проверка фокуса |
 | `src/rmbg.js` | маски RMBG‑1.4 через onnxruntime-web; вход модели «размораживается» в памяти, чтобы считать на ~384 px вместо 1024 (в ~15 раз быстрее) |
 | `src/markerless.js`, `src/markerless.worker.js`, `src/markerless-client.js` | режим без листа: система координат предмета (верх, центр, масштаб, пол), грубое → точное вырезание объёма, всё в Web Worker |
+| `src/refine.js`, `src/depth.js` | эксперимент (галочка на главном экране, по умолчанию выкл.): досечение объёма по согласованности цвета между кадрами и по карте глубины Depth Anything V2 |
+| `src/maskfix.js` | проверка и исправление масок ИИ: пересчёт на кадре, обрезанном вокруг предмета; неподвижные пиксели при съёмке на табурете |
 | `src/reconstruct.js` | сегментация по листу + цветовая модель фона, вырезание объёма, surface nets, сглаживание, раскраска с учётом видимости; потоковая обработка (кадры по одному — мало памяти) |
 | `src/recon.worker.js` | реконструкция в Web Worker (есть запасной путь в основном потоке для iOS < 16.4) |
 | `src/photo3d.js`, `src/photo3d.worker.js` | ИИ-режим (transformers.js / ONNX Runtime Web) |
@@ -82,6 +84,7 @@ node test/mk-mjpeg.mjs && node test/e2e-live.mjs     # живая камера (
 NO_HMR=1 npx vite --port 5190 &
 node test/run-free.mjs --obj=sneaker --mode=walk --masks=rmbg --maskEval --gtPoses   # одна сцена, подробно
 node test/run-free-matrix.mjs --masks=rmbg                                           # таблица по всем сценам
+node test/run-free.mjs --obj=mug --loops=25,50 --masks=rmbg --refine --depth         # досечение (цвет + имитация сети глубины)
 npx vite build --outDir /tmp/k3d && npx vite preview --port 5191 --outDir /tmp/k3d &
 node test/e2e-free.mjs --input=video [--noseek] [--cpu=4]                            # через интерфейс
 ```
