@@ -18,6 +18,7 @@
 
 import * as igisoro from '../../games/igisoro/engine.js';
 import * as ludo from '../../games/ludo/engine.js';
+import * as battleship from '../../games/battleship/engine.js';
 
 const DRAW = -1;
 
@@ -67,6 +68,38 @@ export const GAMES = {
         reason: () => 'finished',
         botMove: (state, level, rng) => ludo.chooseBotAction(state, level, rng),
         nextFirst: (prev, seats) => seats[(seats.indexOf(prev) + 1) % seats.length],
+    },
+    battleship: {
+        turnMs: 45_000,         // also the time to place your fleet
+        botDelayMs: 900,
+        maxTimeouts: 2,
+        maxSeats: 2,
+        seatOrder: () => [0, 1],
+        normalizeRules: battleship.normalizeRules,
+        normalizeOptions: () => ({ players: 2 }),
+        create: ({ rules, firstPlayer }) => battleship.createGame({ rules, firstPlayer }),
+        parseMove: (msg) => {
+            const m = msg.move;
+            if (!m || typeof m !== 'object') return null;
+            if (m.type === 'fire' && Number.isInteger(m.cell)) return { type: 'fire', cell: m.cell };
+            if (m.type === 'place' && Array.isArray(m.ships) && m.ships.length <= 10) {
+                const ships = m.ships.map((s) => (s && typeof s === 'object' ? { x: s.x, y: s.y, h: s.h } : null));
+                return { type: 'place', ships };
+            }
+            return null;
+        },
+        isLegal: (state, move) => battleship.isLegalMove(state, move),
+        apply: (state, move) => battleship.applyMove(state, move),
+        turn: (state) => state.turn,
+        counter: (state) => state.moveCount,
+        winner: (state) => state.winner,
+        reason: () => 'fleet_sunk',
+        botMove: (state, level, rng) => battleship.chooseBotMove(state, level, rng),
+        nextFirst: (prev) => 1 - prev,
+        // Ships are secret: each phone gets its own fleet and only the sunk
+        // enemy ships, and never sees the other player's placement move.
+        viewFor: (state, seat) => battleship.viewFor(state, seat),
+        viewMove: (move, seat) => battleship.viewMove(move, seat),
     },
 };
 
