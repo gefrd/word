@@ -190,6 +190,8 @@ function colorBin(r, g, b) {
 }
 
 function scanVolume(voxelOpts = {}) {
+    // No-sheet scans pass their own box (object frame, mm).
+    if (voxelOpts.bounds) return voxelOpts.bounds;
     const margin = 12;
     const [x0, y1] = pageToWorld(OBJECT_AREA.x0 - margin, OBJECT_AREA.y0 - margin);
     const [x1, y0] = pageToWorld(OBJECT_AREA.x1 + margin, OBJECT_AREA.y1 + margin);
@@ -262,6 +264,7 @@ export function createCarver(opts = {}) {
     const origin = [x0, y0, z0];
     const N = nx * ny * nz;
     const fg = new Uint8Array(N), bg = new Uint8Array(N);
+    const skipBg = opts.skipBg ?? 3;
     let viewCount = 0;
     return {
         addView(v) {
@@ -276,7 +279,7 @@ export function createCarver(opts = {}) {
                     const a0 = p[1] * Y + p[2] * Z + p[3], a1 = p[5] * Y + p[6] * Z + p[7], a2 = p[9] * Y + p[10] * Z + p[11];
                     let idx = (k * ny + j) * nx;
                     for (let i = 0; i < nx; i++, idx++) {
-                        if (bg[idx] > 3) continue; // already clearly empty
+                        if (bg[idx] > skipBg) continue; // already clearly empty
                         const X = x0 + (i + 0.5) * voxel;
                         const w = p[8] * X + a2;
                         if (w <= 1) continue;
@@ -293,17 +296,18 @@ export function createCarver(opts = {}) {
             // Keep a voxel when paper/background was (almost) never seen
             // through it and it was seen as "covered" from enough directions.
             const minFg = opts.minFg ?? Math.max(2, Math.round(viewCount * 0.15));
+            const bgFrac = opts.bgFrac ?? 0.06;
             const occ = new Uint8Array(N);
             for (let n = 0; n < N; n++) {
                 const f = fg[n], b = bg[n];
-                if (f >= minFg && b <= Math.max(0, Math.floor((f + b) * 0.06))) occ[n] = 1;
+                if (f >= minFg && b <= Math.max(0, Math.floor((f + b) * bgFrac))) occ[n] = 1;
             }
             // Opening (erode, then dilate) removes one-voxel spikes and
             // threads left by segmentation noise without eating real thin
             // parts like handles.
             const opened = dilate(erode(occ, nx, ny, nz), nx, ny, nz);
             for (let n = 0; n < N; n++) occ[n] = occ[n] & opened[n];
-            keepMainComponents(occ, nx, ny, nz);
+            keepMainComponents(occ, nx, ny, nz, opts.keepFrac ?? 0.02);
             return { occ, nx, ny, nz, origin, voxel };
         },
     };
@@ -343,7 +347,7 @@ function dilate(occ, nx, ny, nz) {
 }
 
 // Remove floating noise: drop small 6-connected components.
-function keepMainComponents(occ, nx, ny, nz) {
+function keepMainComponents(occ, nx, ny, nz, keepFrac) {
     const label = new Int32Array(occ.length).fill(-1);
     const sizes = [];
     const stack = new Int32Array(occ.length);
@@ -365,7 +369,7 @@ function keepMainComponents(occ, nx, ny, nz) {
     // Several separate objects may be scanned together, so only drop parts
     // that are tiny both in absolute terms and next to the largest one.
     const maxSize = Math.max(...sizes);
-    const minSize = Math.max(60, maxSize * 0.02);
+    const minSize = Math.max(60, maxSize * keepFrac);
     for (let n = 0; n < occ.length; n++) if (occ[n] && sizes[label[n]] < minSize) occ[n] = 0;
 }
 
@@ -658,6 +662,11 @@ export async function reconstructStreaming({ count, getFrame, poses, f, fullWidt
     for (let i = 0; i < grid.occ.length; i++) solidCount += grid.occ[i];
     if (solidCount < 20) throw new Error('No object found on the sheet. Make sure it stands in the middle and is not white.');
 
+    const out = await meshAndColor(grid, { count, getFrame, poses, scaleF }, colorSide, opts, report);
+    return { ...out, masks: opts.keepMasks ? masks.map(m => m.mask) : undefined };
+}
+
+async function meshAndColor(grid, { count, getFrame, poses, scaleF }, colorSide, opts, report) {
     report('mesh', 0);
     const mesh = smoothMesh(surfaceNets(grid), opts.smooth ?? 4);
     const normals = computeNormals(mesh.positions, mesh.indices);
@@ -670,5 +679,28 @@ export async function reconstructStreaming({ count, getFrame, poses, f, fullWidt
     }
     const colors = colorer.finish();
     report('done', 1);
-    return { positions: mesh.positions, indices: mesh.indices, normals, colors, grid, masks: opts.keepMasks ? masks.map(m => m.mask) : undefined };
+    return { positions: mesh.positions, indices: mesh.indices, normals, colors, grid };
+}
+
+/**
+ * No-sheet pipeline: the object masks come from the AI (getMask(i) →
+ * { mask: FOREGROUND/BACKGROUND/UNKNOWN per pixel, width, height }) and the
+ * carving box from the caller (opts.bounds, object frame in mm, z = 0 on the
+ * ground). Frames are streamed one at a time like reconstructStreaming.
+ */
+export async function reconstructWithMasks({ count, getFrame, getMask, poses, f, fullWidth, fullHeight }, opts = {}) {
+    const report = opts.onProgress || (() => {});
+    const colorSide = opts.colorSide || 960;
+    const scaleF = (w, h) => f * Math.max(w, h) / Math.max(fullWidth, fullHeight);
+    const carver = createCarver(opts);
+    for (let i = 0; i < count; i++) {
+        report('carve', i / count);
+        const m = await getMask(i);
+        carver.addView({ mask: m.mask, width: m.width, height: m.height, R: poses[i].R, t: poses[i].t, f: scaleF(m.width, m.height) });
+    }
+    const grid = carver.finish();
+    let solidCount = 0;
+    for (let i = 0; i < grid.occ.length; i++) solidCount += grid.occ[i];
+    if (solidCount < 20) throw new Error('EMPTY_HULL');
+    return meshAndColor(grid, { count, getFrame, poses, scaleF }, colorSide, opts, report);
 }
