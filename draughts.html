@@ -1612,12 +1612,13 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
             if (cands.some((m) => m.path[partial.length + 1] === sq)) {
                 partial.push(sq);
                 const left = candidates();
-                const full = left.length === 0
-                    ? cands.filter((m) => samePath(m.path, [selected].concat(partial)))
-                    : [];
-                if (full.length) {
-                    if (isOnline()) return sendMove(full[0]);
-                    return playMove(full[0]);
+                // Done if the path so far is a whole move, or if the rest is forced.
+                let done = cands.find((m) => samePath(m.path, [selected].concat(partial)));
+                const end = (m) => m.path[m.path.length - 1];
+                if (!done && left.length && left.every((m) => end(m) === end(left[0]) && sameCaptures(m.captures, left[0].captures))) done = left[0];
+                if (done) {
+                    if (isOnline()) return sendMove(done);
+                    return playMove(done);
                 }
                 beep(520, 0.05, 0.04);
                 render();
@@ -1628,7 +1629,11 @@ function chooseBotMove(state, level = 'medium', rng = Math.random) {
                 setStatus('Several ways to get there — tap each landing square in turn', game.turn === 1, true);
                 return;
             }
-            if (sq === selected && partial.length === 0) { clearSelection(); render(); updateStatus(); return; }
+            if (sq === selected && partial.length === 0) {
+                // Put it down again, unless it is the only piece that can move.
+                if (new Set(moves.map((m) => m.path[0])).size > 1) { clearSelection(); render(); updateStatus(); }
+                return;
+            }
             if (sq === selected && partial.length) { partial = []; render(); updateStatus(); return; }
         }
         if (mine && movable) {
