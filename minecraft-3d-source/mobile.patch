@@ -1,0 +1,1751 @@
+diff --git a/index.html b/index.html
+index d965f3e..48699fa 100644
+--- a/index.html
++++ b/index.html
+@@ -5,12 +5,15 @@
+     <link rel="icon" href="/src/static/mc.ico" />
+     <meta
+       name="viewport"
+-      content="width=device-width,initial-scale=1,maximum-scale=1"
++      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"
+     />
+     <meta
+       name="description"
+       content="Minecraft clone made with Three.js + TypeScript, play minecraft in your own browser!"
+     />
++    <meta name="theme-color" content="#1c1c1c" />
++    <meta name="mobile-web-app-capable" content="yes" />
++    <meta name="apple-mobile-web-app-capable" content="yes" />
+     <title>Minecraft - Three.js</title>
+   </head>
+   <body>
+@@ -69,13 +72,23 @@
+         step="1"
+       />
+ 
+-      <p id="fov">Field of View: 70</p>
++      <p id="fov">Field of View: 50</p>
+       <input
+         type="range"
+         id="fov-input"
+         min="40"
+         max="100"
+-        value="70"
++        value="50"
++        step="1"
++      />
++
++      <p id="quality">Graphics: Fancy</p>
++      <input
++        type="range"
++        id="quality-input"
++        min="0"
++        max="2"
++        value="2"
+         step="1"
+       />
+ 
+diff --git a/src/control/index.ts b/src/control/index.ts
+index 42d85b6..9e0d816 100644
+--- a/src/control/index.ts
++++ b/src/control/index.ts
+@@ -702,7 +702,9 @@ export default class Control {
+ 
+   update = () => {
+     this.p1 = performance.now()
+-    const delta = (this.p1 - this.p2) / 1000
++    // clamp long frames (slow phones, tab switches) so we never tunnel
++    // through the ground
++    const delta = Math.min((this.p1 - this.p2) / 1000, 0.05)
+     if (
+       // dev mode
+       this.player.mode === Mode.flying
+diff --git a/src/core/index.ts b/src/core/index.ts
+index 33a0508..1bccfcb 100644
+--- a/src/core/index.ts
++++ b/src/core/index.ts
+@@ -1,40 +1,65 @@
+ import * as THREE from 'three'
++import { isMobile, Preset } from '../utils'
+ 
+ export default class Core {
+-  constructor() {
++  constructor(preset: Preset) {
++    this.preset = preset
+     this.camera = new THREE.PerspectiveCamera()
+-    this.renderer = new THREE.WebGLRenderer()
++    this.renderer = new THREE.WebGLRenderer({
++      antialias: false,
++      powerPreference: isMobile ? 'low-power' : 'default'
++    })
+     this.scene = new THREE.Scene()
+     this.initScene()
+     this.initRenderer()
+     this.initCamera()
+   }
+ 
++  preset: Preset
+   camera: THREE.PerspectiveCamera
+   scene: THREE.Scene
+-  renderer: THREE.Renderer
++  renderer: THREE.WebGLRenderer
++  pixelRatio = 1
+ 
+   initCamera = () => {
+-    this.camera.fov = 50
+-    this.camera.aspect = window.innerWidth / window.innerHeight
+     this.camera.near = 0.01
+     this.camera.far = 500
+-    this.camera.updateProjectionMatrix()
++    this.updateCamera()
+     this.camera.position.set(8, 50, 8)
+ 
+     this.camera.lookAt(100, 30, 100)
+ 
+-    window.addEventListener('resize', () => {
+-      this.camera.aspect = window.innerWidth / window.innerHeight
+-      this.camera.updateProjectionMatrix()
+-    })
++    window.addEventListener('resize', this.updateCamera)
++  }
++
++  baseFov = 50
++
++  setFov = (fov: number) => {
++    this.baseFov = fov
++    this.updateCamera()
++  }
++
++  // narrow portrait screens: widen the vertical fov so the horizontal view
++  // doesn't shrink to a keyhole
++  updateCamera = () => {
++    const aspect = window.innerWidth / window.innerHeight
++    this.camera.aspect = aspect
++    this.camera.fov =
++      aspect < 1
++        ? Math.min(Math.max(this.baseFov / Math.sqrt(aspect), this.baseFov), 95)
++        : this.baseFov
++    this.camera.updateProjectionMatrix()
+   }
+ 
+   initScene = () => {
+     this.scene = new THREE.Scene()
+     const backgroundColor = 0x87ceeb
+ 
+-    this.scene.fog = new THREE.Fog(backgroundColor, 1, 96)
++    this.scene.fog = new THREE.Fog(
++      backgroundColor,
++      1,
++      this.preset.distance * 24 + 24
++    )
+     this.scene.background = new THREE.Color(backgroundColor)
+ 
+     const sunLight = new THREE.PointLight(0xffffff, 0.5)
+@@ -50,6 +75,7 @@ export default class Core {
+   }
+ 
+   initRenderer = () => {
++    this.setPixelRatio(this.preset.pixelRatio)
+     this.renderer.setSize(window.innerWidth, window.innerHeight)
+     document.body.appendChild(this.renderer.domElement)
+ 
+@@ -57,4 +83,25 @@ export default class Core {
+       this.renderer.setSize(window.innerWidth, window.innerHeight)
+     })
+   }
++
++  setPixelRatio = (ratio: number) => {
++    this.pixelRatio = ratio
++    this.renderer.setPixelRatio(ratio)
++    this.renderer.setSize(window.innerWidth, window.innerHeight)
++  }
++
++  applyPreset = (preset: Preset) => {
++    this.preset = preset
++    this.setPixelRatio(preset.pixelRatio)
++  }
++
++  // dynamic resolution: trade sharpness for frame rate on weak GPUs
++  adaptResolution = (fps: number) => {
++    const { pixelRatio, minPixelRatio } = this.preset
++    if (fps < 28 && this.pixelRatio > minPixelRatio) {
++      this.setPixelRatio(Math.max(minPixelRatio, this.pixelRatio - 0.125))
++    } else if (fps > 52 && this.pixelRatio < pixelRatio) {
++      this.setPixelRatio(Math.min(pixelRatio, this.pixelRatio + 0.125))
++    }
++  }
+ }
+diff --git a/src/main.ts b/src/main.ts
+index e842128..aafafd0 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -4,10 +4,12 @@ import Player from './player'
+ import Terrain from './terrain'
+ import UI from './ui'
+ import Audio from './audio'
++import { isMobile, presets, quality } from './utils'
+ 
+ import './style.css'
+ 
+-const core = new Core()
++const preset = presets[quality]
++const core = new Core(preset)
+ const camera = core.camera
+ const scene = core.scene
+ const renderer = core.renderer
+@@ -15,20 +17,24 @@ const renderer = core.renderer
+ const player = new Player()
+ const audio = new Audio(camera)
+ 
+-const terrain = new Terrain(scene, camera)
++const terrain = new Terrain(scene, camera, preset)
+ const control = new Control(scene, camera, player, terrain, audio)
+ 
+-const ui = new UI(terrain, control)
++const ui = new UI(core, terrain, control)
++
++// phones with 90/120Hz screens: cap at 60 fps to save battery and heat
++const minFrameTime = isMobile ? 1000 / 60 - 2 : 0
++let lastFrame = 0
+ 
+ // animation
+-;(function animate() {
+-  // let p1 = performance.now()
++;(function animate(now: number) {
+   requestAnimationFrame(animate)
++  if (now - lastFrame < minFrameTime) return
++  lastFrame = now
+ 
+   control.update()
+   terrain.update()
+   ui.update()
+ 
+   renderer.render(scene, camera)
+-  // console.log(performance.now()-p1)
+-})()
++})(performance.now())
+diff --git a/src/style.css b/src/style.css
+index b4d59de..2402a15 100644
+--- a/src/style.css
++++ b/src/style.css
+@@ -221,7 +221,9 @@ body {
+   transform: translate(-50%, 0%);
+ 
+   width: 300px;
+-  height: 370px;
++  max-height: calc(100vh - 40px);
++  overflow-y: auto;
++  padding-bottom: 16px !important;
+   color: white;
+   background-color: #727272;
+   border-left: 2px solid #a4a4a4;
+@@ -239,7 +241,8 @@ body {
+ }
+ 
+ #distance-input,
+-#fov-input {
++#fov-input,
++#quality-input {
+   appearance: none;
+   width: 100%;
+   height: 16px;
+@@ -256,6 +259,7 @@ body {
+ 
+ #distance-input::-webkit-slider-thumb:hover,
+ #fov-input::-webkit-slider-thumb:hover,
++#quality-input::-webkit-slider-thumb:hover,
+ #music-input::-webkit-slider-thumb:hover {
+   background-color: #218306;
+   border-left: 2px solid #17cd07;
+@@ -267,6 +271,7 @@ body {
+ 
+ #distance-input::-webkit-slider-thumb,
+ #fov-input::-webkit-slider-thumb,
++#quality-input::-webkit-slider-thumb,
+ #music-input::-webkit-slider-thumb {
+   appearance: none;
+   width: 20px;
+@@ -284,6 +289,7 @@ body {
+ 
+ #distance-input::-moz-range-thumb,
+ #fov-input::-moz-range-thumb,
++#quality-input::-moz-range-thumb,
+ #music-input::-moz-range-thumb {
+   appearance: none;
+   width: 20px;
+@@ -306,3 +312,119 @@ body {
+   -webkit-user-select: none;
+   user-select: none;
+ }
++
++/* ---------- touch devices & small screens ---------- */
++
++:root {
++  --slot: min(46px, calc((100vw - 32px) / 7));
++}
++
++html,
++body {
++  overscroll-behavior: none;
++}
++
++canvas {
++  display: block;
++  /* keep blocks crisp when rendering below native resolution */
++  image-rendering: pixelated;
++}
++
++.cross-hair,
++.fps {
++  pointer-events: none;
++}
++
++body.touch .fps {
++  top: env(safe-area-inset-top);
++  left: env(safe-area-inset-left);
++  padding: 2px 4px;
++  font-size: 11px;
++}
++
++body.touch .cross-hair {
++  font-size: 2rem;
++}
++
++/* touch hotbar: only the placeable blocks, tap to select */
++.bag-touch {
++  z-index: 2;
++  top: auto;
++  bottom: calc(8px + env(safe-area-inset-bottom));
++  transform: translate(-50%, 0);
++  display: flex;
++  height: auto;
++  padding: 2px;
++}
++
++.bag-touch.hidden {
++  display: none;
++}
++
++.bag-touch .item {
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  box-sizing: border-box;
++  width: var(--slot);
++  height: var(--slot);
++}
++
++.bag-touch .icon {
++  width: 72%;
++  height: 72%;
++  transform: none;
++  pointer-events: none;
++}
++
++@media (orientation: landscape) and (max-height: 500px) {
++  .bag-touch {
++    top: calc(6px + env(safe-area-inset-top));
++    bottom: auto;
++  }
++}
++
++/* menus must fit a 360px wide screen */
++.button {
++  max-width: calc(100vw - 72px);
++}
++
++@media (max-width: 420px) {
++  .settings,
++  .features {
++    width: calc(100vw - 84px);
++    padding: 0 20px;
++  }
++}
++
++/* short screens (phones in landscape) */
++@media (max-height: 500px) {
++  .menu {
++    height: 94vh;
++    padding-top: 6vh;
++  }
++
++  .menu .button {
++    margin-bottom: 8px;
++    padding: 6px;
++    font-size: 1rem;
++  }
++
++  .settings,
++  .features {
++    top: 10px;
++    max-height: calc(100vh - 20px);
++    overflow-y: auto;
++    line-height: 1.4rem;
++  }
++
++  .settings p,
++  .features p {
++    margin: 8px 0;
++  }
++
++  .save-modal,
++  .load-modal {
++    margin-top: 10px;
++  }
++}
+diff --git a/src/terrain/highlight/index.ts b/src/terrain/highlight/index.ts
+index d153512..258f31c 100644
+--- a/src/terrain/highlight/index.ts
++++ b/src/terrain/highlight/index.ts
+@@ -30,7 +30,9 @@ export default class BlockHighlight {
+     opacity: 0.25
+     // depthWrite: false
+   })
+-  mesh = new THREE.Mesh(new THREE.BoxGeometry(), this.material)
++  mesh = new THREE.Mesh(this.geometry, this.material)
++  matrix = new THREE.Matrix4()
++  zeroMatrix = new THREE.Matrix4().set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+ 
+   // block simulation
+   index = 0
+@@ -44,13 +46,12 @@ export default class BlockHighlight {
+     // remove last highlight and reset block simulation
+     this.scene.remove(this.mesh)
+     this.index = 0
+-    this.instanceMesh.instanceMatrix = new THREE.InstancedBufferAttribute(
+-      new Float32Array(1000 * 16),
+-      16
+-    )
++    // reuse the buffer instead of allocating 64KB every frame
++    ;(this.instanceMesh.instanceMatrix.array as Float32Array).fill(0)
++    this.instanceMesh.count = 1000
+ 
+     const position = this.camera.position
+-    const matrix = new THREE.Matrix4()
++    const matrix = this.matrix
+     const idMap = new Map<string, number>()
+     const noise = this.terrain.noise
+ 
+@@ -130,29 +131,16 @@ export default class BlockHighlight {
+           let id = idMap.get(`${block.x}_${block.y}_${block.z}`)
+           this.instanceMesh.setMatrixAt(
+             id!,
+-            new THREE.Matrix4().set(
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0,
+-              0
+-            )
++            this.zeroMatrix
+           )
+         }
+       }
+     }
+ 
++    // only raycast against the filled instances
++    this.instanceMesh.count = Math.min(this.index, 1000)
++    this.instanceMesh.instanceMatrix.needsUpdate = true
++
+     // highlight new block
+     this.raycaster.setFromCamera({ x: 0, y: 0 }, this.camera)
+     this.block = this.raycaster.intersectObject(this.instanceMesh)[0]
+@@ -161,12 +149,8 @@ export default class BlockHighlight {
+       this.block.object instanceof THREE.InstancedMesh &&
+       typeof this.block.instanceId === 'number'
+     ) {
+-      this.mesh = new THREE.Mesh(this.geometry, this.material)
+-      let matrix = new THREE.Matrix4()
+       this.block.object.getMatrixAt(this.block.instanceId, matrix)
+-      const position = new THREE.Vector3().setFromMatrixPosition(matrix)
+-
+-      this.mesh.position.set(position.x, position.y, position.z)
++      this.mesh.position.setFromMatrixPosition(matrix)
+       this.scene.add(this.mesh)
+     }
+   }
+diff --git a/src/terrain/index.ts b/src/terrain/index.ts
+index f88162c..98d6e5e 100644
+--- a/src/terrain/index.ts
++++ b/src/terrain/index.ts
+@@ -3,6 +3,7 @@ import Materials, { MaterialType } from './mesh/materials'
+ import Block from './mesh/block'
+ import Highlight from './highlight'
+ import Noise from './noise'
++import { Preset } from '../utils'
+ 
+ import Generate from './worker/generate?worker'
+ 
+@@ -21,9 +22,17 @@ export enum BlockType {
+   bedrock = 11
+ }
+ export default class Terrain {
+-  constructor(scene: THREE.Scene, camera: THREE.PerspectiveCamera) {
++  constructor(
++    scene: THREE.Scene,
++    camera: THREE.PerspectiveCamera,
++    preset: Preset
++  ) {
+     this.scene = scene
+     this.camera = camera
++    this.preset = preset
++    this.distance = preset.distance
++    this.materials = new Materials(preset.lambert)
++    this.cloud.visible = preset.clouds
+     this.maxCount =
+       (this.distance * this.chunkSize * 2 + this.chunkSize) ** 2 + 500
+     this.highlight = new Highlight(scene, camera, this)
+@@ -48,14 +57,16 @@ export default class Terrain {
+         )
+       }
+ 
+-      for (const block of this.blocks) {
+-        block.instanceMatrix.needsUpdate = true
++      for (let i = 0; i < this.blocks.length; i++) {
++        this.blocks[i].instanceMatrix.needsUpdate = true
++        this.updateDrawCount(i)
+       }
+     }
+   }
+   // core properties
+   scene: THREE.Scene
+   camera: THREE.PerspectiveCamera
++  preset: Preset
+   distance = 3
+   chunkSize = 24
+ 
+@@ -66,7 +77,7 @@ export default class Terrain {
+   noise = new Noise()
+ 
+   // materials
+-  materials = new Materials()
++  materials: Materials
+   materialType = [
+     MaterialType.grass,
+     MaterialType.sand,
+@@ -112,6 +123,22 @@ export default class Terrain {
+ 
+   setCount = (type: BlockType) => {
+     this.blocksCount[type] = this.blocksCount[type] + 1
++    this.updateDrawCount(type)
++  }
++
++  // draw only the filled instances; the unused (zero-matrix) tail of each
++  // buffer would otherwise still go through the vertex shader every frame
++  updateDrawCount = (type: BlockType) => {
++    const block = this.blocks[type]
++    block.count = Math.min(this.blocksCount[type], block.instanceMatrix.count)
++  }
++
++  applyPreset = (preset: Preset) => {
++    if (preset.lambert !== this.preset.lambert) {
++      this.materials = new Materials(preset.lambert)
++    }
++    this.preset = preset
++    this.cloud.visible = preset.clouds
+   }
+ 
+   initBlocks = () => {
+@@ -131,6 +158,8 @@ export default class Terrain {
+         this.maxCount * this.blocksFactor[i]
+       )
+       block.name = BlockType[i]
++      // nothing to draw until the generate worker responds
++      block.count = 0
+       this.blocks.push(block)
+       this.scene.add(block)
+     }
+@@ -294,6 +323,10 @@ export default class Terrain {
+ 
+     this.previousChunk.copy(this.chunk)
+ 
+-    this.highlight.update()
++    if (++this.frame >= this.preset.highlightEvery) {
++      this.frame = 0
++      this.highlight.update()
++    }
+   }
++  frame = 0
+ }
+diff --git a/src/terrain/mesh/materials.ts b/src/terrain/mesh/materials.ts
+index 45b930d..687fb3e 100644
+--- a/src/terrain/mesh/materials.ts
++++ b/src/terrain/mesh/materials.ts
+@@ -69,53 +69,57 @@ quartzMaterial.magFilter = THREE.NearestFilter
+ glassMaterial.magFilter = THREE.NearestFilter
+ bedrockMaterial.magFilter = THREE.NearestFilter
+ 
++type BlockMaterial = THREE.MeshStandardMaterial | THREE.MeshLambertMaterial
++
+ export default class Materials {
+-  materials = {
+-    grass: [
+-      new THREE.MeshStandardMaterial({ map: grassMaterial }),
+-      new THREE.MeshStandardMaterial({ map: grassMaterial }),
+-      new THREE.MeshStandardMaterial({
+-        map: grassTopMaterial
+-      }),
+-      new THREE.MeshStandardMaterial({ map: dirtMaterial }),
+-      new THREE.MeshStandardMaterial({ map: grassMaterial }),
+-      new THREE.MeshStandardMaterial({ map: grassMaterial })
+-    ],
+-    dirt: new THREE.MeshStandardMaterial({ map: dirtMaterial }),
+-    sand: new THREE.MeshStandardMaterial({ map: sandMaterial }),
+-    tree: [
+-      new THREE.MeshStandardMaterial({ map: treeMaterial }),
+-      new THREE.MeshStandardMaterial({ map: treeMaterial }),
+-      new THREE.MeshStandardMaterial({ map: treeTopMaterial }),
+-      new THREE.MeshStandardMaterial({ map: treeTopMaterial }),
+-      new THREE.MeshStandardMaterial({ map: treeMaterial }),
+-      new THREE.MeshStandardMaterial({ map: treeMaterial })
+-    ],
+-    leaf: new THREE.MeshStandardMaterial({
+-      map: leafMaterial,
+-      color: new THREE.Color(0, 1, 0),
+-      transparent: true
+-    }),
+-    // water: new THREE.MeshStandardMaterial({
+-    //   map: waterMaterial,
+-    //   transparent: true,
+-    //   opacity: 0.7
+-    // }),
+-    stone: new THREE.MeshStandardMaterial({ map: stoneMaterial }),
+-    coal: new THREE.MeshStandardMaterial({ map: coalMaterial }),
+-    wood: new THREE.MeshStandardMaterial({ map: woodMaterial }),
+-    diamond: new THREE.MeshStandardMaterial({ map: diamondMaterial }),
+-    quartz: new THREE.MeshStandardMaterial({ map: quartzMaterial }),
+-    glass: new THREE.MeshStandardMaterial({
+-      map: glassMaterial,
+-      transparent: true
+-    }),
+-    bedrock: new THREE.MeshStandardMaterial({ map: bedrockMaterial })
++  constructor(lambert = false) {
++    this.build(lambert)
++  }
++
++  materials!: Record<MaterialType, BlockMaterial | BlockMaterial[]>
++
++  // lambert: cheap per-vertex lighting and alpha-tested (unsorted) foliage
++  build = (lambert: boolean) => {
++    const make = (params: THREE.MeshStandardMaterialParameters) =>
++      lambert
++        ? new THREE.MeshLambertMaterial(params as THREE.MeshLambertMaterialParameters)
++        : new THREE.MeshStandardMaterial(params)
++    const cutout = (map: THREE.Texture, color?: THREE.Color) =>
++      lambert
++        ? make({ map, color, alphaTest: 0.5 })
++        : make({ map, color, transparent: true })
++
++    this.materials = {
++      grass: [
++        make({ map: grassMaterial }),
++        make({ map: grassMaterial }),
++        make({ map: grassTopMaterial }),
++        make({ map: dirtMaterial }),
++        make({ map: grassMaterial }),
++        make({ map: grassMaterial })
++      ],
++      dirt: make({ map: dirtMaterial }),
++      sand: make({ map: sandMaterial }),
++      tree: [
++        make({ map: treeMaterial }),
++        make({ map: treeMaterial }),
++        make({ map: treeTopMaterial }),
++        make({ map: treeTopMaterial }),
++        make({ map: treeMaterial }),
++        make({ map: treeMaterial })
++      ],
++      leaf: cutout(leafMaterial, new THREE.Color(0, 1, 0)),
++      stone: make({ map: stoneMaterial }),
++      coal: make({ map: coalMaterial }),
++      wood: make({ map: woodMaterial }),
++      diamond: make({ map: diamondMaterial }),
++      quartz: make({ map: quartzMaterial }),
++      glass: cutout(glassMaterial),
++      bedrock: make({ map: bedrockMaterial })
++    }
+   }
+ 
+-  get = (
+-    type: MaterialType
+-  ): THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[] => {
++  get = (type: MaterialType): BlockMaterial | BlockMaterial[] => {
+     return this.materials[type]
+   }
+ }
+diff --git a/src/ui/bag/index.ts b/src/ui/bag/index.ts
+index 1f83e91..6dea1f6 100644
+--- a/src/ui/bag/index.ts
++++ b/src/ui/bag/index.ts
+@@ -9,27 +9,30 @@ import { isMobile } from '../../utils'
+ 
+ export default class Bag {
+   constructor() {
+-    if (isMobile) return
+-
+-    this.bag.className = 'bag'
++    this.bag.className = isMobile ? 'bag bag-touch hidden' : 'bag'
+     this.items[0].classList.add('selected')
+ 
+-    for (let i = 0; i < this.items.length; i++) {
++    // touch: only the slots that hold a block, tap to select
++    const count = isMobile ? this.icon.length : this.items.length
++    for (let i = 0; i < count; i++) {
+       this.bag.appendChild(this.items[i])
++      isMobile &&
++        this.items[i].addEventListener('pointerdown', e => {
++          e.stopPropagation()
++          this.select(i)
++          this.onSelect?.(i)
++        })
+     }
+     document.body.appendChild(this.bag)
+ 
++    if (isMobile) return
++
+     document.body.addEventListener('keydown', (e: KeyboardEvent) => {
+       if (isNaN(parseInt(e.key)) || e.key === '0') {
+         return
+       }
+ 
+-      for (let i = 0; i < this.items.length; i++) {
+-        this.items[i].classList.remove('selected')
+-      }
+-
+-      this.current = parseInt(e.key) - 1
+-      this.items[this.current].classList.add('selected')
++      this.select(parseInt(e.key) - 1)
+     })
+ 
+     document.body.addEventListener('wheel', (e: WheelEvent) => {
+@@ -45,10 +48,7 @@ export default class Bag {
+           this.current--
+           this.current < 0 && (this.current = 9)
+         }
+-        for (let i = 0; i < this.items.length; i++) {
+-          this.items[i].classList.remove('selected')
+-        }
+-        this.items[this.current].classList.add('selected')
++        this.select(this.current)
+       }
+     })
+   }
+@@ -57,6 +57,7 @@ export default class Bag {
+   icon = [grass, stone, tree, wood, diamond, quartz, glass]
+   iconIndex = 0
+   y = 0
++  onSelect?: (index: number) => void
+ 
+   bag = document.createElement('div')
+ 
+@@ -68,10 +69,19 @@ export default class Bag {
+     if (this.icon[this.iconIndex]) {
+       img.className = 'icon'
+       img.alt = 'block'
++      img.draggable = false
+       img.src = this.icon[this.iconIndex++]
+       item.appendChild(img)
+     }
+ 
+     return item
+   })
++
++  select = (index: number) => {
++    for (let i = 0; i < this.items.length; i++) {
++      this.items[i].classList.remove('selected')
++    }
++    this.current = index
++    this.items[this.current].classList.add('selected')
++  }
+ }
+diff --git a/src/ui/fps/index.ts b/src/ui/fps/index.ts
+index aa02f90..124bd0b 100644
+--- a/src/ui/fps/index.ts
++++ b/src/ui/fps/index.ts
+@@ -14,6 +14,7 @@ export default class FPS {
+   gap = performance.now()
+   fps = document.createElement('div')
+   count = 0
++  onSecond?: (fps: number) => void
+ 
+   update = () => {
+     this.p1 = performance.now()
+@@ -21,6 +22,7 @@ export default class FPS {
+ 
+     if (performance.now() - this.gap > 1000) {
+       this.fps.innerHTML = `FPS: ${this.count}`
++      this.onSecond?.(this.count)
+       this.gap = performance.now()
+       this.count = 0
+     }
+diff --git a/src/ui/index.ts b/src/ui/index.ts
+index 21a3283..7222f9c 100644
+--- a/src/ui/index.ts
++++ b/src/ui/index.ts
+@@ -5,14 +5,70 @@ import Block from '../terrain/mesh/block'
+ import Control from '../control'
+ import { Mode } from '../player'
+ import Joystick from './joystick'
+-import { isMobile } from '../utils'
++import Core from '../core'
++import { isMobile, presets, quality, Quality, setQuality } from '../utils'
+ import * as THREE from 'three'
+ 
++const qualityLabels: Record<Quality, string> = {
++  low: 'Fast',
++  medium: 'Balanced',
++  high: 'Fancy'
++}
++const qualityOrder = [Quality.low, Quality.medium, Quality.high]
++
++// fullscreen hides the browser bars on phones; must run inside a tap
++const enterFullscreen = () => {
++  const el = document.documentElement as HTMLElement & {
++    webkitRequestFullscreen?: () => void
++  }
++  if (document.fullscreenElement) return
++  try {
++    if (el.requestFullscreen) {
++      el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {})
++    } else {
++      el.webkitRequestFullscreen?.()
++    }
++  } catch {}
++}
++
+ export default class UI {
+-  constructor(terrain: Terrain, control: Control) {
++  constructor(core: Core, terrain: Terrain, control: Control) {
+     this.fps = new FPS()
+     this.bag = new Bag()
+     this.joystick = new Joystick(control)
++    this.quality = quality
++
++    // lower the resolution automatically when the frame rate drops
++    this.fps.onSecond = fps => core.adaptResolution(fps)
++
++    if (isMobile) {
++      document.body.classList.add('touch')
++      this.joystick.onPause = () => this.onPause()
++      this.joystick.setBlockIcon(this.bag.icon[0])
++      this.bag.onSelect = index => {
++        control.holdingIndex = index
++        control.holdingBlock = control.holdingBlocks[index]
++        this.joystick.setBlockIcon(this.bag.icon[index])
++      }
++      // pause when the app goes to background
++      document.addEventListener('visibilitychange', () => {
++        document.hidden && this.playing && this.onPause()
++      })
++      this.features && (this.features.innerHTML = touchGuide)
++      this.back = document.querySelector('#back')
++      this.music?.classList.add('hidden')
++      this.musicInput?.classList.add('hidden')
++    }
++
++    // initial settings reflect the chosen graphics preset
++    if (this.distanceInput instanceof HTMLInputElement && this.distance) {
++      this.distanceInput.value = String(terrain.distance)
++      this.distance.innerHTML = `Render Distance: ${terrain.distance}`
++    }
++    if (this.qualityInput instanceof HTMLInputElement && this.qualityText) {
++      this.qualityInput.value = String(qualityOrder.indexOf(this.quality))
++      this.qualityText.innerHTML = `Graphics: ${qualityLabels[this.quality]}`
++    }
+ 
+     this.crossHair.className = 'cross-hair'
+     this.crossHair.innerHTML = '+'
+@@ -34,7 +90,11 @@ export default class UI {
+         terrain.generate()
+         terrain.camera.position.y = 40
+         control.player.setMode(Mode.walking)
++        this.joystick.updateMode()
++      } else if (isMobile) {
++        this.onPlay()
+       }
++      isMobile && enterFullscreen()
+       !isMobile && control.control.lock()
+     })
+ 
+@@ -88,6 +148,7 @@ export default class UI {
+         // ui update
+         this.onPlay()
+         this.onLoad()
++        isMobile && enterFullscreen()
+         !isMobile && control.control.lock()
+       }
+     })
+@@ -119,8 +180,20 @@ export default class UI {
+     this.fovInput?.addEventListener('input', (e: Event) => {
+       if (this.fov && e.target instanceof HTMLInputElement) {
+         this.fov.innerHTML = `Field of View: ${e.target.value}`
+-        control.camera.fov = parseInt(e.target.value)
+-        control.camera.updateProjectionMatrix()
++        core.setFov(parseInt(e.target.value))
++      }
++    })
++
++    // graphics preset
++    this.qualityInput?.addEventListener('input', (e: Event) => {
++      if (this.qualityText && e.target instanceof HTMLInputElement) {
++        const q = qualityOrder[parseInt(e.target.value)]
++        this.qualityText.innerHTML = `Graphics: ${qualityLabels[q]}`
++        // suggest the preset's render distance
++        if (this.distanceInput instanceof HTMLInputElement && this.distance) {
++          this.distanceInput.value = String(presets[q].distance)
++          this.distance.innerHTML = `Render Distance: ${presets[q].distance}`
++        }
+       }
+     })
+ 
+@@ -135,6 +208,15 @@ export default class UI {
+ 
+     // apply settings
+     this.settingBack?.addEventListener('click', () => {
++      if (this.qualityInput instanceof HTMLInputElement) {
++        const q = qualityOrder[parseInt(this.qualityInput.value)]
++        if (q !== this.quality) {
++          this.quality = q
++          setQuality(q)
++          core.applyPreset(presets[q])
++          terrain.applyPreset(presets[q])
++        }
++      }
+       if (this.distanceInput instanceof HTMLInputElement) {
+         terrain.distance = parseInt(this.distanceInput.value)
+         terrain.maxCount =
+@@ -197,6 +279,8 @@ export default class UI {
+   fps: FPS
+   bag: Bag
+   joystick: Joystick
++  quality: Quality
++  playing = false
+ 
+   menu = document.querySelector('.menu')
+   crossHair = document.createElement('div')
+@@ -227,10 +311,17 @@ export default class UI {
+   music = document.querySelector('#music')
+   musicInput = document.querySelector('#music-input')
+ 
++  qualityText = document.querySelector('#quality')
++  qualityInput = document.querySelector('#quality-input')
++
+   settingBack = document.querySelector('#setting-back')
+ 
+   onPlay = () => {
+-    isMobile && this.joystick.init()
++    this.playing = true
++    if (isMobile) {
++      this.joystick.show()
++      this.bag.bag.classList.remove('hidden')
++    }
+     this.menu?.classList.add('hidden')
+     this.menu?.classList.remove('start')
+     this.play && (this.play.innerHTML = 'Resume')
+@@ -240,6 +331,11 @@ export default class UI {
+   }
+ 
+   onPause = () => {
++    this.playing = false
++    if (isMobile) {
++      this.joystick.hide()
++      this.bag.bag.classList.add('hidden')
++    }
+     this.menu?.classList.remove('hidden')
+     this.crossHair.classList.add('hidden')
+     this.save && (this.save.innerHTML = 'Save and Exit')
+@@ -283,5 +379,20 @@ export default class UI {
+ 
+   update = () => {
+     this.fps.update()
++    this.joystick.update()
+   }
+ }
++
++const touchGuide = `
++  <p>
++    <b>Left stick:</b> move <br />
++    <b>Drag screen:</b> look around <br />
++    <b>Tap:</b> place block <br />
++    <b>Hold:</b> break block <br />
++    <b>Buttons:</b> jump, break, place <br />
++    <b>FLY:</b> toggle flying, arrows up / down <br />
++    <b>Hotbar:</b> tap to choose block <br />
++    <b>II:</b> menu / save <br />
++  </p>
++  <button id="back" class="button">Back</button>
++`
+diff --git a/src/ui/joystick/index.ts b/src/ui/joystick/index.ts
+index dc3475d..2de8654 100644
+--- a/src/ui/joystick/index.ts
++++ b/src/ui/joystick/index.ts
+@@ -4,17 +4,19 @@ import { Mode } from '../../player'
+ import { htmlToDom } from '../../utils'
+ import UI from './joystick.html?raw'
+ 
+-enum ActionKey {
+-  FRONT = 'front',
+-  LEFT = 'left',
+-  RIGHT = 'right',
+-  BACK = 'back',
+-  MODE = 'mode',
+-  JUMP = 'jump',
+-  UP = 'up',
+-  DOWN = 'down'
+-}
++// radians of camera rotation per dragged CSS pixel
++const LOOK_SPEED = 0.006
++// finger travel (px) under which a touch still counts as a tap / hold
++const TAP_SLOP = 10
++const TAP_TIME = 300
++const HOLD_TIME = 400
++const REPEAT_TIME = 280
++const DEAD_ZONE = 0.15
+ 
++/**
++ * Touch controls: analog stick (left), drag-to-look on the free screen area,
++ * tap to place / hold to break (like Bedrock), and action buttons (right).
++ */
+ export default class Joystick {
+   constructor(control: Control) {
+     this.control = control
+@@ -22,119 +24,302 @@ export default class Joystick {
+   }
+ 
+   control: Control
+-  pageX = 0
+-  pageY = 0
+-  clickX = 0
+-  clickY = 0
+   euler: THREE.Euler
+-  clickTimeout?: ReturnType<typeof setTimeout>
+-  clickInterval?: ReturnType<typeof setInterval>
+-  hold = false
+-
+-  // emit keyboard event
+-  private emitKeyboardEvent = (key: string) => {
+-    return {
+-      key
+-    } as KeyboardEvent
+-  }
++  initialized = false
++  active = false
++  onPause?: () => void
+ 
+-  // emit click event
+-  private emitClickEvent = (button: number) => {
+-    return {
+-      button,
+-      preventDefault: () => { }
+-    } as MouseEvent
+-  }
++  root!: HTMLElement
++  knob!: HTMLElement
++  flyButton!: HTMLElement
++  downButton!: HTMLElement
++  placeIcon!: HTMLImageElement
+ 
+-  // init joystick button
+-  private initButton = ({
+-    actionKey,
+-    key
+-  }: {
+-    actionKey: ActionKey
+-    key: string
+-  }) => {
+-    const button = document.querySelector(
+-      `#action-${actionKey}`
+-    ) as HTMLButtonElement
+-    button.addEventListener('pointermove', e => {
+-      e.stopPropagation()
+-    })
++  // analog stick state, x: right, y: down, both in [-1, 1]
++  stickId: number | null = null
++  stickX = 0
++  stickY = 0
++  moving = false
++
++  // look / tap state
++  lookId: number | null = null
++  lookX = 0
++  lookY = 0
++  lookStartX = 0
++  lookStartY = 0
++  lookStartTime = 0
++  lookMoved = false
++  breaking = false
++  holdTimeout?: ReturnType<typeof setTimeout>
++  breakInterval?: ReturnType<typeof setInterval>
++
++  // buttons currently held, so they can be released on pause
++  heldReleases = new Map<HTMLElement, () => void>()
++
++  private key = (key: string) => ({ key } as KeyboardEvent)
++  private click = (button: number) =>
++    ({ button, preventDefault: () => {} } as MouseEvent)
++
++  breakBlock = () => this.control.mousedownHandler(this.click(0))
++  placeBlock = () => this.control.mousedownHandler(this.click(2))
++
++  // press-and-hold button: down on press, up on release (even off-button)
++  private bindHold = (
++    id: string,
++    down: () => void,
++    up: () => void = () => {}
++  ) => {
++    const button = document.querySelector(`#${id}`) as HTMLElement
++    const release = () => {
++      if (!this.heldReleases.has(button)) return
++      this.heldReleases.delete(button)
++      button.classList.remove('active')
++      up()
++    }
+     button.addEventListener('pointerdown', e => {
+-      this.control.setMovementHandler(this.emitKeyboardEvent(key))
+-      e.stopPropagation()
+-    })
+-    button.addEventListener('pointerup', e => {
+-      this.control.resetMovementHandler(this.emitKeyboardEvent(key))
++      e.preventDefault()
+       e.stopPropagation()
++      if (this.heldReleases.has(button)) return
++      button.setPointerCapture(e.pointerId)
++      button.classList.add('active')
++      this.heldReleases.set(button, release)
++      down()
+     })
+-    // extra config for mode switch button
+-    if (actionKey === ActionKey.MODE && key === 'q') {
+-      this.initButton({ actionKey: ActionKey.MODE, key: ' ' })
+-      button.addEventListener('pointerdown', () => {
+-        if (this.control.player.mode === Mode.flying) {
+-          document.querySelector('#action-down')?.classList.remove('hidden')
+-        } else {
+-          document.querySelector('#action-down')?.classList.add('hidden')
+-        }
+-      })
+-    }
++    button.addEventListener('pointerup', release)
++    button.addEventListener('pointercancel', release)
++    button.addEventListener('lostpointercapture', release)
++    return button
++  }
++
++  // press once, repeat while held (break / place like holding a mouse button)
++  private bindRepeat = (id: string, action: () => void) => {
++    let delay: ReturnType<typeof setTimeout> | undefined
++    let interval: ReturnType<typeof setInterval> | undefined
++    return this.bindHold(
++      id,
++      () => {
++        action()
++        // longer first delay so a quick tap never acts twice
++        delay = setTimeout(() => {
++          action()
++          interval = setInterval(action, REPEAT_TIME)
++        }, HOLD_TIME)
++      },
++      () => {
++        clearTimeout(delay)
++        clearInterval(interval)
++      }
++    )
+   }
+ 
+   init = () => {
++    if (this.initialized) return
++    this.initialized = true
++
+     htmlToDom(UI)
++    this.root = document.querySelector('.touch-ui') as HTMLElement
++    this.knob = document.querySelector('.stick-knob') as HTMLElement
++    this.flyButton = document.querySelector('#touch-fly') as HTMLElement
++    this.downButton = document.querySelector('#touch-down') as HTMLElement
++    this.placeIcon = document.querySelector(
++      '#touch-place-icon'
++    ) as HTMLImageElement
++
++    this.initStick()
++    this.initLook()
+ 
+-    this.initButton({ actionKey: ActionKey.FRONT, key: 'w' })
+-    this.initButton({ actionKey: ActionKey.LEFT, key: 'a' })
+-    this.initButton({ actionKey: ActionKey.RIGHT, key: 'd' })
+-    this.initButton({ actionKey: ActionKey.BACK, key: 's' })
+-    this.initButton({ actionKey: ActionKey.MODE, key: 'q' })
+-    this.initButton({ actionKey: ActionKey.UP, key: ' ' })
+-    this.initButton({ actionKey: ActionKey.DOWN, key: 'Shift' })
+-
+-    // camera control
+-    document.addEventListener('pointermove', e => {
+-      if (this.pageX !== 0 || this.pageY !== 0) {
+-        this.euler.setFromQuaternion(this.control.camera.quaternion)
+-        this.euler.y -= 0.01 * (e.pageX - this.pageX)
+-        this.euler.x -= 0.01 * (e.pageY - this.pageY)
+-        this.euler.x = Math.max(
+-          -Math.PI / 2,
+-          Math.min(Math.PI / 2, this.euler.x)
+-        )
+-        this.control.camera.quaternion.setFromEuler(this.euler)
++    this.bindHold(
++      'touch-jump',
++      () => this.control.setMovementHandler(this.key(' ')),
++      () => this.control.resetMovementHandler(this.key(' '))
++    )
++    this.bindHold(
++      'touch-down',
++      () => this.control.setMovementHandler(this.key('Shift')),
++      () => this.control.resetMovementHandler(this.key('Shift'))
++    )
++    this.bindHold('touch-fly', () => {
++      this.control.setMovementHandler(this.key('q'))
++      this.updateMode()
++    })
++    this.bindRepeat('touch-break', this.breakBlock)
++    this.bindRepeat('touch-place', this.placeBlock)
++    this.bindHold('touch-pause', () => this.onPause?.())
++
++    // ignore stray long-press menus / selection on the controls
++    this.root.addEventListener('contextmenu', e => e.preventDefault())
++  }
++
++  private initStick = () => {
++    const zone = document.querySelector('#touch-stick') as HTMLElement
++    const base = zone.querySelector('.stick-base') as HTMLElement
++
++    const move = (e: PointerEvent) => {
++      const rect = base.getBoundingClientRect()
++      const radius = rect.width / 2 - 10
++      let dx = e.clientX - (rect.left + rect.width / 2)
++      let dy = e.clientY - (rect.top + rect.height / 2)
++      const length = Math.hypot(dx, dy)
++      if (length > radius) {
++        dx *= radius / length
++        dy *= radius / length
+       }
+-      this.pageX = e.pageX
+-      this.pageY = e.pageY
+-      this.clickTimeout && clearTimeout(this.clickTimeout)
++      this.knob.style.transform = `translate(${dx}px, ${dy}px)`
++
++      // dead zone, then rescale so movement starts smoothly from 0
++      const magnitude = Math.min(length / radius, 1)
++      const scaled =
++        magnitude < DEAD_ZONE ? 0 : (magnitude - DEAD_ZONE) / (1 - DEAD_ZONE)
++      const angle = Math.atan2(dy, dx)
++      this.stickX = Math.cos(angle) * scaled
++      this.stickY = Math.sin(angle) * scaled
++    }
++
++    zone.addEventListener('pointerdown', e => {
++      e.preventDefault()
++      e.stopPropagation()
++      if (this.stickId !== null) return
++      this.stickId = e.pointerId
++      zone.setPointerCapture(e.pointerId)
++      move(e)
+     })
++    zone.addEventListener('pointermove', e => {
++      e.pointerId === this.stickId && move(e)
++    })
++    const end = (e: PointerEvent) => {
++      e.pointerId === this.stickId && this.resetStick()
++    }
++    zone.addEventListener('pointerup', end)
++    zone.addEventListener('pointercancel', end)
++    zone.addEventListener('lostpointercapture', end)
++  }
++
++  private resetStick = () => {
++    this.stickId = null
++    this.stickX = 0
++    this.stickY = 0
++    this.knob && (this.knob.style.transform = '')
++  }
+ 
+-    // click control
+-    document.addEventListener('pointerdown', e => {
+-      this.clickX = e.pageX
+-      this.clickY = e.pageY
+-
+-      this.clickTimeout = setTimeout(() => {
+-        if (e.pageX === this.clickX && e.pageY === this.clickY) {
+-          this.control.mousedownHandler(this.emitClickEvent(0))
+-          this.clickInterval = setInterval(() => {
+-            this.control.mousedownHandler(this.emitClickEvent(0))
+-          }, 333)
+-          this.hold = true
+-        }
+-      }, 500)
++  private initLook = () => {
++    const canvas = document.querySelector('canvas') as HTMLCanvasElement
++
++    canvas.addEventListener('pointerdown', e => {
++      if (!this.active || this.lookId !== null) return
++      e.preventDefault()
++      canvas.setPointerCapture(e.pointerId)
++      this.lookId = e.pointerId
++      this.lookX = this.lookStartX = e.clientX
++      this.lookY = this.lookStartY = e.clientY
++      this.lookStartTime = performance.now()
++      this.lookMoved = false
++
++      // hold still to break, repeating while held (finger may then move)
++      this.holdTimeout = setTimeout(() => {
++        if (this.lookMoved || this.lookId === null) return
++        this.breaking = true
++        this.breakBlock()
++        this.breakInterval = setInterval(this.breakBlock, REPEAT_TIME)
++      }, HOLD_TIME)
+     })
+ 
+-    document.addEventListener('pointerup', e => {
+-      this.clickTimeout && clearTimeout(this.clickTimeout)
+-      this.clickInterval && clearInterval(this.clickInterval)
++    canvas.addEventListener('pointermove', e => {
++      if (e.pointerId !== this.lookId) return
++      const dx = e.clientX - this.lookX
++      const dy = e.clientY - this.lookY
++      this.lookX = e.clientX
++      this.lookY = e.clientY
+ 
+-      if (!this.hold && e.pageX === this.clickX && e.pageY === this.clickY) {
+-        this.control.mousedownHandler(this.emitClickEvent(2))
++      if (
++        !this.lookMoved &&
++        Math.hypot(
++          e.clientX - this.lookStartX,
++          e.clientY - this.lookStartY
++        ) > TAP_SLOP
++      ) {
++        this.lookMoved = true
++        !this.breaking && clearTimeout(this.holdTimeout)
+       }
+-      this.hold = false
+-      this.pageX = 0
+-      this.pageY = 0
++
++      const camera = this.control.camera
++      this.euler.setFromQuaternion(camera.quaternion)
++      this.euler.y -= dx * LOOK_SPEED
++      this.euler.x -= dy * LOOK_SPEED
++      this.euler.x = Math.max(
++        -Math.PI / 2 + 0.01,
++        Math.min(Math.PI / 2 - 0.01, this.euler.x)
++      )
++      camera.quaternion.setFromEuler(this.euler)
+     })
++
++    const end = (e: PointerEvent) => {
++      if (e.pointerId !== this.lookId) return
++      const isTap =
++        !this.lookMoved &&
++        !this.breaking &&
++        performance.now() - this.lookStartTime < TAP_TIME
++      this.resetLook()
++      // quick tap places a block, like Bedrock on touch screens
++      isTap && e.type === 'pointerup' && this.active && this.placeBlock()
++    }
++    canvas.addEventListener('pointerup', end)
++    canvas.addEventListener('pointercancel', end)
++    canvas.addEventListener('lostpointercapture', end)
++  }
++
++  private resetLook = () => {
++    this.lookId = null
++    this.breaking = false
++    clearTimeout(this.holdTimeout)
++    this.breakInterval && clearInterval(this.breakInterval)
++  }
++
++  // sync fly button / down button with the player's mode
++  updateMode = () => {
++    if (!this.initialized) return
++    const flying = this.control.player.mode === Mode.flying
++    this.flyButton.classList.toggle('on', flying)
++    this.flyButton.textContent = flying ? 'WALK' : 'FLY'
++    this.downButton.classList.toggle('hidden', !flying)
++  }
++
++  setBlockIcon = (src: string) => {
++    this.init()
++    this.placeIcon.src = src
++  }
++
++  show = () => {
++    this.init()
++    this.active = true
++    this.root.classList.remove('hidden')
++    this.updateMode()
++  }
++
++  // release everything so nothing keeps moving / breaking while paused
++  hide = () => {
++    if (!this.initialized) return
++    this.active = false
++    this.root.classList.add('hidden')
++    for (const release of [...this.heldReleases.values()]) release()
++    this.resetStick()
++    this.resetLook()
++    this.control.velocity.set(0, this.control.velocity.y, 0)
++    this.moving = false
++  }
++
++  // called every frame: stick deflection -> walking velocity
++  update = () => {
++    if (!this.active) return
++    const velocity = this.control.velocity
++    const speed = this.control.player.speed
++    if (this.stickX !== 0 || this.stickY !== 0) {
++      velocity.x = -this.stickY * speed
++      velocity.z = this.stickX * speed
++      this.moving = true
++    } else if (this.moving) {
++      velocity.x = 0
++      velocity.z = 0
++      this.moving = false
++    }
+   }
+ }
+diff --git a/src/ui/joystick/joystick.html b/src/ui/joystick/joystick.html
+index 1f81423..181fb78 100644
+--- a/src/ui/joystick/joystick.html
++++ b/src/ui/joystick/joystick.html
+@@ -1,61 +1,178 @@
+-<div class="joystick">
+-  <button id="action-front" class="joystick-button front" role="div">🔼</button>
+-  <button id="action-left" class="joystick-button left" role="div">◀️</button>
+-  <button id="action-right" class="joystick-button right" role="div">▶️</button>
+-  <button id="action-back" class="joystick-button back" role="div">🔽</button>
+-  <button id="action-mode" class="joystick-button mode" role="div">⏹️</button>
+-  <button id="action-up" class="joystick-button up" role="div">🔼</button>
+-  <button id="action-down" class="joystick-button down hidden" role="div">
+-    🔽
++<div class="touch-ui hidden">
++  <button id="touch-pause" class="touch-btn touch-pause" aria-label="Pause">
++    <svg viewBox="0 0 24 24"><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
+   </button>
++
++  <div class="stick-zone" id="touch-stick">
++    <div class="stick-base">
++      <div class="stick-knob"></div>
++    </div>
++  </div>
++
++  <div class="touch-actions">
++    <button id="touch-down" class="touch-btn touch-down hidden" aria-label="Fly down">
++      <svg viewBox="0 0 24 24"><path d="M4 8l8 8 8-8" /></svg>
++    </button>
++    <button id="touch-fly" class="touch-btn touch-fly" aria-label="Toggle flying">FLY</button>
++    <button id="touch-place" class="touch-btn touch-place" aria-label="Place block">
++      <img id="touch-place-icon" alt="" draggable="false" />
++    </button>
++    <button id="touch-break" class="touch-btn touch-break" aria-label="Break block">
++      <svg viewBox="0 0 24 24">
++        <path d="M4 7c4-4 12-4 16 0l-2 1c-3-2-9-2-12 0z" />
++        <path d="M11 8h2l-1 13h-0z" stroke-width="2.5" />
++      </svg>
++    </button>
++    <button id="touch-jump" class="touch-btn touch-jump" aria-label="Jump">
++      <svg viewBox="0 0 24 24"><path d="M4 16l8-8 8 8" /></svg>
++    </button>
++  </div>
+ </div>
+ 
+ <style>
+-  .joystick {
++  .touch-ui {
++    --pad: 12px;
++    --ctl-bottom: calc(var(--slot) + 22px + env(safe-area-inset-bottom));
+     position: fixed;
+-    bottom: 0;
+-    display: grid;
+-    width: 100%;
+-    grid-template-columns: repeat(auto-fill, 50px);
+-    grid-template-rows: repeat(3, 1fr);
+-    gap: 10px;
+-    padding: 10px;
+-  }
+-  .joystick-button {
++    inset: 0;
++    z-index: 1;
++    pointer-events: none;
++  }
++  .touch-ui.hidden {
++    display: none;
++  }
++  .touch-btn {
++    position: absolute;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    padding: 0;
++    pointer-events: auto;
++    font-family: Minecraft, Avenir, Helvetica, Arial, sans-serif;
++    font-size: 14px;
++    color: white;
++    background: rgba(40, 40, 40, 0.45);
++    border: 2px solid rgba(255, 255, 255, 0.55);
++    border-radius: 50%;
++    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
++    -webkit-tap-highlight-color: transparent;
++    outline: none;
++  }
++  .touch-btn.hidden {
++    display: none;
++  }
++  .touch-btn svg {
++    width: 55%;
++    height: 55%;
++    fill: none;
++    stroke: white;
++    stroke-width: 3;
++    stroke-linecap: round;
++    stroke-linejoin: round;
++  }
++  .touch-btn.active,
++  .touch-fly.on {
++    background: rgba(33, 131, 6, 0.75);
++    border-color: #17cd07;
++  }
++  .touch-pause {
++    top: calc(8px + env(safe-area-inset-top));
++    right: calc(8px + env(safe-area-inset-right));
++    width: 40px;
++    height: 40px;
++    border-radius: 6px;
++  }
++  .touch-pause svg {
++    fill: white;
++    stroke: none;
++  }
++
++  /* left: analog stick (bigger invisible hit area around the base) */
++  .stick-zone {
++    position: absolute;
++    left: env(safe-area-inset-left);
++    bottom: calc(var(--ctl-bottom) - 16px);
++    width: 152px;
++    height: 152px;
++    padding-left: 4px;
++    box-sizing: border-box;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    pointer-events: auto;
++  }
++  .stick-base {
++    position: relative;
++    width: 120px;
++    height: 120px;
++    border-radius: 50%;
++    background: rgba(40, 40, 40, 0.35);
++    border: 2px solid rgba(255, 255, 255, 0.45);
++    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
++  }
++  .stick-knob {
++    position: absolute;
++    left: 50%;
++    top: 50%;
+     width: 52px;
+-    height: 50px;
+-    font-size: 50px;
+-    line-height: 50px;
+-    padding: 0px;
+-    border: none;
+-    background-color: transparent;
+-  }
+-  .front {
+-    grid-column: 2 / 3;
+-    grid-row: 1;
+-  }
+-  .left {
+-    grid-column: 1 / 2;
+-    grid-row: 2;
+-  }
+-  .right {
+-    grid-column: 3 / 4;
+-    grid-row: 2;
+-  }
+-  .back {
+-    grid-column: 2 / 3;
+-    grid-row: 3;
+-  }
+-  .mode {
+-    grid-column: 2 / 3;
+-    grid-row: 2;
+-  }
+-  .up {
+-    grid-column: -3 / -2;
+-    grid-row: 2;
+-  }
+-  .down {
+-    grid-column: -3 / -2;
+-    grid-row: 3;
++    height: 52px;
++    margin: -26px 0 0 -26px;
++    border-radius: 50%;
++    background: rgba(255, 255, 255, 0.55);
++    border: 2px solid rgba(255, 255, 255, 0.9);
++    will-change: transform;
++  }
++
++  /* right: action buttons, jump closest to the thumb */
++  .touch-actions {
++    position: absolute;
++    right: calc(var(--pad) + env(safe-area-inset-right));
++    bottom: var(--ctl-bottom);
++    width: 140px;
++    height: 196px;
++  }
++  .touch-jump {
++    right: 0;
++    bottom: 0;
++    width: 70px;
++    height: 70px;
++  }
++  .touch-break {
++    right: 80px;
++    bottom: 5px;
++    width: 60px;
++    height: 60px;
++  }
++  .touch-place {
++    right: 5px;
++    bottom: 80px;
++    width: 60px;
++    height: 60px;
++  }
++  .touch-place img {
++    width: 34px;
++    height: 34px;
++    image-rendering: pixelated;
++    pointer-events: none;
++  }
++  .touch-fly {
++    right: 86px;
++    bottom: 86px;
++    width: 48px;
++    height: 48px;
++    font-size: 12px;
++  }
++  .touch-down {
++    right: 11px;
++    bottom: 148px;
++    width: 48px;
++    height: 48px;
++  }
++
++  /* landscape phones: hotbar moves to the top, controls sit lower */
++  @media (orientation: landscape) and (max-height: 500px) {
++    .touch-ui {
++      --ctl-bottom: calc(12px + env(safe-area-inset-bottom));
++    }
+   }
+ </style>
+diff --git a/src/utils/index.ts b/src/utils/index.ts
+index ca4d288..cf4ac14 100644
+--- a/src/utils/index.ts
++++ b/src/utils/index.ts
+@@ -4,6 +4,87 @@ export const htmlToDom = (html: string) => {
+   window.document.body.appendChild(templateDom.content)
+ }
+ 
+-export const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(
+-  navigator.userAgent
+-)
++// touch devices: phones, tablets (incl. iPadOS that reports a desktop UA)
++export const isMobile =
++  /Android|webOS|iPhone|iPad|iPod|BlackBerry|Mobile/i.test(
++    navigator.userAgent
++  ) ||
++  (navigator.maxTouchPoints > 0 &&
++    window.matchMedia('(pointer: coarse)').matches)
++
++// weak device heuristic: few cores / little memory
++const nav = navigator as Navigator & { deviceMemory?: number }
++export const isLowEnd =
++  isMobile &&
++  ((navigator.hardwareConcurrency || 8) <= 4 || (nav.deviceMemory || 8) <= 3)
++
++export enum Quality {
++  low = 'low',
++  medium = 'medium',
++  high = 'high'
++}
++
++const savedQuality = (() => {
++  try {
++    return window.localStorage.getItem('quality') as Quality | null
++  } catch {
++    return null
++  }
++})()
++
++// graphics preset, chosen once at startup (switching reloads the page)
++export const quality: Quality =
++  savedQuality && savedQuality in Quality
++    ? savedQuality
++    : isMobile
++    ? isLowEnd
++      ? Quality.low
++      : Quality.medium
++    : Quality.high
++
++export const setQuality = (q: Quality) => {
++  try {
++    window.localStorage.setItem('quality', q)
++  } catch {}
++}
++
++export interface Preset {
++  // base render resolution relative to CSS pixels
++  pixelRatio: number
++  // lowest resolution the adaptive scaler may drop to
++  minPixelRatio: number
++  // render distance in chunks
++  distance: number
++  // cheap per-vertex lighting instead of PBR
++  lambert: boolean
++  clouds: boolean
++  // run the crosshair highlight raycast every N frames
++  highlightEvery: number
++}
++
++export const presets: Record<Quality, Preset> = {
++  low: {
++    pixelRatio: 0.75,
++    minPixelRatio: 0.5,
++    distance: 1,
++    lambert: true,
++    clouds: false,
++    highlightEvery: 3
++  },
++  medium: {
++    pixelRatio: 1,
++    minPixelRatio: 0.625,
++    distance: 2,
++    lambert: true,
++    clouds: true,
++    highlightEvery: 2
++  },
++  high: {
++    pixelRatio: 1,
++    minPixelRatio: 1,
++    distance: 3,
++    lambert: false,
++    clouds: true,
++    highlightEvery: 1
++  }
++}
