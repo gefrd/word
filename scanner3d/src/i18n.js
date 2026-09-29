@@ -52,7 +52,7 @@ const STRINGS = {
         arTooFew: 'Too few pictures (need at least 16). Walk a full circle around the box.',
         arFail: 'AR could not start on this phone. Use the normal scan.',
         arRealSize: 'real size (AR)',
-        arDepthOn: 'depth sensor on',
+        arDepthOn: 'depth ✓',
         arDepthUsed: 'depth sensor: {n} maps',
         arSizeNote: 'Size comes from AR tracking (usually within 1–3 %). Enter a measured length only to correct it.',
         hintFree_move: 'Walk slowly around the object',
