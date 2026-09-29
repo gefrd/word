@@ -5,6 +5,7 @@ import { boardSVG } from './board.js';
 import { sheetPDF } from './sheet-pdf.js';
 import { LiveCapture, BANDS, SECTORS, solveKeyframes, keyframesFromVideo, keyframesFromPhotos, framesFromVideo, framesFromPhotos, LiveFreeCapture } from './capture.js';
 import { MarkerlessJob } from './markerless-client.js';
+import { arCaptureSupported, arBlockedByFrame } from './arsupport.js';
 import { scanVolume } from './reconstruct.js';
 import { projectPoint } from './geometry.js';
 import { downloadBlob } from './download.js';
@@ -93,6 +94,10 @@ async function home() {
         <div class="mode-head"><span class="glyph">${ICON.ring}</span>
           <div><span class="tag" data-i18n="freeTag"></span><h3 data-i18n="freeTitle"></h3><p class="muted small" data-i18n="freeDesc"></p></div>
         </div>
+        <div class="ar-offer" id="arRow" hidden>
+          <div class="btn-row"><button class="btn primary" id="freeAR" data-i18n="arStart"></button></div>
+          <p class="muted small" data-i18n="arDesc"></p>
+        </div>
         <div class="btn-row"><button class="btn primary" id="freeLive" data-i18n="startLive"></button></div>
         <div class="btn-row">
           <button class="btn" id="freeVideo" data-i18n="fromVideo"></button>
@@ -158,6 +163,19 @@ async function home() {
     node.querySelector('#demo').onclick = () => openDemo();
     show(node);
     renderSaved(node.querySelector('#models'));
+    // AR scan with the live box: Android Chrome with ARCore only
+    const arRow = node.querySelector('#arRow');
+    if (arBlockedByFrame()) {
+        // embedded without xr permission: open the app as a full page for AR
+        arRow.hidden = false;
+        node.querySelector('#freeAR').onclick = () => window.open(location.href.split('#')[0] + '#ar', '_blank');
+    } else {
+        arCaptureSupported().then((ok) => {
+            if (!ok || !node.isConnected) return;
+            arRow.hidden = false;
+            node.querySelector('#freeAR').onclick = () => freeAR();
+        });
+    }
 }
 
 async function renderSaved(container) {
@@ -503,7 +521,7 @@ async function freeMesh(r) {
     return buildMesh({ positions: r.textured.positions, indices: r.textured.indices, uvs: r.textured.uvs, texture, name: 'Kivu 3D Scan' });
 }
 
-async function finishFreeJob(job, ui, opts = {}) {
+async function finishFreeJob(job, ui, opts = {}, view = {}) {
     const t0 = performance.now();
     let refine = false;
     try { refine = localStorage.getItem('k3d-refine') === '1'; } catch (_) {}
@@ -512,7 +530,7 @@ async function finishFreeJob(job, ui, opts = {}) {
     const secs = ((performance.now() - t0) / 1000).toFixed(0);
     const cov = Math.round(r.info.coverageDeg || 0);
     // the job stays alive in the viewer: "Adjust box" rebuilds from it
-    viewerScreen({ mesh, name: 'Scan ' + new Date().toLocaleString(), kind: 'free', note: `${r.info.registered}/${r.info.frames} views · ${cov}° around · ${secs} s`, sizeEdit: true, job, viewBox: r.info.viewBox });
+    viewerScreen({ mesh, name: 'Scan ' + new Date().toLocaleString(), kind: 'free', note: `${r.info.registered}/${r.info.frames} views · ${cov}° around · ${secs} s${view.real ? ' · ' + t('arRealSize') : ''}`, sizeEdit: view.real ? 'ar' : true, job, viewBox: r.info.viewBox });
 }
 
 function freeFail(ui, e) {
@@ -629,6 +647,100 @@ async function freeLive() {
     catch (e) { hintEl.textContent = t('cameraError'); hintEl.className = 'hint warn'; }
 }
 
+// AR scan: the phone tracks itself (ARCore), a box placed on the table is
+// the field, every frame comes with its real position → no guessing of the
+// camera path, real size. The heavy part is the same worker as above.
+async function freeAR() {
+    const { startARCapture } = await import('./arcapture.js');
+    const overlay = el(`
+    <div class="ar-ui">
+      <div class="ar-panel ar-top">
+        <div class="hint" id="arHint">…</div>
+        <button class="icon-btn" id="arCancel" aria-label="${t('back')}">${ICON.back}</button>
+      </div>
+      <div class="ar-panel ar-size" id="arSizes" hidden>
+        ${['w', 'd', 'h'].map(k => `<label class="slider"><span data-i18n="arSize_${k}"></span><input type="range" min="5" max="80" step="1" value="30" data-k="${k}"><b data-v="${k}">30 cm</b></label>`).join('')}
+        <button class="btn primary" id="arGo" disabled data-i18n="arGo"></button>
+      </div>
+      <div class="ar-panel ar-bottom" id="arScanBar" hidden>
+        <span class="count"><span id="arCount">0</span> ${t('shots')} · <span id="arCov">0</span> %</span>
+        <button class="btn primary" id="arDone" disabled data-i18n="done"></button>
+      </div>
+      <div class="ar-panel ar-bottom" id="arNoCam" hidden>
+        <button class="btn primary" id="arNormal" data-i18n="startLive"></button>
+      </div>
+    </div>`);
+    applyI18n(overlay);
+    document.body.appendChild(overlay);
+    const $ = (q) => overlay.querySelector(q);
+    const shots = [];
+    // on strong phones masks are made while you walk; otherwise afterwards,
+    // so the AI does not slow down the phone's own tracking
+    const concurrent = PROFILE.tier === 'high';
+    let processed = 0, cap = null, next = 'home';
+    const job = new MarkerlessJob({
+        profile: PROFILE.tier,
+        onProgress: () => {},
+        onAdded: () => { processed++; },
+        onLog: (m) => console.log('[scan]', m),
+    });
+    const size = { w: 30, d: 30, h: 30 };
+    overlay.querySelectorAll('input[type=range]').forEach((inp) => {
+        inp.oninput = () => {
+            size[inp.dataset.k] = +inp.value;
+            $(`[data-v="${inp.dataset.k}"]`).textContent = inp.value + ' cm';
+            if (cap) cap.setSize(size.w / 100, size.d / 100, size.h / 100);
+        };
+    });
+    const onState = (st) => {
+        const hint = $('#arHint');
+        const key = st.state === 'scan' ? (st.hint || 'arWalk') : st.state === 'place' ? 'arPlace' : st.state === 'size' ? 'arSizeHint' : st.state === 'nocamera' ? 'arNoCamera' : 'arFinishing';
+        hint.textContent = t(key);
+        hint.className = 'hint ' + (/TooClose|TooFar|Aim|Slow|NoCamera/.test(key) ? 'warn' : key === 'arGot' ? 'good' : '');
+        $('#arSizes').hidden = st.state !== 'size';
+        $('#arGo').disabled = st.state !== 'size';
+        $('#arScanBar').hidden = st.state !== 'scan';
+        $('#arNoCam').hidden = st.state !== 'nocamera';
+        $('#arCount').textContent = st.frames;
+        $('#arCov').textContent = Math.round(100 * st.covered / st.sectors);
+        $('#arDone').disabled = !st.canFinish;
+    };
+    const onFrame = (blob, meta) => {
+        shots.push({ blob, meta });
+        if (concurrent) job.add(blob, meta);
+        if (navigator.vibrate) navigator.vibrate(12);
+    };
+    const onEnd = async ({ state, frames }) => {
+        overlay.remove();
+        if (next === 'live') { job.terminate(); freeLive(); return; }
+        if (frames < 16) {
+            job.terminate();
+            home();
+            if (state !== 'cancel') toast(t('arTooFew'), 4000);
+            return;
+        }
+        const ui = processingScreen(FREE_STAGES);
+        job.opts.onProgress = (stage, p) => { if (stage === 'download') ui.set('download', p); else if (FREE_STAGES.includes(stage)) ui.set(stage, p); };
+        job.opts.onAdded = () => { processed++; ui.set('mask', processed / shots.length, `${processed} / ${shots.length}`); };
+        if (!concurrent) for (const s of shots) job.add(s.blob, s.meta);
+        try { await finishFreeJob(job, ui, { box: cap.box() }, { real: true }); }
+        catch (e) { job.terminate(); freeFail(ui, e); }
+    };
+    $('#arCancel').onclick = () => { if (cap) cap.cancel(); };
+    $('#arGo').onclick = () => cap && cap.start();
+    $('#arDone').onclick = () => cap && cap.finish();
+    $('#arNormal').onclick = () => { next = 'live'; if (cap) cap.cancel(); };
+    try {
+        cap = await startARCapture(overlay, { onState, onFrame, onEnd });
+        cap.setSize(size.w / 100, size.d / 100, size.h / 100);
+    } catch (e) {
+        overlay.remove();
+        job.terminate();
+        console.log('[scan] AR failed', e && e.message);
+        toast(t('arFail'), 4000);
+    }
+}
+
 // ---------------------------------------------------------------------
 // Photo → 3D (AI)
 // ---------------------------------------------------------------------
@@ -732,7 +844,7 @@ async function viewerScreen({ mesh, name, kind, note, rebuild, saved, sizeEdit, 
           </div>
           <div class="btn-row"><button class="btn primary" id="boxApply" data-i18n="boxRebuild"></button><button class="btn ghost" id="boxReset" data-i18n="boxResetLbl"></button></div>
         </div></div>` : ''}
-        ${sizeEdit ? `<div class="size-row"><label for="len" data-i18n="realLength"></label><div class="size-in"><input id="len" type="number" inputmode="decimal" min="1" max="500" step="0.1"><button class="btn" id="applyLen" data-i18n="applySize"></button></div><p class="muted small" data-i18n="freeSizeNote"></p></div>` : ''}
+        ${sizeEdit ? `<div class="size-row"><label for="len" data-i18n="realLength"></label><div class="size-in"><input id="len" type="number" inputmode="decimal" min="1" max="500" step="0.1"><button class="btn" id="applyLen" data-i18n="applySize"></button></div><p class="muted small" data-i18n="${sizeEdit === 'ar' ? 'arSizeNote' : 'freeSizeNote'}"></p></div>` : ''}
         ${rebuild ? `<div class="sliders"><label for="thick" data-i18n="thickness"></label><input type="range" id="thick" min="0.1" max="0.9" step="0.05" value="${rebuild.params.thickness}"></div>` : ''}
         <div class="btn-row">
           <button class="btn primary" id="ar" data-i18n="arView"></button>

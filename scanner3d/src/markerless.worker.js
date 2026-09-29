@@ -13,14 +13,16 @@
 //   { type: 'error', message, code? }
 
 import { loadRMBG, segmentObject, segmentCrop, releaseRMBG } from './rmbg.js';
+import { detectFeatures, rgbaToGray } from './features.js';
 import { loadDepth, estimateDepth, releaseDepth } from './depth.js';
-import { frameFeatures, buildMarkerlessModel, carveInBox, objectThumb, fixMasks, PROFILES } from './markerless.js';
+import { frameFeatures, buildMarkerlessModel, buildKnownPoseModel, carveInBox, objectThumb, fixMasks, detectImageFlip, flipImage, PROFILES } from './markerless.js';
 
 let profile = PROFILES.mid, cfg = {};
 const frames = [];      // { blob, feat, prob, thumb }
 let size = null;        // feature/mask image size shared by all frames
 let queue = Promise.resolve();
 let canvas = null, ctx = null;
+let flip = 'none';      // AR pictures stored mirrored/upside down (found in solve)
 
 // iOS < 16.4 has no OffscreenCanvas in workers: the page decodes for us.
 const HAS_OFFSCREEN = typeof OffscreenCanvas !== 'undefined';
@@ -35,7 +37,11 @@ function requestFrame(index, side, fixed) {
 }
 
 async function decode(index, blob, longSide, fixed) {
-    if (!HAS_OFFSCREEN) return requestFrame(index, longSide, fixed);
+    if (!HAS_OFFSCREEN) {
+        const fr = await requestFrame(index, longSide, fixed);
+        if (flip !== 'none') flipImage(new Uint32Array(fr.rgba.buffer, fr.rgba.byteOffset, fr.width * fr.height), fr.width, fr.height, flip);
+        return fr;
+    }
     const bmp = await createImageBitmap(blob);
     let w, h;
     if (fixed) { w = fixed.w; h = fixed.h; }
@@ -45,7 +51,10 @@ async function decode(index, blob, longSide, fixed) {
     }
     if (!canvas) { canvas = new OffscreenCanvas(w, h); ctx = canvas.getContext('2d', { willReadFrequently: true }); }
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    const fx = flip === 'x' || flip === 'xy', fy = flip === 'y' || flip === 'xy';
+    ctx.setTransform(fx ? -1 : 1, 0, 0, fy ? -1 : 1, fx ? w : 0, fy ? h : 0);
     ctx.drawImage(bmp, 0, 0, w, h);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     const ar = bmp.width / bmp.height;
     bmp.close();
     return { rgba: ctx.getImageData(0, 0, w, h).data, width: w, height: h, ar };
@@ -60,7 +69,7 @@ async function ensureModel() {
     });
 }
 
-async function addFrame(index, blob) {
+async function addFrame(index, blob, meta) {
     await ensureModel();
     const fr = await decode(index, blob, profile.featSide, size);
     if (!size) size = { w: fr.width, h: fr.height, ar: fr.ar };
@@ -69,8 +78,14 @@ async function addFrame(index, blob) {
     let cov = 0;
     for (let i = 0; i < prob.length; i++) if (prob[i] >= 110) cov++;
     cov /= prob.length;
-    const feat = frameFeatures(fr.rgba, fr.width, fr.height, prob, { maxFeatures: profile.maxFeatures });
+    // AR frames come with the phone's own pose: no features needed
+    const feat = meta && meta.pose ? { n: 0, x: new Float32Array(0), y: new Float32Array(0), desc: new Uint32Array(0) } : frameFeatures(fr.rgba, fr.width, fr.height, prob, { maxFeatures: profile.maxFeatures });
     frames[index] = { index, blob, feat, prob, thumb: objectThumb(fr.rgba, fr.width, fr.height, prob), coverage: cov };
+    if (meta && meta.pose) {
+        // f given for the image as captured; scale it to the working size
+        frames[index].pose = meta.pose;
+        frames[index].fWork = meta.f * fr.width / meta.imageWidth;
+    }
     post({ type: 'added', index, coverage: cov, features: feat.n });
 }
 
@@ -82,6 +97,25 @@ async function solve(opts = {}) {
     if (bad > list.length / 2) throw Object.assign(new Error('NO_OBJECT'), { code: 'NO_OBJECT' });
     const { w: fw, h: fh } = size;
     post({ type: 'progress', stage: 'mask', p: 1 });
+    const known = list.length && list.every(f => f.pose);
+    const fKnown = known ? list.reduce((a, f) => a + f.fWork, 0) / list.length : undefined;
+    if (known) {
+        // how the phone stores its camera picture: checked, not assumed —
+        // matches between neighbouring frames must fit the phone's motion
+        const pairs = [], feats = new Map();
+        const featOf = async (i) => {
+            if (!feats.has(i)) { const fr = await decode(list[i].index, list[i].blob, 0, size); feats.set(i, detectFeatures(rgbaToGray(fr.rgba, fw * fh), fw, fh, null, { maxFeatures: 600 })); }
+            return feats.get(i);
+        };
+        const step = Math.max(1, Math.floor((list.length - 1) / 6));
+        for (let i = 0; i + 1 < list.length && pairs.length < 6; i += step) pairs.push({ A: await featOf(i), B: await featOf(i + 1), poseA: list[i].pose, poseB: list[i + 1].pose });
+        const d = detectImageFlip(pairs, fw, fh, fKnown);
+        post({ type: 'log', message: `AR picture orientation: ${d.flip} (${Object.entries(d.scores).map(([k, v]) => k + ' ' + v.toFixed(2)).join(', ')}; ${d.matches} matches)` });
+        if (d.flip !== 'none') {
+            flip = d.flip;
+            for (const fr of list) flipImage(fr.prob, fw, fh, flip);
+        }
+    }
     await fixMasks(list, fw, fh, {
         getRGBA: async (i) => (await decode(list[i].index, list[i].blob, 0, size)).rgba,
         segmentCrop: (rgba, w, h, box) => segmentCrop(rgba, w, h, box, profile.segSide),
@@ -110,7 +144,9 @@ async function solve(opts = {}) {
         const fr = await decode(list[i].index, list[i].blob, side);
         return { rgba: fr.rgba, width: fr.width, height: fr.height };
     };
-    const out = await buildMarkerlessModel({ frames: list, width: w, height: h, getFrame }, {
+    const build = known ? buildKnownPoseModel : buildMarkerlessModel;
+    const out = await build({ frames: list, width: w, height: h, getFrame }, {
+        box: opts.box, f: fKnown,
         recrop: async (i, box) => {
             const fr = list[i];
             const rgba = (await decode(fr.index, fr.blob, 0, size)).rgba;
@@ -173,7 +209,7 @@ self.onmessage = (e) => {
         return;
     }
     if (m.cmd === 'add') {
-        queue = queue.then(() => addFrame(m.index, m.blob)).catch((err) => post({ type: 'error', message: err.message || String(err), code: 'FRAME' }));
+        queue = queue.then(() => addFrame(m.index, m.blob, m.meta)).catch((err) => post({ type: 'error', message: err.message || String(err), code: 'FRAME' }));
         return;
     }
     if (m.cmd === 'rebuild') {

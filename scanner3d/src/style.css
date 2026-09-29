@@ -213,3 +213,19 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
 }
+
+/* AR scan overlay (WebXR dom-overlay: shown over the camera) */
+.ar-ui { position: fixed; inset: 0; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; color: #fff; font-family: inherit; }
+.ar-ui .ar-panel { pointer-events: auto; margin: 12px; }
+.ar-ui .ar-top { display: flex; gap: 10px; align-items: flex-start; margin-top: calc(env(safe-area-inset-top, 0px) + 12px); }
+.ar-ui .hint { flex: 1; background: rgba(18, 20, 24, 0.78); border-radius: 12px; padding: 10px 12px; font-weight: 600; text-align: center; min-height: 44px; display: grid; place-items: center; }
+.ar-ui .hint.warn { color: var(--warn); }
+.ar-ui .hint.good { color: var(--good); }
+.ar-ui .ar-size, .ar-ui .ar-bottom { margin-top: auto; background: rgba(18, 20, 24, 0.78); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 8px; margin-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+.ar-ui .ar-bottom { flex-direction: row; align-items: center; justify-content: space-between; }
+.ar-ui .slider { display: grid; grid-template-columns: 64px 1fr 56px; align-items: center; gap: 8px; font-size: 14px; }
+.ar-ui .slider b { font-family: var(--mono); font-weight: 500; text-align: right; }
+.ar-ui .count { font-family: var(--mono); font-size: 13px; }
+.ar-ui [hidden] { display: none !important; }
+.ar-offer { display: flex; flex-direction: column; gap: 6px; }
+.ar-offer[hidden] { display: none; }

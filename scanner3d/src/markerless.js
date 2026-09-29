@@ -12,7 +12,7 @@
 
 import { reconstructWithMasks, createCarver, FOREGROUND, BACKGROUND, UNKNOWN } from './reconstruct.js';
 import { runSfM, camCenter, eigenSym } from './sfm.js';
-import { detectFeatures, rgbaToGray } from './features.js';
+import { detectFeatures, rgbaToGray, matchFeatures } from './features.js';
 import { maskStats, planMaskFixes, isStillCamera, staticPixels, smallGrey } from './maskfix.js';
 import { bakeTexture, viewGains } from './texture.js';
 import { gpuAvailable, planeSweep, pickNeighbours, consistencyFilter } from './mvs.js';
@@ -139,10 +139,11 @@ export async function fixMasks(frames, w, h, { getRGBA, segmentCrop, maxFeatures
         if (st.area / cropArea > 0.7 || st.area < 0.003) { noVote.fill(1); dropped++; frames[i].maskQuality = 'bad'; }
         frames[i].prob = prob;
         frames[i].noVote = noVote;
-        frames[i].feat = frameFeatures(rgba, w, h, prob, { maxFeatures });
+        if (!frames[i].pose) frames[i].feat = frameFeatures(rgba, w, h, prob, { maxFeatures }); // (AR frames need none)
         redone++;
     }
     // still camera (turntable): what never changes can't be the turning object
+    if (frames.every(f => f.pose)) return { redone, dropped, still: false, good: plan.good }; // AR: the phone reports its own movement
     const sw = 96, sh = Math.max(8, Math.round(96 * h / w));
     const greys = [];
     for (let i = 0; i < frames.length; i++) greys.push(smallGrey(await getRGBA(i), w, h, sw, sh));
@@ -581,6 +582,159 @@ export async function buildMarkerlessModel({ frames, width, height, getFrame }, 
     }
     const scene = { frames, width, height, getFrame, opts, report, log, reg, labels, sfm, obj, t0 };
     return carveInBox(scene, box);
+}
+
+/**
+ * AR capture (Android Chrome + ARCore): the phone tracked its own position,
+ * in real millimetres, and the user placed a box on the floor around the
+ * object. No camera solving, no size guessing: masks → carve in the box.
+ *   frames[i] = { prob, noVote?, maskQuality?, pose: { R, t } } (object frame
+ *   mm: box floor at z = 0), f in pixels at width×height, box { x0..z1 }.
+ */
+export async function buildKnownPoseModel({ frames, width, height, getFrame }, opts = {}) {
+    const report = opts.onProgress || (() => {});
+    const log = opts.log || (() => {});
+    const t0 = Date.now();
+    const box = opts.box, f = opts.f;
+    const reg = [];
+    frames.forEach((fr, i) => { if (fr.pose) reg.push(i); });
+    if (reg.length < 8) throw Object.assign(new Error('TOO_FEW_FRAMES'), { code: 'TOO_FEW_FRAMES' });
+    const poses = frames.map(fr => fr.pose || null);
+    const labels = frames.map(fr => labelMask(fr.prob, width, height, opts, fr.noVote));
+    const views = reg.map(i => ({ R: poses[i].R, t: poses[i].t, f, width, height, mask: labels[i] }));
+    // bad masks: redo on a crop around the box in that picture
+    if (opts.recrop) {
+        let redone = 0;
+        for (let k = 0; k < reg.length; k++) {
+            const i = reg[k], fr = frames[i];
+            if (fr.maskQuality !== 'bad' && fr.maskQuality !== 'crop') continue;
+            const bb = projectedBox(views[k], box);
+            if (!bb) continue;
+            const crop = [Math.max(0, bb[0] / width - 0.04), Math.max(0, bb[1] / height - 0.04), Math.min(1, bb[2] / width + 0.04), Math.min(1, bb[3] / height + 0.04)];
+            if (crop[2] - crop[0] < 0.05 || crop[3] - crop[1] < 0.05) continue;
+            fr.prob = await opts.recrop(i, crop);
+            labels[i] = labelMask(fr.prob, width, height, opts, null);
+            views[k].mask = labels[i];
+            redone++;
+        }
+        log(`AR: ${redone} masks redone on a crop around the box`);
+    }
+    if (opts.afterMasks) await opts.afterMasks();
+    for (const v of views) clipToBox(v.mask, v, box);
+    // camera ring for info
+    const C = reg.map(i => camCenter(poses[i]));
+    const camDist = median(C.map(c => Math.hypot(c[0], c[1], c[2] - (box.z1 - box.z0) / 2)));
+    const az = C.map(c => Math.atan2(c[1], c[0])).sort((a, b) => a - b);
+    let gap = az[0] + 2 * Math.PI - az[az.length - 1];
+    for (let k = 1; k < az.length; k++) gap = Math.max(gap, az[k] - az[k - 1]);
+    // coarse carve in the user's box to find the object, then fine carve around it
+    const vox = Math.max(box.x1 - box.x0, box.y1 - box.y0, box.z1 - box.z0) / 64;
+    const carver = createCarver({ bounds: box, voxel: vox, bgFrac: 0.1, keepFrac: 0.2 });
+    for (const v of views) carver.addView(v);
+    const coarse = carver.finish();
+    const cb = occupiedBox(coarse);
+    if (!cb) throw new Error('EMPTY_HULL');
+    report('carve', 0.1);
+    const tight = {
+        x0: Math.max(box.x0, cb.min[0] - 2 * vox), x1: Math.min(box.x1, cb.max[0] + 2 * vox),
+        y0: Math.max(box.y0, cb.min[1] - 2 * vox), y1: Math.min(box.y1, cb.max[1] + 2 * vox),
+        z0: box.z0, z1: Math.min(box.z1, cb.max[2] + 2 * vox),
+    };
+    const obj = { poses, points: [], scale: 1, info: { coverageDeg: 360 - gap * 180 / Math.PI, camDist, turnDeg: 0, turnSignedDeg: 0, planarity: 0, elevMin: 0, elevMax: 0 } };
+    const sfm = { cams: poses, f, points: [], stats: { registered: reg.length, total: frames.length, points: 0, rms: 0, jumps: 0 } };
+    log(`AR: ${reg.length} posed frames, ${obj.info.coverageDeg.toFixed(0)}° around, object ${Math.round(cb.max[0] - cb.min[0])}×${Math.round(cb.max[1] - cb.min[1])}×${Math.round(cb.max[2] - box.z0)} mm (${Date.now() - t0} ms)`);
+    const scene = { frames, width, height, getFrame, opts, report, log, reg, labels, sfm, obj, t0 };
+    return carveInBox(scene, tight);
+}
+
+/**
+ * Which way is the AR camera picture stored? Browsers differ (GL textures
+ * start at the bottom row, some may be mirrored), and a wrong guess silently
+ * ruins the model. With the phone's own poses this can be checked: points
+ * matched between two nearby pictures must lie on the epipolar lines given
+ * by the known motion — and only when the picture is read the right way.
+ *   pairs: [{ A, B, poseA, poseB }] with A, B = features ({ n, x, y, desc })
+ * Returns { flip: 'none' | 'y' | 'x' | 'xy', scores } (inlier fractions).
+ */
+export function detectImageFlip(pairs, width, height, f, opts = {}) {
+    const tol = opts.tol ?? 2.0;                 // px
+    const scores = {}, counts = {};
+    for (const flip of ['none', 'y', 'x', 'xy']) {
+        const sx = flip === 'x' || flip === 'xy' ? -1 : 1, sy = flip === 'y' || flip === 'xy' ? -1 : 1;
+        let inl = 0, tot = 0;
+        for (const { A, B, poseA, poseB } of pairs) {
+            const m = matchFeatures(A, B);
+            // relative motion A → B and its essential matrix E = [t]× R
+            const Ra = poseA.R, Rb = poseB.R;
+            const R = mul3(Rb, [Ra[0], Ra[3], Ra[6], Ra[1], Ra[4], Ra[7], Ra[2], Ra[5], Ra[8]]);
+            const Rta = mv3(R, poseA.t);
+            const t = [poseB.t[0] - Rta[0], poseB.t[1] - Rta[1], poseB.t[2] - Rta[2]];
+            const tn = Math.hypot(...t);
+            if (tn < 20) continue;                  // < 2 cm apart: says nothing
+            const T = [0, -t[2], t[1], t[2], 0, -t[0], -t[1], t[0], 0].map(v => v / tn);
+            const E = mul3(T, R);
+            for (let k = 0; k < m.length; k += 2) {
+                const i = m[k], j = m[k + 1];
+                // (the flip mirrors the picture about its centre)
+                const x1 = [sx * (A.x[i] - width / 2) / f, sy * (A.y[i] - height / 2) / f, 1];
+                const x2 = [sx * (B.x[j] - width / 2) / f, sy * (B.y[j] - height / 2) / f, 1];
+                const Ex1 = mv3(E, x1), Etx2 = [E[0] * x2[0] + E[3] * x2[1] + E[6], E[1] * x2[0] + E[4] * x2[1] + E[7], E[2] * x2[0] + E[5] * x2[1] + E[8]];
+                const r = x2[0] * Ex1[0] + x2[1] * Ex1[1] + Ex1[2];
+                const d2 = r * r / (Ex1[0] ** 2 + Ex1[1] ** 2 + Etx2[0] ** 2 + Etx2[1] ** 2 + 1e-12); // Sampson
+                tot++;
+                if (Math.sqrt(d2) * f < tol) inl++;
+            }
+        }
+        scores[flip] = tot ? inl / tot : 0;
+        counts[flip] = tot;
+    }
+    // stay with the plain reading unless another one is clearly better
+    let best = 'none';
+    for (const k of ['y', 'x', 'xy']) if (scores[k] > 1.5 * scores[best] + 0.05) best = k;
+    if (counts.none < 30) best = 'none';        // too little to decide
+    return { flip: best, scores, matches: counts.none };
+}
+
+/** Mirror a w×h single-channel image in place. */
+export function flipImage(a, w, h, flip) {
+    if (flip === 'none') return a;
+    const fx = flip === 'x' || flip === 'xy', fy = flip === 'y' || flip === 'xy';
+    const out = new a.constructor(a.length);
+    for (let y = 0; y < h; y++) {
+        const sy = fy ? h - 1 - y : y;
+        for (let x = 0; x < w; x++) out[y * w + x] = a[sy * w + (fx ? w - 1 - x : x)];
+    }
+    a.set(out);
+    return a;
+}
+
+/**
+ * Convert a WebXR camera (view.transform = camera → AR world, metres, y up,
+ * camera looking down −z) into this app's convention: object frame in mm with
+ * z up, origin on the floor at the box centre (floorPoint), camera
+ * Xc = R·X + t with x right, y down, z forward.
+ *   viewMatrix: 16 numbers, column-major (XRRigidTransform.matrix)
+ */
+export function xrPoseToObject(viewMatrix, floorPoint) {
+    const m = viewMatrix;
+    // camera → world rotation (columns) and position
+    const Rcw = [m[0], m[4], m[8], m[1], m[5], m[9], m[2], m[6], m[10]]; // row-major of the 3×3 block
+    const pos = [m[12], m[13], m[14]];
+    // world → camera
+    const Rwc = [Rcw[0], Rcw[3], Rcw[6], Rcw[1], Rcw[4], Rcw[7], Rcw[2], Rcw[5], Rcw[8]];
+    // AR world (x, y up, z) → object (x, −z, y up): M; object → AR = Mᵀ
+    const Mt = [1, 0, 0, 0, 0, 1, 0, -1, 0];
+    const Cflip = [1, 0, 0, 0, -1, 0, 0, 0, -1]; // WebXR camera (y up, −z forward) → OpenCV (y down, z forward)
+    const R = mul3(mul3(Cflip, Rwc), Mt);
+    const d = [floorPoint[0] - pos[0], floorPoint[1] - pos[1], floorPoint[2] - pos[2]];
+    const t = mv3(Cflip, mv3(Rwc, d)).map(x => x * 1000);
+    return { R, t };
+}
+
+/** Focal length (px) and principal-point offset of a WebXR projection for a W×H image. */
+export function xrIntrinsics(proj, W, H) {
+    const fx = proj[0] * W / 2, fy = proj[5] * H / 2;
+    return { f: (fx + fy) / 2, fx, fy, cx: W / 2 * (1 - proj[8]), cy: H / 2 * (1 + proj[9]) };
 }
 
 /**

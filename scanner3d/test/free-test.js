@@ -3,7 +3,7 @@ import { buildMarkerlessModel, frameFeatures, PROFILES } from '/src/markerless.j
 import { loadRMBG, segmentObject, segmentCrop } from '/src/rmbg.js';
 import { reconstructWithMasks } from '/src/reconstruct.js';
 import { poseErrors, gridIoU, gridIoUScaleFit, hollowEmpty } from './eval-util.js';
-import { labelMask, objectThumb, fixMasks } from '/src/markerless.js';
+import { labelMask, objectThumb, fixMasks, buildKnownPoseModel } from '/src/markerless.js';
 
 async function decode(url, w, h) {
     const img = new Image(); img.src = url; await img.decode();
@@ -122,7 +122,28 @@ window.runFree = async (o = {}) => {
     };
     t0 = t();
     let out = null, err = null;
-    try {
+    if (o.known) {
+        // AR-like capture: the phone's own poses (true pose + small tracking noise), a box around the object
+        let rng = 99; const rn = () => { rng = (rng * 16807) % 2147483647; return rng / 2147483647 - 0.5; };
+        const { rodriguesToMat } = await import('/src/geometry.js');
+        const mul = (A, B) => { const C = []; for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) C.push(A[r * 3] * B[c] + A[r * 3 + 1] * B[3 + c] + A[r * 3 + 2] * B[6 + c]); return C; };
+        data.frames.forEach((fr, k) => {
+            const a = (o.poseNoiseDeg ?? 0.3) * Math.PI / 180;
+            const dR = rodriguesToMat([rn() * 2 * a, rn() * 2 * a, rn() * 2 * a]);
+            const n = o.poseNoiseMm ?? 2;
+            frames[k].pose = { R: mul(dR, fr.R), t: [fr.t[0] + rn() * 2 * n, fr.t[1] + rn() * 2 * n, fr.t[2] + rn() * 2 * n] };
+        });
+        const [lo, hi] = window.gtBox(), mg = 40;
+        try {
+            out = await buildKnownPoseModel({ frames, width: w, height: h, getFrame }, {
+                box: { x0: lo[0] - mg, x1: hi[0] + mg, y0: lo[1] - mg, y1: hi[1] + mg, z0: 0, z1: hi[2] + mg }, f: data.f * s,
+                recrop: o.masks === 'gt' ? null : async (i, box) => segmentCrop(await decode(data.frames[i].url, w, h), w, h, box, o.segSide || prof.segSide),
+                gridRes: o.gridRes || prof.gridRes, colorSide: prof.colorSide, log: (m) => logs.push(m), mvs: o.mvs, mvsSide: o.mvsSide, mvsPlanes: o.mvsPlanes, texture: !!o.texture,
+            });
+            // AR poses are metric: compare in the true frame without any fitting
+            out.poses = out.poses.map((p) => p && { R: p.R, t: p.t });
+        } catch (e) { err = e.message; }
+    } else try {
         out = await buildMarkerlessModel({ frames, width: w, height: h, getFrame }, {
             gridRes: o.gridRes || prof.gridRes, colorSide: prof.colorSide, log: (m) => logs.push(m), sfm: o.sfm || {}, similarK: o.similarK ?? 2,
             debugMvs: true, mvs: o.mvs, mvsMinViews: o.mvsMinViews, mvsSide: o.mvsSide, mvsPlanes: o.mvsPlanes, mvsViews: o.mvsViews, field: o.field, recrop: o.masks === 'gt' || o.norecrop ? null : async (i, box) => segmentCrop(await decode(data.frames[i].url, w, h), w, h, box, o.segSide || prof.segSide), refine: o.refine, colourRefine: o.colour, colourThreshold: o.colourT, texture: !!o.texture,

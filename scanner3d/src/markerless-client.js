@@ -57,11 +57,12 @@ export class MarkerlessJob {
         }
     }
 
-    add(blob) {
+    /** meta (AR): { pose: { R, t } (object frame, mm), f (px), imageWidth } */
+    add(blob, meta) {
         if (this.fatal) return -1;
         const index = this.count++;
         this.blobs[index] = blob;
-        this.worker.postMessage({ cmd: 'add', index, blob });
+        this.worker.postMessage({ cmd: 'add', index, blob, meta });
         return index;
     }
 
