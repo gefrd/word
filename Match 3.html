@@ -1,0 +1,1573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="created-date" content="2026-03-25">
+    <meta name="game-engine" content="pixijs">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        .game-header {
+            background: rgba(0, 0, 0, 0.8);
+            padding: 12px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            flex-shrink: 0;
+        }
+        .game-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0 0 4px 0;
+            color: #fff;
+        }
+        .game-info {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            margin: 0;
+        }
+        .game-description {
+            font-size: 13px;
+            color: rgba(255, 255, 255, 0.9);
+            margin: 8px 0 0 0;
+            line-height: 1.4;
+        }
+        .game-engine {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            margin-left: 8px;
+            text-transform: uppercase;
+            font-weight: 500;
+        }
+        #gameContainer {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 0;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            max-width: 100vw;
+            max-height: 100vh;
+            width: auto;
+            height: auto;
+        }
+        body > canvas {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1;
+        }
+        .ludo-footer {
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.7);
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 11px;
+            text-decoration: none;
+            border-top-left-radius: 4px;
+            transition: all 0.2s ease;
+            z-index: 1000;
+        }
+        .ludo-footer:hover {
+            background: rgba(0, 0, 0, 0.9);
+            color: rgba(255, 255, 255, 0.9);
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.3/pixi.min.js" integrity="sha512-o3fAFcbCbTTJRFRNx4vByRZVtdKYF9uklctNjDXrN1JjT00rJxCCyNJSDi35rPBEqzWvYplcHLlEmyW34Ado8A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script><script src="https://cdn.jsdelivr.net/npm/pixi-filters@5.3.0/dist/browser/pixi-filters.min.js"></script>
+    <script type="module">
+   
+        // Engine: pixijs
+        // Title: Match 3
+        
+        // Monitor for canvas elements and move them to gameContainer
+        const gameContainer = document.getElementById('gameContainer');
+        
+        // Function to move canvas elements to gameContainer
+        function moveCanvasToContainer() {
+            const canvases = document.querySelectorAll('body > canvas');
+            canvases.forEach(canvas => {
+                if (canvas.parentElement === document.body) {
+                    gameContainer.appendChild(canvas);
+                }
+            });
+        }
+        
+        // Monitor for new canvas elements
+        const observer = new MutationObserver(() => {
+            moveCanvasToContainer();
+        });
+        observer.observe(document.body, { childList: true });
+        
+        // Initial check
+        setTimeout(moveCanvasToContainer, 100);
+        
+        // ===== RUNTIME LIBRARY =====
+// PixiJS Runtime Library
+// This library provides utility functions for PixiJS games
+// All functions are side-effect free and only execute when called
+
+// ===== ASSET MANAGEMENT =====
+
+const __FALLBACK_ASSET__ = {
+  url: "https://storage.googleapis.com/scraper_ludo/user_images_dev/45f550b2dafbaa5d6f59a0af127d9fa2.png",
+  width: 200,
+  height: 200,
+  description: "Fallback asset (placeholder)"
+};
+
+// getAssetUrl(key) -> string
+function getAssetUrl(key) {
+  const asset = __ASSET_MAP__[key];
+  if (!asset) {
+    console.warn(`Asset '${key}' not found in asset map, using fallback asset`);
+    return __FALLBACK_ASSET__.url;
+  }
+  return asset.url;
+}
+
+// getAssetInfo(key) -> {url, width, height, description}
+function getAssetInfo(key) {
+  const asset = __ASSET_MAP__[key];
+  if (!asset) {
+    console.warn(`Asset '${key}' not found in asset map, using fallback asset`);
+    return __FALLBACK_ASSET__;
+  }
+  return {
+    url: asset.url,
+    width: asset.width,
+    height: asset.height,
+    description: asset.description
+  };
+}
+
+// createSprite(key, {x, y, scale, width, height, anchor}) -> Sprite
+// Use width OR height (not both) to maintain aspect ratio. anchor can be number or {x, y}
+function createSprite(key, options = {}) {
+  const assetInfo = getAssetInfo(key);
+  const sprite = PIXI.Sprite.from(assetInfo.url);
+
+  // Initialize userData to store base scale
+  sprite.userData = sprite.userData || {};
+
+  if (options.scale !== undefined) {
+    sprite.scale.set(options.scale);
+    sprite.userData.baseScale = options.scale;
+  }
+
+  if (options.x !== undefined) sprite.x = options.x;
+  if (options.y !== undefined) sprite.y = options.y;
+
+  if (options.anchor !== undefined) {
+    if (typeof options.anchor === 'number') {
+      sprite.anchor.set(options.anchor);
+    } else if (options.anchor.x !== undefined || options.anchor.y !== undefined) {
+      sprite.anchor.set(options.anchor.x || 0, options.anchor.y || 0);
+    }
+  }
+
+  if (options.width !== undefined) {
+    const aspectRatio = assetInfo.width / assetInfo.height;
+    sprite.width = options.width;
+    sprite.height = options.width / aspectRatio;
+    sprite.userData.baseScale = sprite.scale.x;
+    sprite.userData.targetWidth = options.width;
+  } else if (options.height !== undefined) {
+    const aspectRatio = assetInfo.width / assetInfo.height;
+    sprite.height = options.height;
+    sprite.width = options.height * aspectRatio;
+    sprite.userData.baseScale = sprite.scale.x;
+    sprite.userData.targetHeight = options.height;
+  }
+
+  // If no scale was set, store the default
+  if (sprite.userData.baseScale === undefined) {
+    sprite.userData.baseScale = 1;
+  }
+
+  // Override scale.set to work relatively to baseScale
+  const originalScaleSet = sprite.scale.set.bind(sprite.scale);
+
+  sprite.scale.set = function(x, y) {
+    // Read baseScale dynamically from userData to avoid race conditions
+    let baseScale = sprite.userData?.baseScale || 1;
+
+    // Safety check: if texture loaded after baseScale was calculated, recalculate
+    if (sprite.userData.targetWidth && sprite.texture && sprite.texture.valid) {
+      const expectedScale = sprite.userData.targetWidth / sprite.texture.width;
+      // If current baseScale is way off (close to 1 when it should be small), recalculate
+      if (Math.abs(baseScale - expectedScale) > 0.01 && Math.abs(baseScale - 1.0) < 0.01) {
+        baseScale = expectedScale;
+        sprite.userData.baseScale = expectedScale;
+      }
+    }
+
+    if (y === undefined) {
+      // single value: scale.set(1.2)
+      return originalScaleSet(x * baseScale, x * baseScale);
+    } else {
+      // two values: scale.set(1.2, 1.5)
+      return originalScaleSet(x * baseScale, y * baseScale);
+    }
+  };
+
+  // Keep original for absolute scaling if needed
+  sprite.scale.setAbsolute = originalScaleSet;
+
+  return sprite;
+}
+
+// createContainedSprite(key, containerWidth, containerHeight, options) -> Sprite
+// options: {fitMode, align, anchor}
+// fitMode: 'contain' (fit inside, default), 'cover' (fill, may crop), 'fill' (stretch)
+// align: 'center' (default), 'top', 'bottom', 'left', 'right', 'top-left', etc.
+function createContainedSprite(key, containerWidth, containerHeight, options = {}) {
+  const assetInfo = getAssetInfo(key);
+  const sprite = PIXI.Sprite.from(assetInfo.url);
+
+  // Store container dimensions
+  sprite.userData = sprite.userData || {};
+  sprite.userData.containerWidth = containerWidth;
+  sprite.userData.containerHeight = containerHeight;
+
+  // Calculate scale based on fit mode
+  const fitMode = options.fitMode || 'contain';
+  let scale;
+
+  if (fitMode === 'fill') {
+    // Stretch to fill container
+    sprite.scale.set(
+      containerWidth / assetInfo.width,
+      containerHeight / assetInfo.height
+    );
+  } else if (fitMode === 'cover') {
+    // Scale to cover container (may crop)
+    scale = Math.max(
+      containerWidth / assetInfo.width,
+      containerHeight / assetInfo.height
+    );
+    sprite.scale.set(scale);
+  } else {
+    // Contain - fit inside container
+    scale = Math.min(
+      containerWidth / assetInfo.width,
+      containerHeight / assetInfo.height
+    );
+    sprite.scale.set(scale);
+  }
+
+  sprite.userData.baseScale = sprite.scale.x;
+
+  // Set alignment/anchor
+  const align = options.align || 'center';
+
+  if (options.anchor !== undefined) {
+    // Custom anchor provided
+    if (typeof options.anchor === 'number') {
+      sprite.anchor.set(options.anchor);
+    } else {
+      sprite.anchor.set(options.anchor.x || 0, options.anchor.y || 0);
+    }
+  } else {
+    // Set anchor based on alignment
+    switch (align) {
+      case 'center':
+        sprite.anchor.set(0.5, 0.5);
+        sprite.x = containerWidth / 2;
+        sprite.y = containerHeight / 2;
+        break;
+      case 'top-left':
+        sprite.anchor.set(0, 0);
+        break;
+      case 'top':
+        sprite.anchor.set(0.5, 0);
+        sprite.x = containerWidth / 2;
+        break;
+      case 'top-right':
+        sprite.anchor.set(1, 0);
+        sprite.x = containerWidth;
+        break;
+      case 'left':
+        sprite.anchor.set(0, 0.5);
+        sprite.y = containerHeight / 2;
+        break;
+      case 'right':
+        sprite.anchor.set(1, 0.5);
+        sprite.x = containerWidth;
+        sprite.y = containerHeight / 2;
+        break;
+      case 'bottom-left':
+        sprite.anchor.set(0, 1);
+        sprite.y = containerHeight;
+        break;
+      case 'bottom':
+        sprite.anchor.set(0.5, 1);
+        sprite.x = containerWidth / 2;
+        sprite.y = containerHeight;
+        break;
+      case 'bottom-right':
+        sprite.anchor.set(1, 1);
+        sprite.x = containerWidth;
+        sprite.y = containerHeight;
+        break;
+    }
+  }
+
+  // Override scale.set to work relatively to baseScale
+  const originalScaleSet = sprite.scale.set.bind(sprite.scale);
+
+  sprite.scale.set = function(x, y) {
+    // Read baseScale dynamically from userData to avoid race conditions
+    const baseScale = sprite.userData?.baseScale || 1;
+    if (y === undefined) {
+      return originalScaleSet(x * baseScale, x * baseScale);
+    } else {
+      return originalScaleSet(x * baseScale, y * baseScale);
+    }
+  };
+
+  sprite.scale.setAbsolute = originalScaleSet;
+
+  return sprite;
+}
+
+// createTilingSprite(key, width, height, {x, y, tileScale}) -> TilingSprite
+// Tiles the texture to fill width x height while maintaining aspect ratio
+function createTilingSprite(key, width, height, options = {}) {
+  const assetInfo = getAssetInfo(key);
+  const tilingSprite = new PIXI.TilingSprite(
+    PIXI.Texture.from(assetInfo.url),
+    width,
+    height
+  );
+
+  if (options.x !== undefined) tilingSprite.x = options.x;
+  if (options.y !== undefined) tilingSprite.y = options.y;
+
+  // Calculate scale to match target height while maintaining aspect ratio
+  const scaleToFitHeight = height / assetInfo.height;
+
+  if (options.tileScale !== undefined) {
+    tilingSprite.tileScale.set(options.tileScale);
+  } else {
+    // Auto-scale to fill height, tiles will repeat horizontally
+    tilingSprite.tileScale.set(scaleToFitHeight);
+  }
+
+  return tilingSprite;
+}
+
+// preloadAssets(assetMap, onProgress, onComplete) -> Promise
+// onProgress(loaded, total, percent) and onComplete() callbacks
+async function preloadAssets(assetMap, onProgress, onComplete) {
+  const urls = Object.values(assetMap).map(asset => asset.url);
+  const uniqueUrls = [...new Set(urls)];
+
+  let loaded = 0;
+  const total = uniqueUrls.length;
+
+  try {
+    await Promise.all(
+      uniqueUrls.map(async (url) => {
+        await PIXI.Assets.load(url);
+        loaded++;
+        if (onProgress) {
+          onProgress(loaded, total, loaded / total);
+        }
+      })
+    );
+
+    if (onComplete) {
+      onComplete();
+    }
+  } catch (error) {
+    console.error('Error preloading assets:', error);
+  }
+}
+
+// ===== SPRITE SCALING HELPERS =====
+
+/**
+ * Resets sprite to its original base scale (1.0 relative)
+ * @param {PIXI.Sprite} sprite - The sprite to reset
+ */
+function resetSpriteScale(sprite) {
+  sprite.scale.set(1);
+}
+
+/**
+ * Animates a sprite with a pulse effect
+ * @param {PIXI.Sprite} sprite - The sprite to pulse
+ * @param {number} [intensity=0.1] - Pulse intensity (0.1 = 10% larger)
+ * @param {number} [duration=150] - Duration in milliseconds
+ */
+function pulseSpriteScale(sprite, intensity = 0.1, duration = 150) {
+  const pulseScale = 1 + intensity;
+  sprite.scale.set(pulseScale);
+
+  setTimeout(() => {
+    sprite.scale.set(1);
+  }, duration);
+}
+
+/**
+ * Animates sprite scale change smoothly
+ * @param {PIXI.Sprite} sprite - The sprite to animate
+ * @param {number} targetMultiplier - Target scale multiplier
+ * @param {number} [speed=0.2] - Animation speed (0-1, higher = faster)
+ * @param {Function} [onComplete] - Callback when animation completes
+ */
+function animateSpriteScale(sprite, targetMultiplier, speed = 0.2, onComplete) {
+  const baseScale = sprite.userData?.baseScale || 1;
+  const targetScale = baseScale * targetMultiplier;
+  const currentAbsolute = sprite.scale.x;
+
+  const animate = () => {
+    const newAbsolute = lerp(currentAbsolute, targetScale, speed);
+    sprite.scale.setAbsolute(newAbsolute);
+
+    if (Math.abs(newAbsolute - targetScale) > 0.01) {
+      requestAnimationFrame(animate);
+    } else {
+      sprite.scale.setAbsolute(targetScale);
+      if (onComplete) onComplete();
+    }
+  };
+
+  animate();
+}
+
+// ===== COLLISION DETECTION =====
+
+// rectangleCollision(rect1, rect2) -> boolean
+// rect: {x, y, width, height}
+function rectangleCollision(rect1, rect2) {
+  return (
+    rect1.x < rect2.x + rect2.width &&
+    rect1.x + rect1.width > rect2.x &&
+    rect1.y < rect2.y + rect2.height &&
+    rect1.y + rect1.height > rect2.y
+  );
+}
+
+// spriteCollision(sprite1, sprite2) -> boolean
+function spriteCollision(sprite1, sprite2) {
+  const bounds1 = sprite1.getBounds();
+  const bounds2 = sprite2.getBounds();
+
+  return rectangleCollision(
+    { x: bounds1.x, y: bounds1.y, width: bounds1.width, height: bounds1.height },
+    { x: bounds2.x, y: bounds2.y, width: bounds2.width, height: bounds2.height }
+  );
+}
+
+// circleCollision(obj1, obj2) -> boolean
+// Auto-detects radius from obj.radius or obj.width/2
+function circleCollision(obj1, obj2) {
+  const dx = obj1.x - obj2.x;
+  const dy = obj1.y - obj2.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  const radius1 = obj1.radius || obj1.width / 2 || 0;
+  const radius2 = obj2.radius || obj2.width / 2 || 0;
+
+  return distance < radius1 + radius2;
+}
+
+// ===== BOUNDARY HELPERS =====
+
+// setupBoundaryCollision(sprite, bounds) -> 'left'|'right'|'top'|'bottom'|null
+// bounds: {left, right, top, bottom}
+function setupBoundaryCollision(sprite, bounds) {
+  if (sprite.x < bounds.left) {
+    sprite.x = bounds.left;
+    return 'left';
+  }
+  if (sprite.x + sprite.width > bounds.right) {
+    sprite.x = bounds.right - sprite.width;
+    return 'right';
+  }
+  if (sprite.y < bounds.top) {
+    sprite.y = bounds.top;
+    return 'top';
+  }
+  if (sprite.y + sprite.height > bounds.bottom) {
+    sprite.y = bounds.bottom - sprite.height;
+    return 'bottom';
+  }
+  return null;
+}
+
+// wrapAroundScreen(sprite, app) -> void
+function wrapAroundScreen(sprite, app) {
+  if (sprite.x > app.screen.width) {
+    sprite.x = -sprite.width;
+  } else if (sprite.x + sprite.width < 0) {
+    sprite.x = app.screen.width;
+  }
+
+  if (sprite.y > app.screen.height) {
+    sprite.y = -sprite.height;
+  } else if (sprite.y + sprite.height < 0) {
+    sprite.y = app.screen.height;
+  }
+}
+
+// keepOnScreen(sprite, app) -> void
+function keepOnScreen(sprite, app) {
+  if (sprite.x < 0) sprite.x = 0;
+  if (sprite.y < 0) sprite.y = 0;
+  if (sprite.x + sprite.width > app.screen.width) {
+    sprite.x = app.screen.width - sprite.width;
+  }
+  if (sprite.y + sprite.height > app.screen.height) {
+    sprite.y = app.screen.height - sprite.height;
+  }
+}
+
+// ===== PHYSICS HELPERS =====
+
+// applyVelocity(sprite, velocity, delta) -> void
+// Initializes sprite.velocity if needed
+function applyVelocity(sprite, velocity, delta = 1) {
+  if (!sprite.velocity) {
+    sprite.velocity = { ...velocity };
+  }
+
+  sprite.x += sprite.velocity.x * delta;
+  sprite.y += sprite.velocity.y * delta;
+}
+
+// ===== UI HELPERS =====
+
+// createText(text, style, position) -> Text
+// style: {fontSize, fill, ...}, position: {x, y, anchor}
+function createText(text, style = {}, position = {}) {
+  const defaultStyle = {
+    fontSize: 24,
+    fill: 0xffffff,
+    ...style
+  };
+
+  const textObject = new PIXI.Text(text, defaultStyle);
+
+  if (position.x !== undefined) textObject.x = position.x;
+  if (position.y !== undefined) textObject.y = position.y;
+
+  if (position.anchor !== undefined) {
+    if (typeof position.anchor === 'number') {
+      textObject.anchor.set(position.anchor);
+    } else if (position.anchor.x !== undefined || position.anchor.y !== undefined) {
+      textObject.anchor.set(position.anchor.x || 0, position.anchor.y || 0);
+    }
+  }
+
+  return textObject;
+}
+
+// centerObject(object, app) -> void
+function centerObject(object, app) {
+  object.x = (app.screen.width - object.width) / 2;
+  object.y = (app.screen.height - object.height) / 2;
+}
+
+// createButton(text, position, onClick, style) -> Text
+// position: {x, y, anchor}, style: {fontSize, fill, hoverColor}
+function createButton(text, position, onClick, style = {}) {
+  const defaultStyle = {
+    fontSize: 24,
+    fill: 0xffffff,
+    ...style
+  };
+
+  const button = new PIXI.Text(text, defaultStyle);
+  button.x = position.x;
+  button.y = position.y;
+
+  if (position.anchor !== undefined) {
+    if (typeof position.anchor === 'number') {
+      button.anchor.set(position.anchor);
+    } else if (position.anchor.x !== undefined || position.anchor.y !== undefined) {
+      button.anchor.set(position.anchor.x || 0, position.anchor.y || 0);
+    }
+  } else {
+    button.anchor.set(0.5);
+  }
+
+  button.eventMode = 'static';
+  button.cursor = 'pointer';
+
+  button.on('pointerdown', onClick);
+
+  button.on('pointerover', () => {
+    button.style.fill = style.hoverColor || 0xffff00;
+  });
+
+  button.on('pointerout', () => {
+    button.style.fill = style.fill || 0xffffff;
+  });
+
+  return button;
+}
+
+// createRestartButton(app, position, onRestart) -> Text
+function createRestartButton(app, position = {}, onRestart) {
+  const x = position.x !== undefined ? position.x : app.screen.width / 2;
+  const y = position.y !== undefined ? position.y : app.screen.height / 2 + 60;
+
+  return createButton('Restart', { x, y, anchor: 0.5 }, onRestart, {
+    fontSize: 32,
+    fill: 0xffffff
+  });
+}
+
+// showGameOver(app, {title, score, onRestart}) -> Container
+function showGameOver(app, options = {}) {
+  const container = new PIXI.Container();
+
+  const background = new PIXI.Graphics();
+  background.beginFill(0x000000, 0.7);
+  background.drawRect(0, 0, app.screen.width, app.screen.height);
+  background.endFill();
+  container.addChild(background);
+
+  const gameOverText = createText(
+    options.title || 'Game Over',
+    { fontSize: 48, fill: 0xff0000 },
+    { x: app.screen.width / 2, y: app.screen.height / 2 - 50, anchor: 0.5 }
+  );
+  container.addChild(gameOverText);
+
+  if (options.score !== undefined) {
+    const scoreText = createText(
+      `Score: ${options.score}`,
+      { fontSize: 32, fill: 0xffffff },
+      { x: app.screen.width / 2, y: app.screen.height / 2, anchor: 0.5 }
+    );
+    container.addChild(scoreText);
+  }
+
+  if (options.onRestart) {
+    const restartButton = createRestartButton(app, {}, options.onRestart);
+    container.addChild(restartButton);
+  }
+
+  return container;
+}
+
+// ===== KEYBOARD INPUT =====
+
+const __keyboard = {
+  keys: {},
+  _initialized: false
+};
+
+(function initKeyboard() {
+  if (__keyboard._initialized) return;
+
+  window.addEventListener('keydown', (e) => {
+    __keyboard.keys[e.key] = true;
+  });
+
+  window.addEventListener('keyup', (e) => {
+    __keyboard.keys[e.key] = false;
+  });
+
+  __keyboard._initialized = true;
+})();
+
+// isKeyDown(key) -> boolean
+// Check if a key is currently pressed
+// Common keys: 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ' (space), 'w', 'a', 's', 'd'
+function isKeyDown(key) {
+  return __keyboard.keys[key] || false;
+}
+
+// ===== DRAG AND DROP =====
+
+// makeDraggable(sprite, {dragLayer, onDragStart, onDrag, onDragEnd}) -> void
+// IMPORTANT: Sprite must be added to stage/container BEFORE calling this function
+// dragLayer: Container to move sprite to while dragging (optional, defaults to sprite.parent)
+// onDragEnd can return false to snap sprite back to original position
+function makeDraggable(sprite, options = {}) {
+  sprite.eventMode = 'static';
+  sprite.cursor = 'pointer';
+
+  let dragging = false;
+  let dragOffset = { x: 0, y: 0 };
+  let originalParent = null;
+  let originalPosition = { x: 0, y: 0 };
+  let dragLayer = options.dragLayer;
+
+  sprite.on('pointerdown', (event) => {
+    if (!dragLayer) {
+      dragLayer = sprite.parent;
+    }
+
+    dragging = true;
+    originalParent = sprite.parent;
+    originalPosition = { x: sprite.x, y: sprite.y };
+
+    const globalPosition = event.data.global;
+    const spriteGlobalPos = sprite.getGlobalPosition();
+
+    dragOffset.x = globalPosition.x - spriteGlobalPos.x;
+    dragOffset.y = globalPosition.y - spriteGlobalPos.y;
+
+    if (dragLayer && dragLayer !== sprite.parent) {
+      sprite.parent.removeChild(sprite);
+      dragLayer.addChild(sprite);
+      sprite.x = globalPosition.x - dragOffset.x;
+      sprite.y = globalPosition.y - dragOffset.y;
+    }
+
+    if (options.onDragStart) {
+      options.onDragStart(sprite, event);
+    }
+  });
+
+  const onMove = (event) => {
+    if (!dragging) return;
+
+    const globalPosition = event.data.global;
+    sprite.x = globalPosition.x - dragOffset.x;
+    sprite.y = globalPosition.y - dragOffset.y;
+
+    if (options.onDrag) {
+      options.onDrag(sprite, event);
+    }
+  };
+
+  const onEnd = (event) => {
+    if (!dragging) return;
+
+    dragging = false;
+
+    if (options.onDragEnd) {
+      const result = options.onDragEnd(sprite, event, originalParent, originalPosition);
+
+      if (result === false) {
+        if (dragLayer && dragLayer !== originalParent) {
+          sprite.parent.removeChild(sprite);
+          originalParent.addChild(sprite);
+          sprite.x = originalPosition.x;
+          sprite.y = originalPosition.y;
+        } else {
+          sprite.x = originalPosition.x;
+          sprite.y = originalPosition.y;
+        }
+      }
+    }
+  };
+
+  sprite.__dragHandlers = { onMove, onEnd };
+
+  const eventTarget = options.dragGroup || sprite.parent;
+  eventTarget.on('pointermove', onMove);
+  eventTarget.on('pointerup', onEnd);
+  eventTarget.on('pointerupoutside', onEnd);
+}
+
+// removeDraggable(sprite) -> void
+function removeDraggable(sprite) {
+  sprite.eventMode = 'auto';
+  sprite.cursor = 'default';
+  sprite.removeAllListeners('pointerdown');
+
+  if (sprite.__dragHandlers) {
+    const { onMove, onEnd } = sprite.__dragHandlers;
+    sprite.parent.off('pointermove', onMove);
+    sprite.parent.off('pointerup', onEnd);
+    sprite.parent.off('pointerupoutside', onEnd);
+    delete sprite.__dragHandlers;
+  }
+}
+
+// createDropZone(container, {onDrop, highlight}) -> void
+// onDrop(draggedSprite, dropZone, dragData) can return false to reject drop
+// highlight: {normalColor, hoverColor}
+function createDropZone(container, options = {}) {
+  container.__isDropZone = true;
+  container.__dropZoneOptions = options;
+
+  if (options.highlight) {
+    container.eventMode = 'static';
+
+    container.on('pointerover', () => {
+      if (options.highlight.hoverColor !== undefined) {
+        if (container instanceof PIXI.Graphics) {
+          container.tint = options.highlight.hoverColor;
+        } else if (container instanceof PIXI.Sprite) {
+          container.tint = options.highlight.hoverColor;
+        }
+      }
+    });
+
+    container.on('pointerout', () => {
+      if (options.highlight.normalColor !== undefined) {
+        if (container instanceof PIXI.Graphics) {
+          container.tint = options.highlight.normalColor;
+        } else if (container instanceof PIXI.Sprite) {
+          container.tint = options.highlight.normalColor;
+        }
+      }
+    });
+  }
+}
+
+// checkDropZones(draggedSprite, dropZones) -> Container|null
+function checkDropZones(draggedSprite, dropZones) {
+  const draggedBounds = draggedSprite.getBounds();
+
+  for (const zone of dropZones) {
+    const zoneBounds = zone.getBounds();
+    if (rectangleCollision(draggedBounds, zoneBounds)) {
+      return zone;
+    }
+  }
+
+  return null;
+}
+
+// snapToDropZone(sprite, dropZone, {offsetX, offsetY, animate}) -> void
+function snapToDropZone(sprite, dropZone, options = {}) {
+  const offsetX = options.offsetX || 0;
+  const offsetY = options.offsetY || 0;
+
+  if (sprite.parent !== dropZone) {
+    sprite.parent.removeChild(sprite);
+    dropZone.addChild(sprite);
+  }
+
+  if (options.animate) {
+    const targetX = offsetX;
+    const targetY = offsetY;
+
+    const animate = () => {
+      sprite.x = lerp(sprite.x, targetX, 0.2);
+      sprite.y = lerp(sprite.y, targetY, 0.2);
+
+      if (Math.abs(sprite.x - targetX) > 0.1 || Math.abs(sprite.y - targetY) > 0.1) {
+        requestAnimationFrame(animate);
+      } else {
+        sprite.x = targetX;
+        sprite.y = targetY;
+      }
+    };
+    animate();
+  } else {
+    sprite.x = offsetX;
+    sprite.y = offsetY;
+  }
+}
+
+// createDragManager(app, dragLayer) -> DragManager
+// Returns: {addDraggable(sprite, {onDragStart, onDrag, onDropSuccess, onDropFail}), addDropZone(container, options), removeDraggable(sprite), removeDropZone(container), clear()}
+function createDragManager(app, dragLayer) {
+  const manager = {
+    draggables: [],
+    dropZones: [],
+    currentDrag: null,
+
+    addDraggable(sprite, data = {}) {
+      sprite.__dragData = data;
+
+      makeDraggable(sprite, {
+        dragLayer: dragLayer,
+        dragGroup: app.stage,
+
+        onDragStart: (spr, event) => {
+          manager.currentDrag = spr;
+          if (data.onDragStart) data.onDragStart(spr, event);
+        },
+
+        onDrag: (spr, event) => {
+          manager.dropZones.forEach(zone => {
+            const bounds = spr.getBounds();
+            const zoneBounds = zone.getBounds();
+
+            if (rectangleCollision(bounds, zoneBounds)) {
+              if (zone.__dropZoneOptions?.highlight?.hoverColor) {
+                zone.tint = zone.__dropZoneOptions.highlight.hoverColor;
+              }
+            } else {
+              if (zone.__dropZoneOptions?.highlight?.normalColor !== undefined) {
+                zone.tint = zone.__dropZoneOptions.highlight.normalColor;
+              }
+            }
+          });
+
+          if (data.onDrag) data.onDrag(spr, event);
+        },
+
+        onDragEnd: (spr, event, originalParent, originalPosition) => {
+          const dropZone = checkDropZones(spr, manager.dropZones);
+
+          manager.dropZones.forEach(zone => {
+            if (zone.__dropZoneOptions?.highlight?.normalColor !== undefined) {
+              zone.tint = zone.__dropZoneOptions.highlight.normalColor;
+            }
+          });
+
+          if (dropZone) {
+            if (dropZone.__dropZoneOptions?.onDrop) {
+              const result = dropZone.__dropZoneOptions.onDrop(spr, dropZone, spr.__dragData);
+
+              if (result !== false && data.onDropSuccess) {
+                data.onDropSuccess(spr, dropZone);
+              }
+
+              manager.currentDrag = null;
+              return result;
+            }
+          }
+
+          if (data.onDropFail) {
+            data.onDropFail(spr, originalParent, originalPosition);
+          }
+
+          manager.currentDrag = null;
+          return false;
+        }
+      });
+
+      manager.draggables.push(sprite);
+    },
+
+    addDropZone(container, options = {}) {
+      createDropZone(container, options);
+      manager.dropZones.push(container);
+    },
+
+    removeDraggable(sprite) {
+      removeDraggable(sprite);
+      const index = manager.draggables.indexOf(sprite);
+      if (index > -1) {
+        manager.draggables.splice(index, 1);
+      }
+    },
+
+    removeDropZone(container) {
+      const index = manager.dropZones.indexOf(container);
+      if (index > -1) {
+        manager.dropZones.splice(index, 1);
+      }
+    },
+
+    clear() {
+      manager.draggables.forEach(sprite => removeDraggable(sprite));
+      manager.draggables = [];
+      manager.dropZones = [];
+      manager.currentDrag = null;
+    }
+  };
+
+  return manager;
+}
+
+// ===== UTILITY FUNCTIONS =====
+
+// randomRange(min, max) -> number
+function randomRange(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+// randomInt(min, max) -> number
+function randomInt(min, max) {
+  return Math.floor(randomRange(min, max + 1));
+}
+
+// randomChoice(array) -> any
+function randomChoice(array) {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
+// distance(obj1, obj2) -> number
+function distance(obj1, obj2) {
+  const dx = obj1.x - obj2.x;
+  const dy = obj1.y - obj2.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+// angleBetween(obj1, obj2) -> number
+// Returns angle in radians
+function angleBetween(obj1, obj2) {
+  return Math.atan2(obj2.y - obj1.y, obj2.x - obj1.x);
+}
+
+// moveTowards(object, target, speed) -> void
+function moveTowards(object, target, speed) {
+  const angle = angleBetween(object, target);
+  object.x += Math.cos(angle) * speed;
+  object.y += Math.sin(angle) * speed;
+}
+
+// clamp(value, min, max) -> number
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+// lerp(start, end, t) -> number
+function lerp(start, end, t) {
+  return start + (end - start) * t;
+}
+
+
+// ===== ASSET MAP =====
+const __ASSET_MAP__ = {
+  "background": {
+    "url": "https://storage.googleapis.com/scraper_ludo/user_images_prod/25b05498c6d4d0d30dd4e6f23be8c1d6.png",
+    "width": 864,
+    "height": 640,
+    "description": "A shimmering, magical cavern wall with faint glowing crystals embedded, deep blue and purple hues."
+  },
+  "gem_red": {
+    "url": "https://storage.googleapis.com/scraper_ludo/user_images_prod/8914d3c3ed7db1f0bde5db3f38ad4f80.png",
+    "width": 361,
+    "height": 352,
+    "description": "A brilliantly faceted, sparkling red ruby gem, square cut."
+  },
+  "gem_blue": {
+    "url": "https://storage.googleapis.com/scraper_ludo/user_images_prod/81c59c09aa03fab9d7d8c1948635f76c.png",
+    "width": 389,
+    "height": 383,
+    "description": "A brilliantly faceted, sparkling blue sapphire gem, round cut."
+  },
+  "gem_green": {
+    "url": "https://storage.googleapis.com/scraper_ludo/user_images_prod/1a23c2c40cf54a405096555953b5ad71.png",
+    "width": 357,
+    "height": 464,
+    "description": "A brilliantly faceted, sparkling green emerald gem, pear cut."
+  },
+  "gem_yellow": {
+    "url": "https://storage.googleapis.com/scraper_ludo/user_images_prod/1f9b3978caac7ac15d07188bb964a85d.png",
+    "width": 358,
+    "height": 453,
+    "description": "A brilliantly faceted, sparkling yellow topaz gem, oval cut."
+  },
+  "gem_purple": {
+    "url": "https://storage.googleapis.com/scraper_ludo/user_images_prod/3345a1633ab653bab678277a3f0c0ef6.png",
+    "width": 310,
+    "height": 498,
+    "description": "A brilliantly faceted, sparkling purple amethyst gem, marquise cut."
+  },
+  "selection_highlight": {
+    "url": "https://storage.googleapis.com/scraper_ludo/user_images_prod/4bba2ae42fe8f86b0f243b00d0e8baca.png",
+    "width": 330,
+    "height": 343,
+    "description": "A glowing, ethereal square frame with a subtle magical aura, used to highlight a selected gem."
+  }
+};
+
+// ===== GAME CODE =====
+    const app = new PIXI.Application({
+  width: 800,
+  height: 600,
+  backgroundColor: 0x1099bb,
+  antialias: true,
+  resolution: 1 // ALWAYS force the resolution to 1 to prevent UI placement issues
+});
+document.body.appendChild(app.view);
+
+    class Game {
+  constructor() {
+    this.gridSize = 8;
+    this.gemTypes = ['gem_red', 'gem_blue', 'gem_green', 'gem_yellow', 'gem_purple'];
+    this.cellSize = 60;
+    this.boardOffset = { x: 0, y: 0 };
+    this.grid = [];
+    this.gems = [];
+    this.selectedGem = null;
+    this.movingGems = 0;
+    this.gameState = 'MENU';
+    this.score = 0;
+    this.moves = 30;
+    this.animationSpeed = 0.15;
+  }
+  setup() {
+    this.createBackground();
+    this.createMenu();
+  }
+  createBackground() {
+    const bg = createSprite('background');
+    bg.width = app.screen.width;
+    bg.height = app.screen.height;
+    app.stage.addChild(bg);
+  }
+
+  createMenu() {
+    this.menuContainer = new PIXI.Container();
+    const title = createText('Crystal Match', {
+      fontSize: 48,
+      fill: 0xffffff,
+      fontWeight: 'bold',
+      dropShadow: true,
+      dropShadowColor: 0x000000,
+      dropShadowBlur: 4
+    }, { x: app.screen.width / 2, y: app.screen.height / 2 - 100, anchor: 0.5 });
+    const startButton = createText('START GAME', {
+      fontSize: 32,
+      fill: 0xffff00,
+      fontWeight: 'bold'
+    }, { x: app.screen.width / 2, y: app.screen.height / 2 + 50, anchor: 0.5 });
+    startButton.interactive = true;
+    startButton.buttonMode = true;
+    startButton.on('pointerdown', () => this.startGame());
+    startButton.on('pointerover', () => {
+      startButton.style.fill = 0xffffff;
+      startButton.scale.set(1.1);
+    });
+    startButton.on('pointerout', () => {
+      startButton.style.fill = 0xffff00;
+      startButton.scale.set(1);
+    });
+    this.menuContainer.addChild(title);
+    this.menuContainer.addChild(startButton);
+    app.stage.addChild(this.menuContainer);
+  }
+  startGame() {
+    if (this.menuContainer) {
+      app.stage.removeChild(this.menuContainer);
+      this.menuContainer = null;
+    }
+    if (this.gameContainer) {
+      app.stage.removeChild(this.gameContainer);
+    }
+    this.gameContainer = new PIXI.Container();
+    app.stage.addChild(this.gameContainer);
+    this.score = 0;
+    this.moves = 30;
+    this.grid = [];
+    this.gems = [];
+    this.selectedGem = null;
+    this.boardOffset.x = (app.screen.width - this.gridSize * this.cellSize) / 2;
+    this.boardOffset.y = 120;
+    this.createBoard();
+    this.createUI();
+    this.gameState = 'PLAYING';
+  }
+  createBoard() {
+    for (let row = 0; row < this.gridSize; row++) {
+      this.grid[row] = [];
+      this.gems[row] = [];
+      for (let col = 0; col < this.gridSize; col++) {
+        this.createGem(row, col);
+      }
+    }
+    while (this.findMatches().length > 0) {
+      this.removeMatches(this.findMatches());
+      this.fillBoard();
+    }
+  }
+
+
+
+
+
+
+  createGem(row, col, gemType = null) {
+    if (!gemType) {
+      const types = this.gemTypes.filter(type => !this.causesMatch(row, col, type));
+      gemType = types.length > 0 ? randomChoice(types) : randomChoice(this.gemTypes);
+    }
+    const gem = createContainedSprite(gemType, this.cellSize, this.cellSize, { fitMode: 'fit', anchor: 0.5 });
+    gem.x = this.boardOffset.x + col * this.cellSize + this.cellSize / 2;
+    gem.y = this.boardOffset.y + row * this.cellSize + this.cellSize / 2;
+    gem.userData = {
+      row: row,
+      col: col,
+      type: gemType,
+      isMatched: false,
+      targetY: gem.y,
+      falling: false,
+      scale: 1
+    };
+    this.gems[row][col] = gem;
+    this.grid[row][col] = gemType;
+    this.gameContainer.addChild(gem);
+    gem.interactive = true;
+    gem.buttonMode = true;
+    gem.on('pointerdown', () => this.onGemClick(gem));
+    return gem;
+  }
+
+
+
+
+  causesMatch(row, col, type) {
+    let hCount = 1;
+    let vCount = 1;
+    for (let i = col - 1; i >= 0 && this.grid[row][i] === type; i--) hCount++;
+    for (let i = col + 1; i < this.gridSize && this.grid[row][i] === type; i++) hCount++;
+    for (let i = row - 1; i >= 0 && this.grid[i] && this.grid[i][col] === type; i--) vCount++;
+    for (let i = row + 1; i < this.gridSize && this.grid[i] && this.grid[i][col] === type; i++) vCount++;
+    return hCount >= 3 || vCount >= 3;
+  }
+  onGemClick(gem) {
+    if (this.gameState !== 'PLAYING' || this.movingGems > 0) return;
+    if (!this.selectedGem) {
+      this.selectedGem = gem;
+      this.showSelection(gem, true);
+    } else if (this.selectedGem === gem) {
+      this.showSelection(gem, false);
+      this.selectedGem = null;
+    } else {
+      const row1 = this.selectedGem.userData.row;
+      const col1 = this.selectedGem.userData.col;
+      const row2 = gem.userData.row;
+      const col2 = gem.userData.col;
+      if (this.areAdjacent(row1, col1, row2, col2)) {
+        this.swapGems(this.selectedGem, gem);
+      } else {
+        this.showSelection(this.selectedGem, false);
+        this.selectedGem = gem;
+        this.showSelection(gem, true);
+      }
+    }
+  }
+  showSelection(gem, show) {
+    if (!this.selectionHighlight) {
+      this.selectionHighlight = createSprite('selection_highlight', { 
+        width: this.cellSize * 0.9 * 0.9, 
+        height: this.cellSize * 0.9 * 0.9
+      });
+      this.selectionHighlight.anchor.set(0.5);
+      this.selectionHighlight.visible = false;
+      this.gameContainer.addChild(this.selectionHighlight);
+    }
+    if (show) {
+      this.selectionHighlight.position.set(gem.x, gem.y);
+      this.selectionHighlight.visible = true;
+      this.selectedGem = gem;
+    } else {
+      this.selectionHighlight.visible = false;
+      this.selectedGem = null;
+    }
+  }
+  areAdjacent(row1, col1, row2, col2) {
+    const rowDiff = Math.abs(row1 - row2);
+    const colDiff = Math.abs(col1 - col2);
+    return (rowDiff === 1 && colDiff === 0) || (rowDiff === 0 && colDiff === 1);
+  }
+  swapGems(gem1, gem2) {
+    this.movingGems++;
+    const tempRow = gem1.userData.row;
+    const tempCol = gem1.userData.col;
+    const x1 = gem1.x;
+    const y1 = gem1.y;
+    const x2 = gem2.x;
+    const y2 = gem2.y;
+    this.gems[gem1.userData.row][gem1.userData.col] = gem2;
+    this.gems[gem2.userData.row][gem2.userData.col] = gem1;
+    gem1.userData.row = gem2.userData.row;
+    gem1.userData.col = gem2.userData.col;
+    gem2.userData.row = tempRow;
+    gem2.userData.col = tempCol;
+    this.grid[gem1.userData.row][gem1.userData.col] = gem1.userData.type;
+    this.grid[gem2.userData.row][gem2.userData.col] = gem2.userData.type;
+    const animate = () => {
+      gem1.x += (x2 - gem1.x) * 0.3;
+      gem1.y += (y2 - gem1.y) * 0.3;
+      gem2.x += (x1 - gem2.x) * 0.3;
+      gem2.y += (y1 - gem2.y) * 0.3;
+      if (Math.abs(gem1.x - x2) > 1 || Math.abs(gem1.y - y2) > 1) {
+        requestAnimationFrame(animate);
+      } else {
+        gem1.position.set(x2, y2);
+        gem2.position.set(x1, y1);
+        const matches = this.findMatches();
+        if (matches.length > 0) {
+          this.moves--;
+          this.updateUI();
+          this.matchesFound(matches);
+        } else {
+          this.swapBack(gem1, gem2, x1, y1, x2, y2);
+        }
+      }
+    };
+    animate();
+  }
+  swapBack(gem1, gem2, x1, y1, x2, y2) {
+    const animate = () => {
+      gem1.x += (x1 - gem1.x) * 0.3;
+      gem1.y += (y1 - gem1.y) * 0.3;
+      gem2.x += (x2 - gem2.x) * 0.3;
+      gem2.y += (y2 - gem2.y) * 0.3;
+      if (Math.abs(gem1.x - x1) > 1 || Math.abs(gem1.y - y1) > 1) {
+        requestAnimationFrame(animate);
+      } else {
+        gem1.position.set(x1, y1);
+        gem2.position.set(x2, y2);
+        this.movingGems--;
+      }
+    };
+    animate();
+  }
+  findMatches() {
+    const matches = [];
+    for (let row = 0; row < this.gridSize; row++) {
+      for (let col = 0; col < this.gridSize; col++) {
+        if (this.grid[row][col]) {
+          const hMatch = this.checkHorizontalMatch(row, col);
+          if (hMatch.length >= 3) {
+            matches.push(...hMatch);
+            for (let i = 1; i < hMatch.length; i++) {
+              col = hMatch[i].col;
+            }
+          }
+          const vMatch = this.checkVerticalMatch(row, col);
+          if (vMatch.length >= 3) {
+            const newMatches = vMatch.filter(v => 
+              !matches.some(m => m.row === v.row && m.col === v.col)
+            );
+            matches.push(...newMatches);
+          }
+        }
+      }
+    }
+    return matches;
+  }
+  checkHorizontalMatch(row, col) {
+    const type = this.grid[row][col];
+    const match = [];
+    for (let c = col; c < this.gridSize && this.grid[row][c] === type; c++) {
+      match.push({ row, col: c });
+    }
+    return match;
+  }
+  checkVerticalMatch(row, col) {
+    const type = this.grid[row][col];
+    const match = [];
+    for (let r = row; r < this.gridSize && this.grid[r] && this.grid[r][col] === type; r++) {
+      match.push({ row: r, col });
+    }
+    return match;
+  }
+  matchesFound(matches) {
+    this.score += matches.length * 10;
+    this.updateUI();
+    this.updateMatches(matches);
+    if (this.selectionHighlight) {
+      this.selectionHighlight.visible = false;
+      this.selectedGem = null;
+    }
+    setTimeout(() => {
+      this.removeMatches(matches);
+      setTimeout(() => {
+        this.dropGems();
+      }, 200);
+    }, 300);
+  }
+  updateMatches(matches) {
+    matches.forEach(match => {
+      const gem = this.gems[match.row][match.col];
+      if (gem) {
+        gem.userData.isMatched = true;
+        gem.alpha = 0.5;
+      }
+    });
+  }
+  removeMatches(matches) {
+    matches.forEach(match => {
+      const gem = this.gems[match.row][match.col];
+      if (gem) {
+        this.gameContainer.removeChild(gem);
+        this.gems[match.row][match.col] = null;
+      }
+      this.grid[match.row][match.col] = null;
+    });
+  }
+
+  dropGems() {
+    let gemsMoved = false;
+    for (let col = 0; col < this.gridSize; col++) {
+      let emptyRow = this.gridSize - 1;
+      for (let row = this.gridSize - 1; row >= 0; row--) {
+        if (this.grid[row][col] !== null) {
+          if (row !== emptyRow) {
+            const gem = this.gems[row][col];
+            this.gems[emptyRow][col] = gem;
+            this.gems[row][col] = null;
+            this.grid[emptyRow][col] = this.grid[row][col];
+            this.grid[row][col] = null;
+            gem.userData.row = emptyRow;
+            gem.userData.falling = true;
+            gem.userData.targetY = this.boardOffset.y + emptyRow * this.cellSize + this.cellSize / 2;
+            gemsMoved = true;
+          }
+          emptyRow--;
+        }
+      }
+      for (let row = emptyRow; row >= 0; row--) {
+        const newGem = this.createGem(row, col);
+        newGem.y = this.boardOffset.y - (emptyRow - row + 1) * this.cellSize;
+        newGem.userData.falling = true;
+        newGem.userData.targetY = this.boardOffset.y + row * this.cellSize + this.cellSize / 2;
+        gemsMoved = true;
+      }
+    }
+    if (gemsMoved) {
+      this.movingGems++;
+    }
+    this.isCheckingForCascadingMatches = true;
+  }
+  createUI() {
+    this.uiContainer = new PIXI.Container();
+    const scoreText = createText('Score: 0 | Moves: 30', {
+      fontSize: 36,
+      fill: 0xffffff,
+      fontWeight: 'bold',
+      dropShadow: true,
+      dropShadowColor: 0x000000,
+      dropShadowBlur: 4
+    }, { x: app.screen.width / 2, y: 40, anchor: 0.5 });
+    this.scoreDisplay = scoreText;
+    this.uiContainer.addChild(scoreText);
+    app.stage.addChild(this.uiContainer);
+  }
+  updateUI() {
+    this.scoreDisplay.text = `Score: ${this.score} | Moves: ${this.moves}`;
+    if (this.moves <= 0 && this.gameState === 'PLAYING') {
+      this.gameOver();
+    }
+  }
+  gameOver() {
+    this.gameState = 'GAME_OVER';
+    const overlay = new PIXI.Graphics();
+    overlay.beginFill(0x000000, 0.7);
+    overlay.drawRect(0, 0, app.screen.width, app.screen.height);
+    overlay.endFill();
+    const gameOverText = createText('Game Over!', {
+      fontSize: 64,
+      fill: 0xffffff,
+      fontWeight: 'bold'
+    }, { x: app.screen.width / 2, y: 200, anchor: 0.5 });
+    const scoreText = createText(`Final Score: ${this.score}`, {
+      fontSize: 36,
+      fill: 0xffff00,
+      fontWeight: 'bold'
+    }, { x: app.screen.width / 2, y: 300, anchor: 0.5 });
+    const restartButton = createText('Play Again', {
+      fontSize: 32,
+      fill: 0x00ff00,
+      fontWeight: 'bold'
+    }, { x: app.screen.width / 2, y: 400, anchor: 0.5 });
+    restartButton.interactive = true;
+    restartButton.buttonMode = true;
+    restartButton.on('pointerdown', () => this.startGame());
+    restartButton.on('pointerover', () => {
+      restartButton.style.fill = 0xffffff;
+      restartButton.scale.set(1.1);
+    });
+    restartButton.on('pointerout', () => {
+      restartButton.style.fill = 0x00ff00;
+      restartButton.scale.set(1);
+    });
+    const container = new PIXI.Container();
+    container.addChild(overlay);
+    container.addChild(gameOverText);
+    container.addChild(scoreText);
+    container.addChild(restartButton);
+    app.stage.addChild(container);
+  }
+
+
+
+
+
+
+
+  update(delta) {
+    if (this.gameState !== 'PLAYING') return;
+    let gemsAreMoving = this.hasMovingGems();
+    for (let row = 0; row < this.gridSize; row++) {
+      for (let col = 0; col < this.gridSize; col++) {
+        const gem = this.gems[row][col];
+        if (gem && gem.userData.falling) {
+          const currentY = gem.y;
+          const targetY = gem.userData.targetY;
+          const diffY = targetY - currentY;
+          if (Math.abs(diffY) > 1) {
+            gem.y += diffY * this.animationSpeed * delta;
+          } else {
+            gem.y = targetY;
+            gem.userData.falling = false;
+            this.movingGems--;
+          }
+        }
+      }
+    }
+    if (!gemsAreMoving && this.movingGems <= 0 && this.isCheckingForCascadingMatches) {
+      this.isCheckingForCascadingMatches = false;
+      this.checkAndHandleCascadingMatches();
+    }
+    if (this.selectionHighlight && this.selectedGem) {
+      this.selectionHighlight.position.set(this.selectedGem.x, this.selectedGem.y);
+    }
+  }
+
+
+
+
+
+
+  hasMovingGems() {
+    for (let row = 0; row < this.gridSize; row++) {
+      for (let col = 0; col < this.gridSize; col++) {
+        const gem = this.gems[row][col];
+        if (gem && gem.userData.falling) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+
+
+  checkAndHandleCascadingMatches() {
+    const matches = this.findMatches();
+    if (matches.length > 0) {
+      this.matchesFound(matches);
+      return;
+    }
+    this.movingGems = Math.max(0, this.movingGems - 1); 
+  }
+
+}
+
+    
+// Preload all assets, then start the game
+preloadAssets(__ASSET_MAP__).then(() => {
+  let game = new Game(app); // Create the game instance
+  game.app = app;
+  if (game.setup) game.setup();
+  app.ticker.add((delta) => {
+    game.update(delta);
+  });
+});
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pacman Arcade</title>
+<style>
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    background: #030712;
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: 8px 6px;
+    overflow: hidden;
+    touch-action: none;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 360px;
+    margin-bottom: 4px;
+    font-family: 'Courier New', Courier, monospace, monospace;
+    font-size: 13px;
+    font-weight: 800;
+    padding: 0 4px;
+  }
+  .stat-group {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .score-val { color: #facc15; font-size: 15px; }
+  .high-val { color: #38bdf8; font-size: 15px; }
+  .lives-val { color: #ef4444; font-size: 16px; letter-spacing: 1px; }
+  .lvl-val { color: #4ade80; font-size: 13px; font-weight: bold; }
+  
+  .sound-btn {
+    background: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    color: #f8fafc;
+    font-size: 14px;
+    padding: 2px 7px;
+    cursor: pointer;
+  }
+
+  .canvas-wrap {
+    position: relative;
+    background: #000;
+    border: 3px solid #1e3a8a;
+    border-radius: 10px;
+    box-shadow: 0 0 24px rgba(30, 58, 138, 0.7), inset 0 0 12px rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: #000;
+    max-width: 100%;
+    height: auto;
+    border-radius: 7px;
+  }
+
+  .ready-banner {
+    position: absolute;
+    color: #facc15;
+    font-size: 22px;
+    font-weight: 900;
+    font-family: 'Courier New', Courier, monospace;
+    letter-spacing: 3px;
+    text-shadow: 0 0 10px #eab308;
+    pointer-events: none;
+    display: none;
+    z-index: 5;
+  }
+  .ready-banner.show { display: block; }
+
+  .dpad-container {
+    width: 180px;
+    height: 180px;
+    position: relative;
+    margin: 6px auto;
+    touch-action: none;
+  }
+  .dpad-btn {
+    position: absolute;
+    width: 56px;
+    height: 56px;
+    background: #1e293b;
+    border: 2px solid #475569;
+    border-radius: 16px;
+    color: #facc15;
+    font-size: 24px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    outline: none;
+    touch-action: none;
+    transition: transform 0.05s, background 0.05s;
+  }
+  .dpad-btn:active, .dpad-btn.active {
+    background: #2563eb;
+    color: #ffffff;
+    border-color: #60a5fa;
+    transform: scale(0.92);
+    box-shadow: 0 0 12px rgba(37, 99, 235, 0.8);
+  }
+  .dpad-up { top: 0; left: 62px; }
+  .dpad-down { bottom: 0; left: 62px; }
+  .dpad-left { top: 62px; left: 0; }
+  .dpad-right { top: 62px; right: 0; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(3, 7, 18, 0.88);
+    backdrop-filter: blur(4px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    border-radius: 7px;
+    z-index: 10;
+  }
+  .overlay.hidden { display: none; }
+  .overlay-title {
+    color: #facc15;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-shadow: 0 0 14px rgba(250, 204, 21, 0.6);
+  }
+  .overlay-subtitle {
+    color: #38bdf8;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: monospace;
+  }
+  .start-btn {
+    background: linear-gradient(135deg, #facc15, #eab308);
+    color: #000;
+    border: none;
+    padding: 12px 34px;
+    border-radius: 24px;
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(234, 179, 8, 0.4);
+    touch-action: manipulation;
+  }
+  .start-btn:active { transform: scale(0.94); }
+  .hint-text {
+    color: #94a3b8;
+    font-size: 11px;
+    text-align: center;
+    max-width: 240px;
+    line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="stat-group">
+    <div>1UP <span id="score" class="score-val">0</span></div>
+    <div>HIGH <span id="highScore" class="high-val">0</span></div>
+  </div>
+  <div class="stat-group">
+    <span id="level" class="lvl-val">LV 1</span>
+    <span id="lives" class="lives-val">🟡🟡🟡</span>
+    <button class="sound-btn" id="soundBtn" title="Toggle Sound">🔊</button>
+  </div>
+</div>
+
+<div class="canvas-wrap" id="canvasWrap">
+  <canvas id="canvas" width="330" height="352"></canvas>
+  <div class="ready-banner" id="readyBanner">READY!</div>
+  <div class="overlay" id="overlay">
+    <h2 class="overlay-title" id="overlayTitle">PAC-MAN</h2>
+    <div class="overlay-subtitle" id="overlaySubtitle">RETRO ARCADE</div>
+    <button class="start-btn" id="startBtn">PLAY</button>
+    <div class="hint-text">Controls: D-Pad, Arrow Keys, WASD, or Swipe on screen</div>
+  </div>
+</div>
+
+<div class="dpad-container" id="dpadContainer">
+  <button class="dpad-btn dpad-up" id="btnUp">▲</button>
+  <button class="dpad-btn dpad-down" id="btnDown">▼</button>
+  <button class="dpad-btn dpad-left" id="btnLeft">◀</button>
+  <button class="dpad-btn dpad-right" id="btnRight">▶</button>
+</div>
+
+<script>
+// Web Audio API Synthesizer
+let audioCtx = null;
+let soundEnabled = true;
+
+function initAudio() {
+  if (!audioCtx) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioContextClass) audioCtx = new AudioContextClass();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+let wakaToggle = false;
+function playSound(type) {
+  if (!soundEnabled) return;
+  try {
+    initAudio();
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+
+    if (type === 'waka') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'triangle';
+      const freq = wakaToggle ? 360 : 260;
+      wakaToggle = !wakaToggle;
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.7, now + 0.05);
+      gain.gain.setValueAtTime(0.06, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+      osc.start(now);
+      osc.stop(now + 0.05);
+    } else if (type === 'power') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.linearRampToValueAtTime(880, now + 0.12);
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      osc.start(now);
+      osc.stop(now + 0.12);
+    } else if (type === 'eatghost') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(400, now);
+      osc.frequency.exponentialRampToValueAtTime(1400, now + 0.25);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+      osc.start(now);
+      osc.stop(now + 0.25);
+    } else if (type === 'eatfruit') {
+      const notes = [523, 659, 783, 1046];
+      notes.forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        const start = now + idx * 0.06;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.08, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.08);
+        osc.start(start);
+        osc.stop(start + 0.08);
+      });
+    } else if (type === 'die') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(600, now);
+      osc.frequency.linearRampToValueAtTime(80, now + 0.6);
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      osc.start(now);
+      osc.stop(now + 0.6);
+    } else if (type === 'win') {
+      const notes = [392, 523, 659, 783, 1046];
+      notes.forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'triangle';
+        const start = now + idx * 0.09;
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.1, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.15);
+        osc.start(start);
+        osc.stop(start + 0.15);
+      });
+    }
+  } catch(e) {}
+}
+
+// Sound toggle button
+const soundBtn = document.getElementById('soundBtn');
+soundBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  initAudio();
+  soundEnabled = !soundEnabled;
+  soundBtn.textContent = soundEnabled ? '🔊' : '🔇';
+});
+
+// Map definition:
+// 1 = Wall, 2 = Dot, 3 = Energizer (Power Pellet), 0 = Empty/Tunnel/House, G = House Gate
+const TILE_SIZE = 22;
+const MAP_TEMPLATE = [
+  "111111111111111",
+  "122222212222221",
+  "131121111121131",
+  "121121111121121",
+  "122222222222221",
+  "1211211G1121121",
+  "122221000122221",
+  "111121000121111",
+  "000021000120000",
+  "111121111121111",
+  "122222222222221",
+  "121121111121121",
+  "132122212221231",
+  "112121111121211",
+  "122222222222221",
+  "111111111111111"
+];
+
+const ROWS = MAP_TEMPLATE.length;
+const COLS = MAP_TEMPLATE[0].length;
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// State variables
+let score = 0;
+let highScore = 0;
+// В WebView с отключённым хранилищем localStorage бросает исключение — без try игра не запустится
+try { highScore = parseInt(localStorage.getItem('pacman_highscore') || '0', 10) || 0; } catch (e) {}
+let lives = 3;
+let currentLevel = 1;
+let overlayAction = 'start'; // 'start' | 'next' — что делает кнопка оверлея
+let frightTimer = 0;
+let ghostsEatenInFright = 0;
+let gameRunning = false;
+let isPaused = false;
+let isDying = false;
+let deathAnimTimer = 0;
+let isReady = false;
+let readyTimer = 0;
+let dotsRemaining = 0;
+let totalDots = 0;
+let gameLoopId = null;
+let lastTime = 0;
+
+// Fruit bonus definition
+let fruit = null;
+const FRUITS_BY_LEVEL = [
+  { name: 'Cherry', color: '#ef4444', stem: '#22c55e', points: 100, icon: '🍒' },
+  { name: 'Strawberry', color: '#f43f5e', stem: '#22c55e', points: 300, icon: '🍓' },
+  { name: 'Orange', color: '#f97316', stem: '#22c55e', points: 500, icon: '🍊' },
+  { name: 'Apple', color: '#dc2626', stem: '#15803d', points: 700, icon: '🍎' },
+  { name: 'Melon', color: '#10b981', stem: '#047857', points: 1000, icon: '🍈' },
+  { name: 'Bell', color: '#eab308', stem: '#ca8a04', points: 2000, icon: '🔔' },
+  { name: 'Key', color: '#38bdf8', stem: '#0284c7', points: 3000, icon: '🔑' }
+];
+
+let floatingScores = [];
+
+let pacman = {
+  x: 7,
+  y: 10,
+  dirX: 0,
+  dirY: 0,
+  nextDirX: 0,
+  nextDirY: 0,
+  speed: 0.088,
+  mouth: 0.2,
+  mouthDir: 1,
+  angle: 0
+};
+
+let ghosts = [];
+let dots = [];
+
+// Ghost personalities & starting positions
+function createGhosts() {
+  return [
+    {
+      id: 'blinky',
+      name: 'Blinky',
+      color: '#ef4444',
+      x: 7,
+      y: 4,
+      dirX: -1,
+      dirY: 0,
+      startX: 7,
+      startY: 4,
+      state: 'CHASE', // CHASE, SCATTER, FRIGHTENED, EATEN, HOUSE
+      homeCorner: { x: COLS - 2, y: 0 },
+      houseTimer: 0,
+      baseSpeed: 0.078
+    },
+    {
+      id: 'pinky',
+      name: 'Pinky',
+      color: '#f472b6',
+      x: 7,
+      y: 6,
+      dirX: 0,
+      dirY: -1,
+      startX: 7,
+      startY: 6,
+      state: 'HOUSE',
+      homeCorner: { x: 1, y: 0 },
+      houseTimer: 90,
+      baseSpeed: 0.074
+    },
+    {
+      id: 'inky',
+      name: 'Inky',
+      color: '#06b6d4',
+      x: 6,
+      y: 7,
+      dirX: 0,
+      dirY: -1,
+      startX: 6,
+      startY: 7,
+      state: 'HOUSE',
+      homeCorner: { x: COLS - 2, y: ROWS - 1 },
+      houseTimer: 200,
+      baseSpeed: 0.070
+    },
+    {
+      id: 'clyde',
+      name: 'Clyde',
+      color: '#fb923c',
+      x: 8,
+      y: 7,
+      dirX: 0,
+      dirY: -1,
+      startX: 8,
+      startY: 7,
+      state: 'HOUSE',
+      homeCorner: { x: 1, y: ROWS - 1 },
+      houseTimer: 340,
+      baseSpeed: 0.068
+    }
+  ];
+}
+
+// Map queries
+function isWall(c, r) {
+  if (r < 0 || r >= ROWS) return true;
+  if (c < 0 || c >= COLS) return false; // wrap tunnel
+  const ch = MAP_TEMPLATE[r][c];
+  return ch === '1';
+}
+
+function isTileOpenForPacman(c, r) {
+  if (r < 0 || r >= ROWS) return false;
+  if (c < 0 || c >= COLS) return true; // tunnel
+  const ch = MAP_TEMPLATE[r][c];
+  // Pacman cannot enter ghost house or walls
+  return ch !== '1' && ch !== 'G';
+}
+
+function isTileOpenForGhost(c, r, ghost) {
+  if (r < 0 || r >= ROWS) return false;
+  if (c < 0 || c >= COLS) return true; // tunnel
+  const ch = MAP_TEMPLATE[r][c];
+  if (ch === '1') return false;
+  // Eaten eyes can pass through gate freely
+  if (ghost.state === 'EATEN') return true;
+  // Ghost in house can pass gate to exit
+  if (ghost.state === 'HOUSE') return true;
+  // Outside ghosts cannot re-enter house through gate unless eaten
+  if (ch === 'G' && ghost.y < 5) return false;
+  return true;
+}
+
+function initMap() {
+  dots = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const ch = MAP_TEMPLATE[r][c];
+      if (ch === '2') dots.push({ r, c, big: false, eaten: false });
+      if (ch === '3') dots.push({ r, c, big: true, eaten: false });
+    }
+  }
+  totalDots = dots.length;
+  dotsRemaining = totalDots;
+}
+
+function resetPositions() {
+  pacman.x = 7;
+  pacman.y = 10;
+  pacman.dirX = 0;
+  pacman.dirY = 0;
+  pacman.nextDirX = 0;
+  pacman.nextDirY = 0;
+  pacman.mouth = 0.2;
+  pacman.mouthDir = 1;
+  pacman.angle = 0;
+
+  ghosts = createGhosts();
+  frightTimer = 0;
+  ghostsEatenInFright = 0;
+}
+
+function updateUI() {
+  document.getElementById('score').textContent = score;
+  if (score > highScore) {
+    highScore = score;
+    try { localStorage.setItem('pacman_highscore', highScore); } catch (e) {}
+  }
+  document.getElementById('highScore').textContent = highScore;
+  document.getElementById('level').textContent = `LV ${currentLevel}`;
+  document.getElementById('lives').textContent = '🟡'.repeat(Math.max(0, lives));
+}
+
+function showReady(callback) {
+  isReady = true;
+  const banner = document.getElementById('readyBanner');
+  banner.classList.add('show');
+  setTimeout(() => {
+    banner.classList.remove('show');
+    isReady = false;
+    if (callback) callback();
+  }, 1200);
+}
+
+function startGame() {
+  initAudio();
+  overlayAction = 'start';
+  if (gameLoopId) cancelAnimationFrame(gameLoopId);
+  document.getElementById('overlay').classList.add('hidden');
+  score = 0;
+  lives = 3;
+  currentLevel = 1;
+  isDying = false;
+  isPaused = false;
+  fruit = null;
+  floatingScores = [];
+
+  initMap();
+  resetPositions();
+  updateUI();
+
+  gameRunning = true;
+  showReady(() => {
+    pacman.dirX = -1; // start moving left
+    pacman.nextDirX = -1;
+  });
+  lastTime = performance.now();
+  gameLoopId = requestAnimationFrame(gameLoop);
+}
+
+function nextLevel() {
+  currentLevel++;
+  playSound('win');
+  overlayAction = 'next';
+  document.getElementById('overlayTitle').textContent = `LEVEL ${currentLevel}`;
+  document.getElementById('overlaySubtitle').textContent = 'EXCELLENT!';
+  document.getElementById('startBtn').textContent = 'NEXT LEVEL';
+  document.getElementById('overlay').classList.remove('hidden');
+  gameRunning = false;
+
+  initMap();
+  resetPositions();
+  updateUI();
+}
+
+// Продолжить на следующем уровне, СОХРАНИВ счёт, жизни и номер уровня
+function continueLevel() {
+  initAudio();
+  if (gameLoopId) cancelAnimationFrame(gameLoopId);
+  document.getElementById('overlay').classList.add('hidden');
+  isDying = false;
+  isPaused = false;
+  fruit = null;
+  floatingScores = [];
+
+  initMap();
+  resetPositions();
+  updateUI();
+
+  gameRunning = true;
+  showReady(() => {
+    pacman.dirX = -1;
+    pacman.nextDirX = -1;
+  });
+  lastTime = performance.now();
+  gameLoopId = requestAnimationFrame(gameLoop);
+}
+
+// Единая точка входа для кнопки оверлея и для свайпа по погашенному экрану
+function resumeOrStart() {
+  if (overlayAction === 'next') continueLevel();
+  else startGame();
+}
+
+function spawnFruit() {
+  const fruitIdx = Math.min(currentLevel - 1, FRUITS_BY_LEVEL.length - 1);
+  const fruitData = FRUITS_BY_LEVEL[fruitIdx];
+  fruit = {
+    x: 7,
+    y: 10,
+    ...fruitData,
+    timer: 600 // ~10 seconds
+  };
+}
+
+// Player controls input
+function pressDir(dx, dy) {
+  initAudio();
+  if (!gameRunning) {
+    if (document.getElementById('overlay').classList.contains('hidden')) return;
+    resumeOrStart();
+    return;
+  }
+  if (isDying || isReady) return;
+
+  // Immediate 180-degree reversal
+  if (dx === -pacman.dirX && dy === -pacman.dirY && (dx !== 0 || dy !== 0)) {
+    pacman.dirX = dx;
+    pacman.dirY = dy;
+    pacman.nextDirX = 0;
+    pacman.nextDirY = 0;
+    return;
+  }
+
+  // If currently stationary, attempt immediate move if open
+  if (pacman.dirX === 0 && pacman.dirY === 0) {
+    const curX = Math.round(pacman.x);
+    const curY = Math.round(pacman.y);
+    if (isTileOpenForPacman(curX + dx, curY + dy)) {
+      pacman.x = curX;
+      pacman.y = curY;
+      pacman.dirX = dx;
+      pacman.dirY = dy;
+      pacman.nextDirX = 0;
+      pacman.nextDirY = 0;
+      return;
+    }
+  }
+
+  // Buffer direction
+  pacman.nextDirX = dx;
+  pacman.nextDirY = dy;
+}
+
+// Pac-Man Movement Engine with Cornering & Buffer
+function updatePacman() {
+  if (isDying || isReady) return;
+
+  const spd = pacman.speed * (1 + (currentLevel - 1) * 0.03);
+
+  // If stationary, check if buffered direction is now open
+  if (pacman.dirX === 0 && pacman.dirY === 0) {
+    const curX = Math.round(pacman.x);
+    const curY = Math.round(pacman.y);
+    if ((pacman.nextDirX !== 0 || pacman.nextDirY !== 0) && isTileOpenForPacman(curX + pacman.nextDirX, curY + pacman.nextDirY)) {
+      pacman.x = curX;
+      pacman.y = curY;
+      pacman.dirX = pacman.nextDirX;
+      pacman.dirY = pacman.nextDirY;
+      pacman.nextDirX = 0;
+      pacman.nextDirY = 0;
+    }
+  }
+
+  // Moving Horizontally
+  if (pacman.dirX !== 0) {
+    const curX = Math.round(pacman.x);
+    const curY = Math.round(pacman.y);
+
+    // Cornering Check: Can we turn in buffered vertical direction?
+    if (pacman.nextDirY !== 0 && Math.abs(pacman.x - curX) <= 0.35) {
+      if (isTileOpenForPacman(curX, curY + pacman.nextDirY)) {
+        pacman.x = curX;
+        pacman.y = curY;
+        pacman.dirX = 0;
+        pacman.dirY = pacman.nextDirY;
+        pacman.nextDirX = 0;
+        pacman.nextDirY = 0;
+      }
+    }
+
+    // Continue horizontal movement
+    if (pacman.dirX !== 0) {
+      const nextTileX = pacman.dirX > 0 ? Math.floor(pacman.x) + 1 : Math.ceil(pacman.x) - 1;
+      if (!isTileOpenForPacman(nextTileX, curY)) {
+        const wallBound = pacman.dirX > 0 ? Math.floor(pacman.x) : Math.ceil(pacman.x);
+        if ((pacman.dirX > 0 && pacman.x + spd >= wallBound) || (pacman.dirX < 0 && pacman.x - spd <= wallBound)) {
+          pacman.x = wallBound;
+          pacman.dirX = 0;
+        } else {
+          pacman.x += pacman.dirX * spd;
+        }
+      } else {
+        pacman.x += pacman.dirX * spd;
+      }
+    }
+  }
+  // Moving Vertically
+  else if (pacman.dirY !== 0) {
+    const curX = Math.round(pacman.x);
+    const curY = Math.round(pacman.y);
+
+    // Cornering Check: Can we turn in buffered horizontal direction?
+    if (pacman.nextDirX !== 0 && Math.abs(pacman.y - curY) <= 0.35) {
+      if (isTileOpenForPacman(curX + pacman.nextDirX, curY)) {
+        pacman.x = curX;
+        pacman.y = curY;
+        pacman.dirY = 0;
+        pacman.dirX = pacman.nextDirX;
+        pacman.nextDirX = 0;
+        pacman.nextDirY = 0;
+      }
+    }
+
+    // Continue vertical movement
+    if (pacman.dirY !== 0) {
+      const nextTileY = pacman.dirY > 0 ? Math.floor(pacman.y) + 1 : Math.ceil(pacman.y) - 1;
+      if (!isTileOpenForPacman(curX, nextTileY)) {
+        const wallBound = pacman.dirY > 0 ? Math.floor(pacman.y) : Math.ceil(pacman.y);
+        if ((pacman.dirY > 0 && pacman.y + spd >= wallBound) || (pacman.dirY < 0 && pacman.y - spd <= wallBound)) {
+          pacman.y = wallBound;
+          pacman.dirY = 0;
+        } else {
+          pacman.y += pacman.dirY * spd;
+        }
+      } else {
+        pacman.y += pacman.dirY * spd;
+      }
+    }
+  }
+
+  // Tunnel wrap
+  if (pacman.x < -0.5) pacman.x = COLS - 0.5;
+  if (pacman.x > COLS - 0.5) pacman.x = -0.5;
+
+  // Mouth chomp animation
+  if (pacman.dirX !== 0 || pacman.dirY !== 0) {
+    pacman.mouth += 0.045 * pacman.mouthDir;
+    if (pacman.mouth > 0.38 || pacman.mouth < 0.02) pacman.mouthDir *= -1;
+  }
+
+  // Calculate orientation angle
+  if (pacman.dirX === 1) pacman.angle = 0;
+  else if (pacman.dirX === -1) pacman.angle = Math.PI;
+  else if (pacman.dirY === 1) pacman.angle = Math.PI / 2;
+  else if (pacman.dirY === -1) pacman.angle = -Math.PI / 2;
+
+  // Eat Dots & Power Pellets
+  const tileR = Math.round(pacman.y);
+  const tileC = Math.round(pacman.x);
+  const dot = dots.find(d => !d.eaten && d.r === tileR && d.c === tileC);
+  if (dot) {
+    dot.eaten = true;
+    dotsRemaining--;
+    if (dot.big) {
+      score += 50;
+      frightTimer = Math.max(180, 420 - (currentLevel - 1) * 40);
+      ghostsEatenInFright = 0;
+      playSound('power');
+      ghosts.forEach(g => {
+        if (g.state === 'CHASE' || g.state === 'SCATTER') {
+          g.state = 'FRIGHTENED';
+          // Reverse direction on fright start
+          g.dirX = -g.dirX;
+          g.dirY = -g.dirY;
+        }
+      });
+    } else {
+      score += 10;
+      playSound('waka');
+    }
+
+    // Fruit spawn triggers at 30 and 70 dots eaten
+    const eatenCount = totalDots - dotsRemaining;
+    if (eatenCount === 30 || eatenCount === 70) {
+      spawnFruit();
+    }
+
+    updateUI();
+
+    if (dotsRemaining <= 0) {
+      nextLevel();
+      return;
+    }
+  }
+
+  // Eat Fruit
+  if (fruit && Math.hypot(pacman.x - fruit.x, pacman.y - fruit.y) < 0.6) {
+    score += fruit.points;
+    playSound('eatfruit');
+    floatingScores.push({
+      x: fruit.x * TILE_SIZE + TILE_SIZE / 2,
+      y: fruit.y * TILE_SIZE + TILE_SIZE / 2,
+      text: `+${fruit.points}`,
+      color: '#fde047',
+      life: 60
+    });
+    fruit = null;
+    updateUI();
+  }
+}
+
+// Ghost AI & Pathfinding
+function getGhostTarget(g) {
+  // Eaten eyes target ghost house entrance
+  if (g.state === 'EATEN') {
+    return { x: 7, y: 6 };
+  }
+
+  // Scatter mode targets respective corners
+  if (g.state === 'SCATTER') {
+    return g.homeCorner;
+  }
+
+  // Chase mode: 4 distinct personalities
+  if (g.id === 'blinky') {
+    // Blinky: Chases Pac-Man directly
+    return { x: pacman.x, y: pacman.y };
+  } else if (g.id === 'pinky') {
+    // Pinky: Ambush predator (targets 4 tiles ahead of Pac-Man)
+    return {
+      x: pacman.x + 4 * pacman.dirX,
+      y: pacman.y + 4 * pacman.dirY
+    };
+  } else if (g.id === 'inky') {
+    // Inky: Flanker (vector reflection of Blinky around Pac-Man)
+    const blinky = ghosts.find(gh => gh.id === 'blinky') || { x: 7, y: 4 };
+    const pivotX = pacman.x + 2 * pacman.dirX;
+    const pivotY = pacman.y + 2 * pacman.dirY;
+    return {
+      x: 2 * pivotX - blinky.x,
+      y: 2 * pivotY - blinky.y
+    };
+  } else if (g.id === 'clyde') {
+    // Clyde: Chases when far (> 6 tiles), retreats to corner when close
+    const dist = Math.hypot(g.x - pacman.x, g.y - pacman.y);
+    if (dist > 6) {
+      return { x: pacman.x, y: pacman.y };
+    } else {
+      return g.homeCorner;
+    }
+  }
+
+  return { x: pacman.x, y: pacman.y };
+}
+
+function updateGhosts() {
+  if (isDying || isReady) return;
+
+  if (frightTimer > 0) {
+    frightTimer--;
+    if (frightTimer === 0) {
+      ghosts.forEach(g => {
+        if (g.state === 'FRIGHTENED') g.state = 'CHASE';
+      });
+    }
+  }
+
+  const allDirs = [
+    { dx: 0, dy: -1 }, // Up
+    { dx: -1, dy: 0 }, // Left
+    { dx: 0, dy: 1 },  // Down
+    { dx: 1, dy: 0 }   // Right
+  ];
+
+  ghosts.forEach(g => {
+    // House release timing
+    if (g.state === 'HOUSE') {
+      if (g.houseTimer > 0) {
+        g.houseTimer--;
+        // Bounce vertically inside house
+        g.y += g.dirY * 0.03;
+        if (g.y <= 5.8) g.dirY = 1;
+        if (g.y >= 7.2) g.dirY = -1;
+        return;
+      } else {
+        // Exit house
+        g.x = 7;
+        g.y -= 0.05;
+        if (g.y <= 4.0) {
+          g.y = 4.0;
+          g.state = frightTimer > 0 ? 'FRIGHTENED' : 'CHASE';
+          g.dirX = -1;
+          g.dirY = 0;
+        }
+        return;
+      }
+    }
+
+    // Determine speed
+    let spd = g.baseSpeed * (1 + (currentLevel - 1) * 0.04);
+    if (g.state === 'EATEN') {
+      spd = 0.16; // Eyes move fast
+    } else if (g.state === 'FRIGHTENED') {
+      spd = 0.045; // Slow in fright
+    } else if (g.y === 8 && (g.x < 3 || g.x > COLS - 4)) {
+      spd *= 0.6; // Tunnel slowdown
+    }
+
+    // Check if ghost has reached house center to regenerate
+    if (g.state === 'EATEN') {
+      if (Math.abs(g.x - 7) < 0.3 && Math.abs(g.y - 6) < 0.3) {
+        g.x = 7;
+        g.y = 6;
+        g.state = 'CHASE';
+        g.dirX = 0;
+        g.dirY = -1;
+      }
+    }
+
+    // Tile intersection decision
+    const curX = Math.round(g.x);
+    const curY = Math.round(g.y);
+    const distToCenter = Math.hypot(g.x - curX, g.y - curY);
+
+    if (distToCenter <= spd) {
+      g.x = curX;
+      g.y = curY;
+
+      // Filter valid directions (cannot immediately reverse 180 degrees)
+      let possibleDirs = allDirs.filter(d => {
+        const isReverse = (d.dx === -g.dirX && d.dy === -g.dirY);
+        if (isReverse && g.state !== 'HOUSE') return false;
+        return isTileOpenForGhost(g.x + d.dx, g.y + d.dy, g);
+      });
+
+      if (possibleDirs.length === 0) {
+        possibleDirs = allDirs.filter(d => isTileOpenForGhost(g.x + d.dx, g.y + d.dy, g));
+      }
+
+      if (possibleDirs.length > 0) {
+        if (g.state === 'FRIGHTENED') {
+          // Random direction choice in fright
+          const pick = possibleDirs[Math.floor(Math.random() * possibleDirs.length)];
+          g.dirX = pick.dx;
+          g.dirY = pick.dy;
+        } else {
+          // Pathfind towards target tile (Euclidean distance)
+          const target = getGhostTarget(g);
+          possibleDirs.sort((a, b) => {
+            const distA = Math.hypot((g.x + a.dx) - target.x, (g.y + a.dy) - target.y);
+            const distB = Math.hypot((g.x + b.dx) - target.x, (g.y + b.dy) - target.y);
+            return distA - distB;
+          });
+          g.dirX = possibleDirs[0].dx;
+          g.dirY = possibleDirs[0].dy;
+        }
+      }
+    }
+
+    g.x += g.dirX * spd;
+    g.y += g.dirY * spd;
+
+    // Tunnel wrap for ghosts
+    if (g.x < -0.5) g.x = COLS - 0.5;
+    if (g.x > COLS - 0.5) g.x = -0.5;
+
+    // Collision with Pac-Man
+    const distToPacman = Math.hypot(g.x - pacman.x, g.y - pacman.y);
+    if (distToPacman < 0.65) {
+      if (g.state === 'FRIGHTENED') {
+        // Eat ghost
+        playSound('eatghost');
+        g.state = 'EATEN';
+        ghostsEatenInFright++;
+        const ghostScore = 200 * Math.pow(2, ghostsEatenInFright - 1);
+        score += ghostScore;
+        floatingScores.push({
+          x: g.x * TILE_SIZE + TILE_SIZE / 2,
+          y: g.y * TILE_SIZE + TILE_SIZE / 2,
+          text: `+${ghostScore}`,
+          color: '#38bdf8',
+          life: 60
+        });
+        updateUI();
+      } else if (g.state !== 'EATEN' && g.state !== 'HOUSE') {
+        // Pac-Man Dies
+        handlePacmanDeath();
+      }
+    }
+  });
+}
+
+function handlePacmanDeath() {
+  if (isDying) return;
+  isDying = true;
+  deathAnimTimer = 0;
+  playSound('die');
+
+  setTimeout(() => {
+    lives--;
+    updateUI();
+    if (lives <= 0) {
+      gameRunning = false;
+      overlayAction = 'start';
+      document.getElementById('overlayTitle').textContent = 'GAME OVER';
+      document.getElementById('overlaySubtitle').textContent = `FINAL SCORE: ${score}`;
+      document.getElementById('startBtn').textContent = 'PLAY AGAIN';
+      document.getElementById('overlay').classList.remove('hidden');
+    } else {
+      resetPositions();
+      isDying = false;
+      showReady(() => {
+        pacman.dirX = -1;
+        pacman.nextDirX = -1;
+      });
+    }
+  }, 1000);
+}
+
+// Rendering routines
+function drawMaze() {
+  ctx.lineWidth = 2;
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const ch = MAP_TEMPLATE[r][c];
+      const x = c * TILE_SIZE;
+      const y = r * TILE_SIZE;
+
+      if (ch === '1') {
+        ctx.fillStyle = '#172554';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+        ctx.strokeStyle = '#2563eb';
+        ctx.strokeRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+      } else if (ch === 'G') {
+        // Ghost house gate
+        ctx.strokeStyle = '#ec4899';
+        ctx.beginPath();
+        ctx.moveTo(x, y + TILE_SIZE / 2);
+        ctx.lineTo(x + TILE_SIZE, y + TILE_SIZE / 2);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function drawDots() {
+  const pulse = Math.sin(performance.now() * 0.008) * 1.5;
+
+  dots.forEach(d => {
+    if (!d.eaten) {
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      const cx = d.c * TILE_SIZE + TILE_SIZE / 2;
+      const cy = d.r * TILE_SIZE + TILE_SIZE / 2;
+      const rad = d.big ? Math.max(4, 6 + pulse) : 2.5;
+      ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+function drawFruit() {
+  if (!fruit) return;
+  fruit.timer--;
+  if (fruit.timer <= 0) {
+    fruit = null;
+    return;
+  }
+
+  const cx = fruit.x * TILE_SIZE + TILE_SIZE / 2;
+  const cy = fruit.y * TILE_SIZE + TILE_SIZE / 2;
+
+  ctx.font = '16px serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(fruit.icon, cx, cy);
+}
+
+function drawGhostSprite(g) {
+  const gx = g.x * TILE_SIZE + TILE_SIZE / 2;
+  const gy = g.y * TILE_SIZE + TILE_SIZE / 2;
+
+  // Eaten state: Just render eyes
+  if (g.state === 'EATEN') {
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(gx - 4, gy, 4, 0, Math.PI * 2);
+    ctx.arc(gx + 4, gy, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#2563eb';
+    ctx.beginPath();
+    ctx.arc(gx - 4 + g.dirX * 2, gy + g.dirY * 2, 2, 0, Math.PI * 2);
+    ctx.arc(gx + 4 + g.dirX * 2, gy + g.dirY * 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  const isFrightened = (g.state === 'FRIGHTENED');
+  const isFlashing = isFrightened && frightTimer < 100 && (Math.floor(frightTimer / 10) % 2 === 0);
+
+  ctx.fillStyle = isFrightened ? (isFlashing ? '#ffffff' : '#2563eb') : g.color;
+
+  // Ghost Dome Body
+  ctx.beginPath();
+  ctx.arc(gx, gy - 2, 8, Math.PI, 0, false);
+  ctx.lineTo(gx + 8, gy + 7);
+
+  // Wavy bottom tentacles
+  const wave = Math.sin(performance.now() * 0.015) * 2;
+  ctx.lineTo(gx + 4, gy + 5 + wave);
+  ctx.lineTo(gx, gy + 7);
+  ctx.lineTo(gx - 4, gy + 5 - wave);
+  ctx.lineTo(gx - 8, gy + 7);
+  ctx.closePath();
+  ctx.fill();
+
+  if (isFrightened) {
+    // Frightened squiggly face
+    ctx.fillStyle = isFlashing ? '#ef4444' : '#fde047';
+    ctx.fillRect(gx - 4, gy - 3, 2, 2);
+    ctx.fillRect(gx + 2, gy - 3, 2, 2);
+    // Squiggly mouth
+    ctx.strokeStyle = isFlashing ? '#ef4444' : '#fde047';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(gx - 5, gy + 3);
+    ctx.lineTo(gx - 2, gy + 1);
+    ctx.lineTo(gx, gy + 3);
+    ctx.lineTo(gx + 2, gy + 1);
+    ctx.lineTo(gx + 5, gy + 3);
+    ctx.stroke();
+  } else {
+    // Expressive directional eyes
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(gx - 4, gy - 3, 3, 0, Math.PI * 2);
+    ctx.arc(gx + 4, gy - 3, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#1e3a8a';
+    ctx.beginPath();
+    ctx.arc(gx - 4 + g.dirX * 1.5, gy - 3 + g.dirY * 1.5, 1.6, 0, Math.PI * 2);
+    ctx.arc(gx + 4 + g.dirX * 1.5, gy - 3 + g.dirY * 1.5, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawPacman() {
+  const px = pacman.x * TILE_SIZE + TILE_SIZE / 2;
+  const py = pacman.y * TILE_SIZE + TILE_SIZE / 2;
+
+  if (isDying) {
+    // Death shrink animation
+    deathAnimTimer += 0.03;
+    const mouthAngle = Math.min(Math.PI, deathAnimTimer * Math.PI);
+    ctx.fillStyle = '#facc15';
+    ctx.beginPath();
+    ctx.arc(px, py, Math.max(0, 9 * (1 - deathAnimTimer * 0.8)), -Math.PI / 2 + mouthAngle, -Math.PI / 2 + (2 * Math.PI - mouthAngle));
+    ctx.lineTo(px, py);
+    ctx.fill();
+    return;
+  }
+
+  ctx.fillStyle = '#facc15';
+  ctx.beginPath();
+  ctx.arc(
+    px,
+    py,
+    9,
+    pacman.angle + pacman.mouth * Math.PI,
+    pacman.angle + (2 - pacman.mouth) * Math.PI
+  );
+  ctx.lineTo(px, py);
+  ctx.fill();
+}
+
+function drawFloatingScores() {
+  for (let i = floatingScores.length - 1; i >= 0; i--) {
+    const fs = floatingScores[i];
+    fs.y -= 0.5;
+    fs.life--;
+
+    ctx.fillStyle = fs.color;
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(fs.text, fs.x, fs.y);
+
+    if (fs.life <= 0) {
+      floatingScores.splice(i, 1);
+    }
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawMaze();
+  drawDots();
+  drawFruit();
+  ghosts.forEach(drawGhostSprite);
+  drawPacman();
+  drawFloatingScores();
+}
+
+function gameLoop(time) {
+  if (gameRunning && !isPaused) {
+    updatePacman();
+    updateGhosts();
+    draw();
+    gameLoopId = requestAnimationFrame(gameLoop);
+  }
+}
+
+// Virtual D-pad touch handling with slide/drag navigation
+const dpadContainer = document.getElementById('dpadContainer');
+const dpadBtns = {
+  up: document.getElementById('btnUp'),
+  down: document.getElementById('btnDown'),
+  left: document.getElementById('btnLeft'),
+  right: document.getElementById('btnRight')
+};
+
+function clearDpadActive() {
+  Object.values(dpadBtns).forEach(b => b.classList.remove('active'));
+}
+
+function handleDpadPoint(clientX, clientY) {
+  const rect = dpadContainer.getBoundingClientRect();
+  const relX = clientX - (rect.left + rect.width / 2);
+  const relY = clientY - (rect.top + rect.height / 2);
+
+  clearDpadActive();
+
+  if (Math.abs(relX) > Math.abs(relY)) {
+    if (relX > 15) {
+      dpadBtns.right.classList.add('active');
+      pressDir(1, 0);
+    } else if (relX < -15) {
+      dpadBtns.left.classList.add('active');
+      pressDir(-1, 0);
+    }
+  } else {
+    if (relY > 15) {
+      dpadBtns.down.classList.add('active');
+      pressDir(0, 1);
+    } else if (relY < -15) {
+      dpadBtns.up.classList.add('active');
+      pressDir(0, -1);
+    }
+  }
+}
+
+let isDpadTouching = false;
+dpadContainer.addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  isDpadTouching = true;
+  handleDpadPoint(e.clientX, e.clientY);
+});
+
+window.addEventListener('pointermove', (e) => {
+  if (isDpadTouching) {
+    e.preventDefault();
+    handleDpadPoint(e.clientX, e.clientY);
+  }
+});
+
+window.addEventListener('pointerup', () => {
+  isDpadTouching = false;
+  clearDpadActive();
+});
+window.addEventListener('pointercancel', () => {
+  isDpadTouching = false;
+  clearDpadActive();
+});
+
+// Discrete button click backups
+function setupBtn(id, dx, dy) {
+  const el = document.getElementById(id);
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    pressDir(dx, dy);
+  });
+}
+setupBtn('btnUp', 0, -1);
+setupBtn('btnDown', 0, 1);
+setupBtn('btnLeft', -1, 0);
+setupBtn('btnRight', 1, 0);
+
+// Start / Restart button
+const startBtn = document.getElementById('startBtn');
+startBtn.addEventListener('click', (e) => {
+  e.preventDefault();
+  resumeOrStart();
+});
+startBtn.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  resumeOrStart();
+}, { passive: false });
+
+// Keyboard controls
+window.addEventListener('keydown', (e) => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'W', 'a', 'A', 's', 'S', 'd', 'D', ' '].includes(e.key)) {
+    e.preventDefault();
+  }
+  if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') pressDir(0, -1);
+  if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') pressDir(0, 1);
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') pressDir(-1, 0);
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') pressDir(1, 0);
+
+  if (e.key === 'p' || e.key === 'P') {
+    isPaused = !isPaused;
+    if (!isPaused && gameRunning) {
+      gameLoopId = requestAnimationFrame(gameLoop);
+    }
+  }
+});
+
+// Swipe controls on canvas
+(function() {
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let isSwiping = false;
+
+  canvas.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      isSwiping = true;
+    }
+  }, { passive: true });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (!isSwiping || e.touches.length !== 1) return;
+    const dx = e.touches[0].clientX - touchStartX;
+    const dy = e.touches[0].clientY - touchStartY;
+
+    if (Math.abs(dx) > 18 || Math.abs(dy) > 18) {
+      if (Math.abs(dx) > Math.abs(dy)) {
+        pressDir(dx > 0 ? 1 : -1, 0);
+      } else {
+        pressDir(0, dy > 0 ? 1 : -1);
+      }
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', () => {
+    isSwiping = false;
+  }, { passive: true });
+})();
+
+// Initial display render
+initMap();
+resetPositions();
+updateUI();
+draw();
+</script>
+</body>
+</html>

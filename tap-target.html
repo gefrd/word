@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Tap Target!</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'Arial Rounded MT Bold', Arial, sans-serif;
+    background: #fff9c4;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  #header {
+    width: 100%;
+    background: #ff7043;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 0 #e64a19;
+  }
+
+  #header h1 { color: #fff; font-size: 22px; }
+
+  .stat {
+    background: #fff;
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 16px;
+    font-weight: bold;
+    color: #e64a19;
+  }
+
+  #timer-bar-wrap {
+    width: 100%;
+    height: 10px;
+    background: #ffccbc;
+  }
+  #timer-bar {
+    height: 10px;
+    background: #ff7043;
+    transition: width 0.1s linear;
+    width: 100%;
+  }
+
+  #arena {
+    position: relative;
+    width: 100%;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  .target {
+    position: absolute;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    cursor: pointer;
+    transition: transform 0.08s;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    animation: pop-in 0.15s ease-out;
+  }
+  .target:active { transform: scale(0.85); }
+
+  @keyframes pop-in {
+    from { transform: scale(0); }
+    to   { transform: scale(1); }
+  }
+
+  .shrink-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 3px solid rgba(0,0,0,0.15);
+    pointer-events: none;
+  }
+
+  #overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,249,196,0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    z-index: 100;
+  }
+  #overlay h2 { font-size: 36px; color: #ff7043; }
+  #overlay p  { font-size: 18px; color: #555; }
+  #overlay .big { font-size: 52px; font-weight: bold; color: #ff7043; }
+
+  #start-btn {
+    background: #ff7043;
+    color: #fff;
+    border: none;
+    border-radius: 50px;
+    padding: 16px 48px;
+    font-size: 22px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 5px 0 #e64a19;
+    font-family: inherit;
+    active-transform: translateY(3px);
+  }
+  #start-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #e64a19; }
+
+  #combo-display {
+    position: fixed;
+    top: 70px;
+    right: 16px;
+    font-size: 18px;
+    font-weight: bold;
+    color: #ff7043;
+    background: #fff;
+    border-radius: 20px;
+    padding: 4px 12px;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.15);
+    display: none;
+  }
+
+  .score-pop {
+    position: absolute;
+    font-size: 22px;
+    font-weight: bold;
+    color: #ff7043;
+    pointer-events: none;
+    animation: float-up 0.7s ease-out forwards;
+    z-index: 50;
+  }
+  @keyframes float-up {
+    0%   { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-60px) scale(1.4); }
+  }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>🎯 TAP!</h1>
+  <div class="stat">⭐ <span id="score-el">0</span></div>
+  <div class="stat">❤️ <span id="lives-el">3</span></div>
+</div>
+<div id="timer-bar-wrap"><div id="timer-bar"></div></div>
+
+<div id="arena">
+  <div id="overlay" style="display:none;">
+    <h2>🎯 TAP TARGET</h2>
+    <p>Tap the circles before they disappear!</p>
+    <div class="big" id="best-display">Best: 0</div>
+    <button id="start-btn">PLAY!</button>
+  </div>
+</div>
+
+<div id="combo-display" id="combo-el">🔥 x<span id="combo-num">1</span></div>
+
+<script>
+var scoreEl   = document.getElementById('score-el');
+var livesEl   = document.getElementById('lives-el');
+var timerBar  = document.getElementById('timer-bar');
+var overlay   = document.getElementById('overlay');
+var arena     = document.getElementById('arena');
+var bestDisp  = document.getElementById('best-display');
+var comboDisp = document.getElementById('combo-display');
+var comboNum  = document.getElementById('combo-num');
+
+var score = 0, lives = 3, combo = 0, best = 0;
+var running = false;
+var targets = [];
+var spawnTimer, gameTimer;
+var timeLeft = 30;
+var spawnInterval = 1000;
+var targetLifetime = 2200;
+
+var COLORS = [
+  { bg: '#ff7043', emoji: '🎯' },
+  { bg: '#42a5f5', emoji: '⭐' },
+  { bg: '#66bb6a', emoji: '🌟' },
+  { bg: '#ab47bc', emoji: '💜' },
+  { bg: '#ffa726', emoji: '🔥' },
+  { bg: '#ef5350', emoji: '❤️' },
+  { bg: '#26c6da', emoji: '💙' },
+  { bg: '#d4e157', emoji: '💛' },
+];
+
+var SIZES = [64, 74, 86, 56];
+
+function startGame() {
+  score = 0; lives = 3; combo = 0; timeLeft = 30;
+  spawnInterval = 1000; targetLifetime = 2200;
+  scoreEl.textContent = '0';
+  livesEl.textContent = '3';
+  timerBar.style.width = '100%';
+  timerBar.style.background = '#ff7043';
+  overlay.style.display = 'none';
+  running = true;
+
+  // Clear old targets
+  targets.forEach(function(t) { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
+  targets = [];
+
+  spawnTarget();
+  spawnTimer = setInterval(function() {
+    if (running) spawnTarget();
+  }, spawnInterval);
+
+  // Speed up over time
+  var diffTimer = setInterval(function() {
+    if (!running) { clearInterval(diffTimer); return; }
+    spawnInterval = Math.max(500, spawnInterval - 80);
+    targetLifetime = Math.max(1100, targetLifetime - 100);
+    clearInterval(spawnTimer);
+    spawnTimer = setInterval(function() { if (running) spawnTarget(); }, spawnInterval);
+  }, 5000);
+
+  // Countdown timer
+  var startTime = Date.now();
+  gameTimer = setInterval(function() {
+    var elapsed = (Date.now() - startTime) / 1000;
+    timeLeft = Math.max(0, 30 - elapsed);
+    var pct = (timeLeft / 30) * 100;
+    timerBar.style.width = pct + '%';
+    if (timeLeft <= 8) timerBar.style.background = '#ef5350';
+    if (timeLeft <= 0) {
+      clearInterval(gameTimer);
+      clearInterval(diffTimer);
+      endGame();
+    }
+  }, 100);
+}
+
+function spawnTarget() {
+  if (!running) return;
+  var aW = arena.offsetWidth;
+  var aH = arena.offsetHeight;
+  var col = COLORS[Math.floor(Math.random() * COLORS.length)];
+  var sz  = SIZES[Math.floor(Math.random() * SIZES.length)];
+  var x   = Math.random() * (aW - sz - 20) + 10;
+  var y   = Math.random() * (aH - sz - 20) + 10;
+
+  var el = document.createElement('div');
+  el.className = 'target';
+  el.style.cssText = 'width:' + sz + 'px;height:' + sz + 'px;left:' + x + 'px;top:' + y + 'px;background:' + col.bg + ';';
+  el.textContent = col.emoji;
+  arena.appendChild(el);
+
+  var obj = { el: el, alive: true, born: Date.now(), lifetime: targetLifetime };
+  targets.push(obj);
+
+  el.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    hitTarget(obj);
+  }, { passive: false });
+  el.addEventListener('click', function() { hitTarget(obj); });
+
+  // Shrinking ring to show time left
+  var ring = document.createElement('div');
+  ring.className = 'shrink-ring';
+  ring.style.cssText = 'width:' + sz + 'px;height:' + sz + 'px;left:' + x + 'px;top:' + y + 'px;';
+  arena.appendChild(ring);
+  obj.ring = ring;
+
+  // Auto-remove when lifetime expires
+  obj.timeout = setTimeout(function() {
+    if (obj.alive) missTarget(obj);
+  }, targetLifetime);
+
+  // Animate ring shrinking
+  var start = Date.now();
+  function shrinkRing() {
+    if (!obj.alive) return;
+    var age = Date.now() - start;
+    var pct = 1 - (age / targetLifetime);
+    if (pct < 0) pct = 0;
+    var newSz = sz * (0.4 + pct * 0.6);
+    var offset = (sz - newSz) / 2;
+    ring.style.width  = newSz + 'px';
+    ring.style.height = newSz + 'px';
+    ring.style.left   = (x + offset) + 'px';
+    ring.style.top    = (y + offset) + 'px';
+    if (pct > 0) requestAnimationFrame(shrinkRing);
+  }
+  requestAnimationFrame(shrinkRing);
+}
+
+function hitTarget(obj) {
+  if (!obj.alive || !running) return;
+  obj.alive = false;
+  clearTimeout(obj.timeout);
+  combo++;
+  var pts = combo >= 3 ? 20 : 10;
+  score += pts;
+  scoreEl.textContent = score;
+
+  // Score popup
+  var pop = document.createElement('div');
+  pop.className = 'score-pop';
+  var rect = obj.el.getBoundingClientRect();
+  var arenaRect = arena.getBoundingClientRect();
+  pop.style.left = (rect.left - arenaRect.left + 10) + 'px';
+  pop.style.top  = (rect.top  - arenaRect.top) + 'px';
+  pop.textContent = '+' + pts + (combo >= 3 ? ' 🔥' : '');
+  arena.appendChild(pop);
+  setTimeout(function() { if (pop.parentNode) pop.parentNode.removeChild(pop); }, 700);
+
+  // Combo display
+  if (combo >= 2) {
+    comboDisp.style.display = 'block';
+    comboNum.textContent = combo;
+  }
+
+  removeTarget(obj);
+}
+
+function missTarget(obj) {
+  if (!obj.alive) return;
+  obj.alive = false;
+  lives--;
+  livesEl.textContent = lives;
+  combo = 0;
+  comboDisp.style.display = 'none';
+  // Flash target red
+  if (obj.el) obj.el.style.background = '#ccc';
+  removeTarget(obj);
+  if (lives <= 0 && running) {
+    clearInterval(gameTimer);
+    endGame();
+  }
+}
+
+function removeTarget(obj) {
+  setTimeout(function() {
+    if (obj.el && obj.el.parentNode) obj.el.parentNode.removeChild(obj.el);
+    if (obj.ring && obj.ring.parentNode) obj.ring.parentNode.removeChild(obj.ring);
+  }, 150);
+}
+
+function endGame() {
+  running = false;
+  clearInterval(spawnTimer);
+  targets.forEach(function(t) { t.alive = false; clearTimeout(t.timeout); });
+  comboDisp.style.display = 'none';
+  if (score > best) best = score;
+  bestDisp.textContent = 'Best: ' + best;
+  overlay.innerHTML = '';
+
+  var h2 = document.createElement('h2');
+  h2.textContent = lives <= 0 ? '💔 Out of lives!' : '⏰ Time\'s up!';
+  var big = document.createElement('div');
+  big.className = 'big';
+  big.textContent = score + ' pts';
+  var p = document.createElement('p');
+  p.textContent = score >= best ? '🌟 New best score!' : 'Best: ' + best;
+  var btn = document.createElement('button');
+  btn.id = 'start-btn';
+  btn.textContent = 'PLAY AGAIN!';
+  btn.onclick = startGame;
+
+  overlay.appendChild(h2);
+  overlay.appendChild(big);
+  overlay.appendChild(p);
+  overlay.appendChild(btn);
+  overlay.style.display = 'flex';
+}
+
+document.getElementById('start-btn').onclick = startGame;
+startGame();
+</script>
+</body>
+</html>

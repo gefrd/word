@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>City Flip</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;}
+body{min-height:100vh;background:#0F1923;overflow:hidden;font-family:'DM Mono',monospace;color:white;touch-action:manipulation;}
+
+#city-canvas{position:fixed;inset:0;z-index:1;}
+#ui-layer{position:fixed;inset:0;z-index:10;pointer-events:none;}
+
+/* HUD */
+#hud{position:fixed;top:0;left:0;right:0;z-index:100;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;background:linear-gradient(180deg,rgba(15,25,35,0.95),transparent);}
+.hud-stat{text-align:center;}
+.hud-num{font-family:'Bebas Neue';font-size:2rem;line-height:1;color:white;}
+.hud-lbl{font-size:0.55rem;color:rgba(255,255,255,0.3);letter-spacing:2px;text-transform:uppercase;}
+#accuracy-bar{width:100%;max-width:100px;height:3px;background:rgba(255,255,255,0.1);border-radius:2px;margin-top:3px;}
+#accuracy-fill{height:100%;background:#39FF14;border-radius:2px;width:100%;transition:width 0.4s;}
+
+/* FALLING TILE */
+#tile-zone{position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:50;display:flex;flex-direction:column;align-items:center;gap:10px;}
+#tile-label{font-size:0.6rem;color:rgba(255,255,255,0.3);letter-spacing:3px;text-transform:uppercase;}
+#current-tile{cursor:pointer;transition:transform 0.2s;}
+#current-tile:active{transform:scale(0.95);}
+#next-label{font-size:0.55rem;color:rgba(255,255,255,0.2);letter-spacing:2px;margin-top:6px;}
+#next-tile{opacity:0.4;}
+
+/* CONTROLS */
+#controls{position:fixed;bottom:120px;left:50%;transform:translateX(-50%);z-index:100;display:flex;gap:14px;}
+.ctrl-btn{width:60px;height:60px;border-radius:14px;background:rgba(255,255,255,0.06);border:1.5px solid rgba(255,255,255,0.12);color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-size:1.4rem;transition:all 0.15s;}
+.ctrl-btn span{font-size:0.5rem;color:rgba(255,255,255,0.3);letter-spacing:1px;margin-top:2px;}
+.ctrl-btn:active{transform:scale(0.9);background:rgba(255,255,255,0.12);}
+
+/* SKYLINE TARGET */
+#skyline-area{position:fixed;bottom:0;left:0;right:0;z-index:5;}
+#target-label{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);font-size:0.55rem;color:rgba(255,255,255,0.25);letter-spacing:3px;z-index:100;}
+
+/* SCORE POPUP */
+.score-pop{position:fixed;z-index:300;pointer-events:none;font-family:'Bebas Neue';font-size:1.8rem;animation:popUp 0.7s forwards;}
+
+/* SCREENS */
+#start-screen,#end-screen{position:fixed;inset:0;z-index:500;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;background:#0F1923;}
+.city-title{font-family:'Bebas Neue';font-size:4rem;letter-spacing:4px;background:linear-gradient(135deg,#39FF14,#00BFFF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1;}
+.city-sub{font-size:0.7rem;color:rgba(255,255,255,0.3);letter-spacing:4px;text-transform:uppercase;margin-bottom:24px;}
+.info-box{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:14px;padding:14px 20px;margin-bottom:24px;font-size:0.8rem;color:rgba(255,255,255,0.5);line-height:1.8;text-align:center;max-width:300px;}
+.city-btn{background:linear-gradient(135deg,#39FF14,#00BFFF);color:#0F1923;border:none;border-radius:12px;padding:15px 48px;font-family:'Bebas Neue';font-size:1.4rem;letter-spacing:3px;cursor:pointer;}
+.city-btn:active{transform:scale(0.95);}
+.final-big{font-family:'Bebas Neue';font-size:5rem;background:linear-gradient(135deg,#39FF14,#00BFFF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+.rank-txt{font-family:'Bebas Neue';font-size:1.5rem;color:rgba(255,255,255,0.5);margin:4px 0 16px;}
+
+#level-info{position:fixed;top:62px;left:50%;transform:translateX(-50%);z-index:100;font-family:'Bebas Neue';font-size:0.9rem;color:rgba(255,255,255,0.2);letter-spacing:3px;}
+
+@keyframes popUp{0%{opacity:0;transform:translateX(-50%) translateY(0);}20%{opacity:1;}80%{opacity:1;}100%{opacity:0;transform:translateX(-50%) translateY(-60px);}}
+@keyframes buildingDrop{from{transform:translateY(-40px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+</style>
+</head>
+<body>
+
+<canvas id="city-canvas"></canvas>
+
+<div id="hud">
+  <div class="hud-stat">
+    <div class="hud-num" id="score-v">0</div>
+    <div class="hud-lbl">Score</div>
+  </div>
+  <div class="hud-stat">
+    <div class="hud-num" id="level-v">1</div>
+    <div class="hud-lbl">Level</div>
+    <div id="accuracy-bar"><div id="accuracy-fill"></div></div>
+  </div>
+  <div class="hud-stat">
+    <div class="hud-num" id="tiles-v">0</div>
+    <div class="hud-lbl">Placed</div>
+  </div>
+</div>
+
+<div id="level-info">BUILD THE SKYLINE</div>
+
+<div id="tile-zone">
+  <div id="tile-label">TAP TO ROTATE • PLACE BELOW</div>
+  <canvas id="current-tile" width="80" height="100"></canvas>
+  <div id="next-label">NEXT</div>
+  <canvas id="next-tile" width="50" height="65"></canvas>
+</div>
+
+<div id="controls">
+  <div class="ctrl-btn" onclick="flipH()">↔<span>FLIP H</span></div>
+  <div class="ctrl-btn" onclick="rotateTile()">↻<span>ROTATE</span></div>
+  <div class="ctrl-btn" onclick="flipV()">↕<span>FLIP V</span></div>
+  <div class="ctrl-btn" onclick="placeTile()">▼<span>PLACE</span></div>
+</div>
+
+<div id="target-label">TARGET SKYLINE ↓</div>
+
+<div id="start-screen" style="display:none;">
+  <div style="font-size:3rem;margin-bottom:10px">🏙️</div>
+  <div class="city-title">CITY<br>FLIP</div>
+  <div class="city-sub">Build the Skyline</div>
+  <div class="info-box">
+    🏗️ A target skyline appears at the bottom<br>
+    🔄 Rotate & flip the falling building tile<br>
+    ▼ Place it to match the silhouette<br>
+    ⭐ More accuracy = more points!
+  </div>
+  <button class="city-btn" onclick="startGame()">BUILD IT</button>
+</div>
+
+<div id="end-screen" style="display:none;">
+  <div style="font-size:3rem;margin-bottom:8px">🌆</div>
+  <div class="final-big" id="end-score">0</div>
+  <div class="rank-txt" id="end-rank">ARCHITECT</div>
+  <p style="color:rgba(255,255,255,0.3);font-size:0.75rem;margin-bottom:4px">Tiles placed: <span id="end-tiles" style="color:#39FF14">0</span></p>
+  <p style="color:rgba(255,255,255,0.3);font-size:0.75rem;margin-bottom:24px">Avg accuracy: <span id="end-acc" style="color:#00BFFF">0%</span></p>
+  <button class="city-btn" onclick="startGame()">BUILD AGAIN</button>
+</div>
+
+<script>
+const canvas=document.getElementById('city-canvas');
+const ctx=canvas.getContext('2d');
+let W=canvas.width=window.innerWidth;
+let H=canvas.height=window.innerHeight;
+
+// BUILDING SHAPES: each is a pixel-art column array [widths from left to right]
+const BUILDING_SHAPES=[
+  // [col heights relative, width]
+  {cols:[3,4,3,4,3],w:5,name:'Office'},
+  {cols:[2,2,5,2,2],w:5,name:'Tower'},
+  {cols:[4,3,3,3,4],w:5,name:'Arch'},
+  {cols:[1,3,4,3,1],w:5,name:'Pyramid'},
+  {cols:[4,4,4,4,4],w:5,name:'Block'},
+  {cols:[5,1,5,1,5],w:5,name:'Antenna'},
+  {cols:[3,5,3,5,3],w:5,name:'Battlements'},
+  {cols:[2,4,5,4,2],w:5,name:'Dome'},
+  {cols:[5,3,1,3,5],w:5,name:'V-Shape'},
+  {cols:[1,1,5,5,5],w:5,name:'Ramp'},
+];
+
+const TILE_W=80,TILE_H=100;
+const COL_W=TILE_W/5;
+const UNIT_H=TILE_H/5;
+
+let score=0,level=1,tilesPlaced=0,accuracySum=0,gameActive=false;
+let currentShape=null,nextShape=null,currentRotation=0,flippedH=false,flippedV=false;
+let targetColumns=[],placedColumns=[],skylineX=0,skylineY=0,skylineColW=0;
+let levelTiles=0,levelTarget=8;
+
+// Colors
+const TILE_COLOR='#00BFFF';
+const TARGET_COLOR='rgba(57,255,20,0.2)';
+const PLACED_COLOR='rgba(57,255,20,0.6)';
+const MISMATCH_COLOR='rgba(255,50,50,0.4)';
+
+function getTransformedCols(shape,rot,fH,fV){
+  let cols=[...shape.cols];
+  // Rotate 90: transpose (for simple column representation, treat as approximate)
+  for(let r=0;r<rot;r++){
+    // Rotate: reverse and remap
+    cols=cols.map((_,i)=>cols[cols.length-1-i]);
+    // Swap interpretation axis
+    const maxH=Math.max(...cols);
+    cols=cols.map(c=>maxH-c+1);
+  }
+  if(fH) cols=[...cols].reverse();
+  if(fV) cols=cols.map(c=>6-c);
+  return cols;
+}
+
+function drawShapeOnCanvas(canvasEl,shape,rot,fH,fV,color,scale=1){
+  const c=canvasEl.getContext('2d');
+  const cw=canvasEl.width, ch=canvasEl.height;
+  c.clearRect(0,0,cw,ch);
+  const cols=getTransformedCols(shape,rot,fH,fV);
+  const colW=cw/cols.length;
+  const unitH=ch/5;
+  cols.forEach((h,i)=>{
+    const rectH=h*unitH;
+    const x=i*colW;
+    const y=ch-rectH;
+    c.fillStyle=color;
+    c.fillRect(x+1,y,colW-2,rectH);
+    // Windows
+    c.fillStyle='rgba(255,255,255,0.15)';
+    for(let row=0;row<h-1;row++){
+      for(let w=0;w<2;w++){
+        c.fillRect(x+4+w*8,y+row*unitH+4,4,4);
+      }
+    }
+  });
+}
+
+function pickShapes(){
+  currentShape=BUILDING_SHAPES[Math.floor(Math.random()*BUILDING_SHAPES.length)];
+  nextShape=BUILDING_SHAPES[Math.floor(Math.random()*BUILDING_SHAPES.length)];
+  currentRotation=0; flippedH=false; flippedV=false;
+  drawShapeOnCanvas(document.getElementById('current-tile'),currentShape,0,false,false,TILE_COLOR);
+  drawShapeOnCanvas(document.getElementById('next-tile'),nextShape,0,false,false,TILE_COLOR);
+}
+
+function rotateTile(){
+  currentRotation=(currentRotation+1)%4;
+  drawShapeOnCanvas(document.getElementById('current-tile'),currentShape,currentRotation,flippedH,flippedV,TILE_COLOR);
+}
+function flipH(){
+  flippedH=!flippedH;
+  drawShapeOnCanvas(document.getElementById('current-tile'),currentShape,currentRotation,flippedH,flippedV,TILE_COLOR);
+}
+function flipV(){
+  flippedV=!flippedV;
+  drawShapeOnCanvas(document.getElementById('current-tile'),currentShape,currentRotation,flippedH,flippedV,TILE_COLOR);
+}
+
+document.getElementById('current-tile').addEventListener('click',rotateTile);
+document.getElementById('current-tile').addEventListener('touchstart',(e)=>{e.preventDefault();rotateTile();},{passive:false});
+
+function generateTarget(cols){
+  // Random skyline target (5 columns per building × 4 buildings = 20 cols)
+  const buildings=4;
+  const result=[];
+  for(let b=0;b<buildings;b++){
+    const sh=BUILDING_SHAPES[Math.floor(Math.random()*BUILDING_SHAPES.length)];
+    result.push(...sh.cols);
+  }
+  return result;
+}
+
+function drawCity(){
+  ctx.clearRect(0,0,W,H);
+  
+  // Night sky gradient
+  const grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#0F1923');
+  grad.addColorStop(0.7,'#1A2535');
+  grad.addColorStop(1,'#0A1020');
+  ctx.fillStyle=grad;
+  ctx.fillRect(0,0,W,H);
+  
+  // Stars
+  ctx.fillStyle='rgba(255,255,255,0.4)';
+  for(let i=0;i<40;i++){
+    const sx=(i*73+11)%W, sy=(i*137+47)%(H*0.5);
+    ctx.fillRect(sx,sy,1,1);
+  }
+  
+  // Ground
+  ctx.fillStyle='#0A1020';
+  ctx.fillRect(0,H-30,W,30);
+  
+  // Draw target skyline
+  const cols=targetColumns;
+  const totalW=W-40;
+  const colW=totalW/cols.length;
+  const unitH=30;
+  const baseY=H-30;
+  
+  cols.forEach((h,i)=>{
+    const x=20+i*colW;
+    const rh=h*unitH;
+    ctx.fillStyle=TARGET_COLOR;
+    ctx.fillRect(x,baseY-rh,colW-2,rh);
+    // Outline
+    ctx.strokeStyle='rgba(57,255,20,0.3)';
+    ctx.lineWidth=1;
+    ctx.strokeRect(x,baseY-rh,colW-2,rh);
+  });
+  
+  // Draw placed columns
+  placedColumns.forEach((h,i)=>{
+    if(h===0) return;
+    const x=20+i*colW;
+    const rh=h*30;
+    const targetH=cols[i];
+    const match=Math.abs(h-targetH)<=1;
+    ctx.fillStyle=match?PLACED_COLOR:MISMATCH_COLOR;
+    ctx.fillRect(x+1,baseY-rh,colW-3,rh);
+    // Windows
+    ctx.fillStyle='rgba(255,255,255,0.2)';
+    for(let row=0;row<h-1;row++){
+      ctx.fillRect(x+3,baseY-row*30-22,4,4);
+      ctx.fillRect(x+10,baseY-row*30-22,4,4);
+    }
+  });
+  
+  // Progress bar
+  const placed=placedColumns.filter(c=>c>0).length;
+  const pct=placed/cols.length;
+  ctx.fillStyle='rgba(255,255,255,0.05)';
+  ctx.fillRect(20,H-35,W-40,3);
+  ctx.fillStyle='#39FF14';
+  ctx.fillRect(20,H-35,(W-40)*pct,3);
+}
+
+function placeTile(){
+  if(!gameActive) return;
+  const transformedCols=getTransformedCols(currentShape,currentRotation,flippedH,flippedV);
+  
+  // Find first empty section in target
+  const cols=targetColumns;
+  let slotStart=-1;
+  for(let i=0;i<=cols.length-transformedCols.length;i++){
+    if(placedColumns.slice(i,i+transformedCols.length).every(c=>c===0)){
+      slotStart=i; break;
+    }
+  }
+  if(slotStart===-1){
+    // All placed — level complete!
+    levelComplete(); return;
+  }
+  
+  // Place
+  let matchScore=0;
+  transformedCols.forEach((h,i)=>{
+    placedColumns[slotStart+i]=h;
+    const diff=Math.abs(h-cols[slotStart+i]);
+    matchScore+=Math.max(0,1-diff/3);
+  });
+  const pct=matchScore/transformedCols.length;
+  accuracySum+=pct;
+  tilesPlaced++;
+  const pts=Math.round(50*pct*(1+level*0.1));
+  score+=pts;
+  document.getElementById('score-v').textContent=score;
+  document.getElementById('tiles-v').textContent=tilesPlaced;
+  document.getElementById('accuracy-fill').style.width=Math.round(accuracySum/tilesPlaced*100)+'%';
+  
+  const colorClass=pct>=0.8?'#39FF14':pct>=0.5?'#FFD700':'#EF476F';
+  const label=pct>=0.8?'PERFECT FIT!':pct>=0.5?'GOOD FIT':'+'+pts;
+  showScorePop(pts,colorClass,label);
+  
+  drawCity();
+  
+  // Check if all placed
+  if(placedColumns.every(c=>c>0)) setTimeout(levelComplete,500);
+  else {
+    currentShape=nextShape;
+    nextShape=BUILDING_SHAPES[Math.floor(Math.random()*BUILDING_SHAPES.length)];
+    currentRotation=0; flippedH=false; flippedV=false;
+    drawShapeOnCanvas(document.getElementById('current-tile'),currentShape,0,false,false,TILE_COLOR);
+    drawShapeOnCanvas(document.getElementById('next-tile'),nextShape,0,false,false,TILE_COLOR);
+  }
+}
+
+function showScorePop(pts,color,label){
+  const el=document.createElement('div');
+  el.className='score-pop';
+  el.style.cssText=`left:50%;bottom:180px;color:${color};font-family:'Bebas Neue';font-size:1.5rem;`;
+  el.textContent=label;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),700);
+}
+
+function levelComplete(){
+  level++;
+  document.getElementById('level-v').textContent=level;
+  targetColumns=generateTarget();
+  placedColumns=new Array(targetColumns.length).fill(0);
+  pickShapes();
+  drawCity();
+}
+
+function startGame(){
+  document.getElementById('start-screen').style.display='none';
+  document.getElementById('end-screen').style.display='none';
+  score=0;level=1;tilesPlaced=0;accuracySum=0;gameActive=true;
+  document.getElementById('score-v').textContent='0';
+  document.getElementById('level-v').textContent='1';
+  document.getElementById('tiles-v').textContent='0';
+  document.getElementById('accuracy-fill').style.width='100%';
+  
+  targetColumns=generateTarget();
+  placedColumns=new Array(targetColumns.length).fill(0);
+  pickShapes();
+  drawCity();
+  
+  // 90 second game timer
+  setTimeout(()=>{if(gameActive){gameActive=false;endGame();}},90000);
+}
+
+function endGame(){
+  const avgAcc=tilesPlaced>0?Math.round(accuracySum/tilesPlaced*100):0;
+  const ranks=[[90,'Master Architect'],[70,'Senior Builder'],[50,'Architect'],[25,'Apprentice'],[0,'Demolition Man']];
+  const rank=ranks.find(([min])=>avgAcc>=min)[1];
+  document.getElementById('end-score').textContent=score;
+  document.getElementById('end-rank').textContent=rank;
+  document.getElementById('end-tiles').textContent=tilesPlaced;
+  document.getElementById('end-acc').textContent=avgAcc+'%';
+  document.getElementById('end-screen').style.display='flex';
+}
+
+window.addEventListener('resize',()=>{W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;if(gameActive) drawCity();});
+
+startGame();
+</script>
+</body>
+</html>

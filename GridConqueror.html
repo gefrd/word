@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Market Routes</title>
+    <style>
+        :root {
+            --bg: #0b1020;
+            --panel: rgba(8, 12, 20, 0.76);
+            --line: rgba(255, 255, 255, 0.08);
+            --text: #eef3fb;
+            --muted: #98a7c0;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            position: fixed;
+            inset: 0;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: #0b1020;
+        }
+
+        .hud {
+            position: fixed;
+            z-index: 3;
+            pointer-events: none;
+        }
+
+        .panel {
+            min-width: 132px;
+            padding: 10px 12px;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+        }
+
+        .stats {
+            top: 12px;
+            left: 12px;
+        }
+
+        .status {
+            top: 12px;
+            right: 12px;
+            width: min(210px, calc(100vw - 24px));
+        }
+
+        .leader {
+            left: 50%;
+            top: 12px;
+            transform: translateX(-50%);
+            width: min(360px, calc(100vw - 28px));
+        }
+
+        .label {
+            display: block;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-size: 11px;
+        }
+
+        .value {
+            display: block;
+            margin-top: 4px;
+            font-size: 22px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .sub {
+            display: block;
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.35;
+        }
+
+        .center-tip {
+            position: fixed;
+            left: 50%;
+            top: 76px;
+            transform: translateX(-50%);
+            z-index: 3;
+            max-width: min(240px, calc(100vw - 28px));
+            pointer-events: none;
+        }
+
+        .tip-pill {
+            min-height: 38px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            text-align: center;
+            font-size: 13px;
+            color: var(--text);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+        }
+
+        .leader-bar {
+            display: flex;
+            margin-top: 8px;
+            height: 14px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .leader-segment {
+            height: 100%;
+            min-width: 1px;
+        }
+
+        .boost-line {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.35;
+        }
+
+        .boost-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px 8px;
+            margin-right: 6px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text);
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        @media (max-width: 640px) {
+            .leader {
+                width: min(290px, calc(100vw - 24px));
+            }
+
+            .center-tip {
+                top: 92px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="game"></canvas>
+
+    <div class="hud stats">
+        <div class="panel">
+            <span class="label">Districts</span>
+            <span class="value" id="tilesValue">9</span>
+            <span class="sub" id="rankValue">Status 1 / 6</span>
+            <div class="boost-line" id="boostsValue">No boosts</div>
+        </div>
+    </div>
+
+    <div class="hud status">
+        <div class="panel">
+            <span class="label">Route Desk</span>
+            <span class="sub" id="statusText"></span>
+        </div>
+    </div>
+
+    <div class="hud leader">
+        <div class="panel">
+            <span class="label">Market Share</span>
+            <span class="sub" id="leaderText">Leader: You 0%</span>
+            <div class="leader-bar" id="leaderBar"></div>
+        </div>
+    </div>
+
+    <div class="center-tip">
+        <div class="tip-pill" id="tipText"></div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("game");
+        const ctx = canvas.getContext("2d", { alpha: false });
+
+        const tilesValue = document.getElementById("tilesValue");
+        const rankValue = document.getElementById("rankValue");
+        const boostsValue = document.getElementById("boostsValue");
+        const statusText = document.getElementById("statusText");
+        const leaderText = document.getElementById("leaderText");
+        const leaderBar = document.getElementById("leaderBar");
+        const tipText = document.getElementById("tipText");
+
+        const MAP_W = 100;
+        const MAP_H = 100;
+        const TILE_SIZE = 32;
+        const WORLD_W = MAP_W * TILE_SIZE;
+        const WORLD_H = MAP_H * TILE_SIZE;
+        const TOTAL_TILES = MAP_W * MAP_H;
+        const MOVE_TICK_MS = 90;
+        const BOT_COUNT = 5;
+        const RESPAWN_DELAY = 2200;
+        const BOOSTER_LIMIT = 2;
+        const BOOSTER_DELAY_MIN = 9000;
+        const BOOSTER_DELAY_MAX = 15000;
+
+        const BOOSTERS = {
+            speed: { label: "Lightning", short: "SPD", duration: 5000, color: "#ffd050", outline: "#ffea99" },
+            shield: { label: "Shield", short: "SHD", duration: 3000, color: "#61d2ff", outline: "#b2f0ff" }
+        };
+
+        // Two lightweight layers keep the simulation cheap:
+        // territory = owned land, trail = active vulnerable path.
+        const territory = new Uint8Array(TOTAL_TILES);
+        const trail = new Uint8Array(TOTAL_TILES);
+        const fillVisited = new Uint8Array(TOTAL_TILES);
+        const fillQueue = new Int32Array(TOTAL_TILES);
+        const areaCounts = new Uint16Array(BOT_COUNT + 2);
+
+        const DIRS = [
+            { x: 0, y: -1, name: "up" },
+            { x: 1, y: 0, name: "right" },
+            { x: 0, y: 1, name: "down" },
+            { x: -1, y: 0, name: "left" }
+        ];
+
+        const COLORS = [
+            null,
+            { territory: "#2f6cff", trail: "#76a4ff", body: "#cbe0ff", edge: "#a5c5ff" },
+            { territory: "#ff7b5c", trail: "#ffb18f", body: "#ffd6c7", edge: "#ffc2aa" },
+            { territory: "#46c98a", trail: "#8be0b8", body: "#d0f9e4", edge: "#baf2d6" },
+            { territory: "#c36cff", trail: "#d6a5ff", body: "#f0d8ff", edge: "#e7cbff" },
+            { territory: "#ffd250", trail: "#ffe08d", body: "#fff1bf", edge: "#ffe9a6" },
+            { territory: "#57d4dd", trail: "#9beef4", body: "#d0fbff", edge: "#bbf5ff" }
+        ];
+
+        const entities = [];
+        const boosters = [];
+        let player = null;
+        let canvasWidth = 0;
+        let canvasHeight = 0;
+        let camera = { x: WORLD_W * 0.5, y: WORLD_H * 0.5 };
+        let lastFrame = performance.now();
+        let tickAccumulator = 0;
+        let hudTimer = 0;
+        let nextBoosterAt = 0;
+        let swipeStartX = 0;
+        let swipeStartY = 0;
+        let swipeActive = false;
+        let swipePointerId = null;
+
+        function clamp(value, min, max) {
+            return value < min ? min : (value > max ? max : value);
+        }
+
+        function rand(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function tileIndex(x, y) {
+            return (y * MAP_W) + x;
+        }
+
+        function inBounds(x, y) {
+            return x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
+        }
+
+        function countRank(target) {
+            let rank = 1;
+            for (let index = 0; index < entities.length; index += 1) {
+                const entity = entities[index];
+                if (entity.id !== target.id && areaCounts[entity.id] > areaCounts[target.id]) {
+                    rank += 1;
+                }
+            }
+            return rank;
+        }
+
+        function clearOwnerTerritory(ownerId) {
+            for (let index = 0; index < TOTAL_TILES; index += 1) {
+                if (territory[index] === ownerId) {
+                    territory[index] = 0;
+                }
+                if (trail[index] === ownerId) {
+                    trail[index] = 0;
+                }
+            }
+            areaCounts[ownerId] = 0;
+        }
+
+        function setTileOwner(index, ownerId) {
+            const previous = territory[index];
+            if (previous === ownerId) {
+                return;
+            }
+
+            if (previous !== 0) {
+                areaCounts[previous] -= 1;
+            }
+
+            territory[index] = ownerId;
+            if (ownerId !== 0) {
+                areaCounts[ownerId] += 1;
+            }
+        }
+
+        function makeEntity(id, name, isPlayer) {
+            return {
+                id,
+                name,
+                isPlayer,
+                x: 0,
+                y: 0,
+                dir: 1,
+                nextDir: 1,
+                alive: true,
+                respawnAt: 0,
+                outside: false,
+                trail: [],
+                baseX: 0,
+                baseY: 0,
+                moveCharge: 0,
+                speedUntil: 0,
+                shieldUntil: 0,
+                ai: isPlayer ? null : {
+                    mode: "idle",
+                    stepsLeft: 0,
+                    turnsMade: 0,
+                    maxTurns: 1,
+                    turnDir: 1,
+                    targetTrail: 0
+                }
+            };
+        }
+
+        function spawnAreaFree(cx, cy) {
+            for (let y = cy - 2; y <= cy + 2; y += 1) {
+                for (let x = cx - 2; x <= cx + 2; x += 1) {
+                    if (!inBounds(x, y)) {
+                        return false;
+                    }
+
+                    const index = tileIndex(x, y);
+                    if (territory[index] !== 0 || trail[index] !== 0) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function chooseSpawnPoint() {
+            for (let attempt = 0; attempt < 40; attempt += 1) {
+                const x = Math.floor(rand(6, MAP_W - 6));
+                const y = Math.floor(rand(6, MAP_H - 6));
+                if (spawnAreaFree(x, y)) {
+                    return { x, y };
+                }
+            }
+            return {
+                x: Math.floor(rand(6, MAP_W - 6)),
+                y: Math.floor(rand(6, MAP_H - 6))
+            };
+        }
+
+        function placeBase(entity, centerX, centerY) {
+            entity.baseX = centerX;
+            entity.baseY = centerY;
+
+            for (let y = centerY - 1; y <= centerY + 1; y += 1) {
+                for (let x = centerX - 1; x <= centerX + 1; x += 1) {
+                    setTileOwner(tileIndex(x, y), entity.id);
+                }
+            }
+        }
+
+        function spawnEntity(entity, now) {
+            const spawn = chooseSpawnPoint();
+            entity.x = spawn.x;
+            entity.y = spawn.y;
+            entity.dir = entity.isPlayer ? 1 : Math.floor(rand(0, 4));
+            entity.nextDir = entity.dir;
+            entity.outside = false;
+            entity.trail.length = 0;
+            entity.moveCharge = 0;
+            entity.speedUntil = 0;
+            entity.shieldUntil = 0;
+            entity.alive = true;
+            entity.respawnAt = 0;
+            placeBase(entity, spawn.x, spawn.y);
+
+            if (entity.ai) {
+                entity.ai.mode = "idle";
+                entity.ai.stepsLeft = 0;
+                entity.ai.turnsMade = 0;
+                entity.ai.maxTurns = 1;
+                entity.ai.turnDir = Math.random() < 0.5 ? -1 : 1;
+                entity.ai.targetTrail = 0;
+            }
+
+            void now;
+        }
+
+        function stealHalfTerritory(victimId, killerId) {
+            if (victimId === killerId || victimId === 0 || killerId === 0) {
+                return;
+            }
+
+            const victimTiles = areaCounts[victimId];
+            if (victimTiles <= 1) {
+                return;
+            }
+
+            const half = Math.floor(victimTiles * 0.5);
+            if (half <= 0) {
+                return;
+            }
+
+            const killer = entities[killerId - 1];
+            const preferredParity = killer ? ((killer.x + killer.y) & 1) : 0;
+            let converted = 0;
+
+            for (let pass = 0; pass < 2 && converted < half; pass += 1) {
+                for (let index = 0; index < TOTAL_TILES && converted < half; index += 1) {
+                    if (territory[index] !== victimId) {
+                        continue;
+                    }
+
+                    const x = index % MAP_W;
+                    const y = (index / MAP_W) | 0;
+                    if (((x + y) & 1) !== ((preferredParity + pass) & 1)) {
+                        continue;
+                    }
+
+                    setTileOwner(index, killerId);
+                    converted += 1;
+                }
+            }
+        }
+
+        function killEntity(ownerId, now, killerId, reason) {
+            const entity = entities[ownerId - 1];
+            if (!entity || !entity.alive) {
+                return;
+            }
+
+            if (reason === "trail_cut" && killerId && killerId !== ownerId) {
+                stealHalfTerritory(ownerId, killerId);
+            }
+
+            clearOwnerTerritory(ownerId);
+            entity.trail.length = 0;
+            entity.outside = false;
+            entity.moveCharge = 0;
+            entity.alive = false;
+            entity.respawnAt = now + RESPAWN_DELAY;
+        }
+
+        function captureArea(entity, now) {
+            for (let index = 0; index < entity.trail.length; index += 1) {
+                const trailIndex = entity.trail[index];
+                if (trail[trailIndex] === entity.id) {
+                    trail[trailIndex] = 0;
+                    setTileOwner(trailIndex, entity.id);
+                }
+            }
+
+            entity.trail.length = 0;
+            entity.outside = false;
+            fillVisited.fill(0);
+
+            // Flood fill from the border through everything that is NOT ours.
+            // Any remaining tile after the scan is enclosed and becomes ours.
+            let head = 0;
+            let tail = 0;
+
+            function enqueueBorder(x, y) {
+                const index = tileIndex(x, y);
+                if (territory[index] === entity.id || fillVisited[index] === 1) {
+                    return;
+                }
+                fillVisited[index] = 1;
+                fillQueue[tail] = index;
+                tail += 1;
+            }
+
+            for (let x = 0; x < MAP_W; x += 1) {
+                enqueueBorder(x, 0);
+                enqueueBorder(x, MAP_H - 1);
+            }
+
+            for (let y = 1; y < MAP_H - 1; y += 1) {
+                enqueueBorder(0, y);
+                enqueueBorder(MAP_W - 1, y);
+            }
+
+            while (head < tail) {
+                const current = fillQueue[head];
+                head += 1;
+
+                const cx = current % MAP_W;
+                const cy = (current / MAP_W) | 0;
+
+                for (let dir = 0; dir < 4; dir += 1) {
+                    const nx = cx + DIRS[dir].x;
+                    const ny = cy + DIRS[dir].y;
+                    if (!inBounds(nx, ny)) {
+                        continue;
+                    }
+
+                    const next = tileIndex(nx, ny);
+                    if (fillVisited[next] === 1 || territory[next] === entity.id) {
+                        continue;
+                    }
+
+                    fillVisited[next] = 1;
+                    fillQueue[tail] = next;
+                    tail += 1;
+                }
+            }
+
+            for (let index = 0; index < TOTAL_TILES; index += 1) {
+                if (territory[index] === entity.id || fillVisited[index] === 1) {
+                    continue;
+                }
+
+                const trailOwner = trail[index];
+                if (trailOwner !== 0 && trailOwner !== entity.id) {
+                    killEntity(trailOwner, now, entity.id, "capture");
+                }
+
+                trail[index] = 0;
+                setTileOwner(index, entity.id);
+            }
+        }
+
+        function tryRespawnEntities(now) {
+            for (let index = 0; index < entities.length; index += 1) {
+                const entity = entities[index];
+                if (!entity.alive && now >= entity.respawnAt) {
+                    spawnEntity(entity, now);
+                }
+            }
+        }
+
+        function getEntityById(ownerId) {
+            return entities[ownerId - 1] || null;
+        }
+
+        function getEntitySpeedFactor(entity, now) {
+            return entity.speedUntil > now ? 1.8 : 1;
+        }
+
+        function boosterTileFree(x, y) {
+            if (!inBounds(x, y)) {
+                return false;
+            }
+
+            const index = tileIndex(x, y);
+            if (territory[index] !== 0 || trail[index] !== 0) {
+                return false;
+            }
+
+            for (let boostIndex = 0; boostIndex < boosters.length; boostIndex += 1) {
+                if (boosters[boostIndex].x === x && boosters[boostIndex].y === y) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        function spawnBooster(now) {
+            if (boosters.length >= BOOSTER_LIMIT) {
+                nextBoosterAt = now + rand(BOOSTER_DELAY_MIN, BOOSTER_DELAY_MAX);
+                return;
+            }
+
+            for (let attempt = 0; attempt < 36; attempt += 1) {
+                const x = Math.floor(rand(4, MAP_W - 4));
+                const y = Math.floor(rand(4, MAP_H - 4));
+                if (!boosterTileFree(x, y)) {
+                    continue;
+                }
+
+                boosters.push({
+                    type: Math.random() < 0.5 ? "speed" : "shield",
+                    x,
+                    y
+                });
+                break;
+            }
+
+            nextBoosterAt = now + rand(BOOSTER_DELAY_MIN, BOOSTER_DELAY_MAX);
+        }
+
+        function collectBooster(entity, now) {
+            for (let index = boosters.length - 1; index >= 0; index -= 1) {
+                const booster = boosters[index];
+                if (booster.x !== entity.x || booster.y !== entity.y) {
+                    continue;
+                }
+
+                if (booster.type === "speed") {
+                    entity.speedUntil = Math.max(now, entity.speedUntil) + BOOSTERS.speed.duration;
+                } else if (booster.type === "shield") {
+                    entity.shieldUntil = Math.max(now, entity.shieldUntil) + BOOSTERS.shield.duration;
+                }
+
+                boosters.splice(index, 1);
+            }
+        }
+
+        function getPlayerPixelX() {
+            return (player.x * TILE_SIZE) + (TILE_SIZE * 0.5);
+        }
+
+        function getPlayerPixelY() {
+            return (player.y * TILE_SIZE) + (TILE_SIZE * 0.5);
+        }
+
+        function resize() {
+            const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+            canvasWidth = window.innerWidth;
+            canvasHeight = window.innerHeight;
+            canvas.width = Math.round(canvasWidth * dpr);
+            canvas.height = Math.round(canvasHeight * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        function chooseSafeDirection(entity, preferred) {
+            const candidates = [preferred, entity.dir, (preferred + 1) % 4, (preferred + 3) % 4, (preferred + 2) % 4];
+
+            for (let index = 0; index < candidates.length; index += 1) {
+                const dir = candidates[index];
+                const nx = entity.x + DIRS[dir].x;
+                const ny = entity.y + DIRS[dir].y;
+                if (!inBounds(nx, ny)) {
+                    continue;
+                }
+
+                const next = tileIndex(nx, ny);
+                if (trail[next] === entity.id) {
+                    continue;
+                }
+
+                return dir;
+            }
+
+            return entity.dir;
+        }
+
+        function moveEntity(entity, now) {
+            if (!entity.alive) {
+                return;
+            }
+
+            entity.dir = chooseSafeDirection(entity, entity.nextDir);
+            const nx = entity.x + DIRS[entity.dir].x;
+            const ny = entity.y + DIRS[entity.dir].y;
+
+            if (!inBounds(nx, ny)) {
+                return;
+            }
+
+            const next = tileIndex(nx, ny);
+            const trailOwner = trail[next];
+
+            if (trailOwner !== 0) {
+                const ownerEntity = getEntityById(trailOwner);
+                if (trailOwner !== entity.id && ownerEntity && ownerEntity.alive && ownerEntity.shieldUntil > now) {
+                    killEntity(entity.id, now, trailOwner, "trail_cut");
+                    return;
+                }
+
+                killEntity(trailOwner, now, entity.id, "trail_cut");
+                if (trailOwner === entity.id || !entity.alive) {
+                    return;
+                }
+            }
+
+            entity.x = nx;
+            entity.y = ny;
+
+            if (territory[next] === entity.id) {
+                if (entity.outside) {
+                    captureArea(entity, now);
+                } else {
+                    entity.outside = false;
+                }
+            } else {
+                entity.outside = true;
+                if (trail[next] !== entity.id) {
+                    trail[next] = entity.id;
+                    entity.trail.push(next);
+                }
+            }
+
+            collectBooster(entity, now);
+        }
+
+        function adjacentEnemyTrailDirection(entity) {
+            for (let dir = 0; dir < 4; dir += 1) {
+                const nx = entity.x + DIRS[dir].x;
+                const ny = entity.y + DIRS[dir].y;
+                if (!inBounds(nx, ny)) {
+                    continue;
+                }
+
+                const ownerId = trail[tileIndex(nx, ny)];
+                if (ownerId !== 0 && ownerId !== entity.id) {
+                    return dir;
+                }
+            }
+
+            return -1;
+        }
+
+        function chooseDirectionToward(entity, targetX, targetY) {
+            const options = [];
+
+            for (let dir = 0; dir < 4; dir += 1) {
+                const nx = entity.x + DIRS[dir].x;
+                const ny = entity.y + DIRS[dir].y;
+                if (!inBounds(nx, ny)) {
+                    continue;
+                }
+
+                const next = tileIndex(nx, ny);
+                if (trail[next] === entity.id) {
+                    continue;
+                }
+
+                const distance = Math.abs(targetX - nx) + Math.abs(targetY - ny);
+                options.push({ dir, distance });
+            }
+
+            options.sort(function (a, b) {
+                return a.distance - b.distance;
+            });
+
+            return options.length > 0 ? options[0].dir : entity.dir;
+        }
+
+        function startBotRun(entity) {
+            entity.ai.mode = "expand";
+            entity.ai.stepsLeft = Math.floor(rand(4, 9));
+            entity.ai.turnsMade = 0;
+            entity.ai.maxTurns = Math.random() < 0.55 ? 1 : 2;
+            entity.ai.turnDir = Math.random() < 0.5 ? -1 : 1;
+            entity.ai.targetTrail = Math.floor(rand(10, 22));
+        }
+
+        function updateBotAI(entity) {
+            const killDir = adjacentEnemyTrailDirection(entity);
+            if (killDir !== -1) {
+                entity.nextDir = killDir;
+                return;
+            }
+
+            if (!entity.outside) {
+                if (entity.ai.mode === "return") {
+                    entity.ai.mode = "idle";
+                }
+
+                if (entity.ai.mode === "idle" && Math.random() < 0.18) {
+                    startBotRun(entity);
+                }
+
+                if (entity.ai.mode === "expand") {
+                    const fx = entity.x + DIRS[entity.dir].x;
+                    const fy = entity.y + DIRS[entity.dir].y;
+                    const forwardInside = inBounds(fx, fy) && territory[tileIndex(fx, fy)] === entity.id;
+
+                    if (forwardInside && entity.ai.stepsLeft <= 0) {
+                        entity.nextDir = chooseSafeDirection(entity, (entity.dir + 1) % 4);
+                    } else {
+                        entity.nextDir = chooseSafeDirection(entity, entity.dir);
+                    }
+                } else {
+                    entity.nextDir = chooseDirectionToward(entity, entity.baseX, entity.baseY);
+                }
+                return;
+            }
+
+            if (entity.ai.mode === "expand") {
+                if (entity.trail.length >= entity.ai.targetTrail) {
+                    entity.ai.mode = "return";
+                } else if (entity.ai.stepsLeft > 0) {
+                    entity.ai.stepsLeft -= 1;
+                    entity.nextDir = chooseSafeDirection(entity, entity.dir);
+                    return;
+                } else if (entity.ai.turnsMade < entity.ai.maxTurns) {
+                    entity.ai.turnsMade += 1;
+                    entity.ai.stepsLeft = Math.floor(rand(3, 7));
+                    entity.nextDir = chooseSafeDirection(entity, (entity.dir + entity.ai.turnDir + 4) % 4);
+                    return;
+                } else {
+                    entity.ai.mode = "return";
+                }
+            }
+
+            if (entity.ai.mode === "return") {
+                entity.nextDir = chooseDirectionToward(entity, entity.baseX, entity.baseY);
+            }
+        }
+
+        function updateGameTick(now) {
+            tryRespawnEntities(now);
+
+             if (now >= nextBoosterAt) {
+                spawnBooster(now);
+            }
+
+            for (let index = 0; index < entities.length; index += 1) {
+                const entity = entities[index];
+                if (entity.alive && entity.ai) {
+                    updateBotAI(entity);
+                }
+            }
+
+            for (let index = 0; index < entities.length; index += 1) {
+                const entity = entities[index];
+                if (!entity.alive) {
+                    continue;
+                }
+
+                entity.moveCharge += getEntitySpeedFactor(entity, now);
+                let steps = 0;
+                while (entity.moveCharge >= 1 && entity.alive && steps < 2) {
+                    entity.moveCharge -= 1;
+                    moveEntity(entity, now);
+                    steps += 1;
+                }
+            }
+        }
+
+        function updateCamera(dt) {
+            const targetX = getPlayerPixelX();
+            const targetY = getPlayerPixelY();
+            const lerp = 1 - Math.pow(0.001, dt);
+
+            camera.x += (targetX - camera.x) * lerp;
+            camera.y += (targetY - camera.y) * lerp;
+            camera.x = clamp(camera.x, canvasWidth * 0.5, WORLD_W - (canvasWidth * 0.5));
+            camera.y = clamp(camera.y, canvasHeight * 0.5, WORLD_H - (canvasHeight * 0.5));
+        }
+
+        function getLeaderEntity() {
+            let leader = player;
+            for (let index = 0; index < entities.length; index += 1) {
+                if (areaCounts[entities[index].id] > areaCounts[leader.id]) {
+                    leader = entities[index];
+                }
+            }
+            return leader;
+        }
+
+        function renderLeaderBar() {
+            const segments = [];
+            const neutral = TOTAL_TILES - entities.reduce(function (sum, entity) {
+                return sum + areaCounts[entity.id];
+            }, 0);
+
+            if (neutral > 0) {
+                segments.push(`<span class="leader-segment" style="width:${(neutral / TOTAL_TILES) * 100}%;background:#1b2336"></span>`);
+            }
+
+            for (let index = 0; index < entities.length; index += 1) {
+                const entity = entities[index];
+                const share = areaCounts[entity.id] / TOTAL_TILES;
+                if (share <= 0) {
+                    continue;
+                }
+                segments.push(`<span class="leader-segment" style="width:${share * 100}%;background:${COLORS[entity.id].territory}"></span>`);
+            }
+
+            leaderBar.innerHTML = segments.join("");
+        }
+
+        function updateHud(now) {
+            tilesValue.textContent = areaCounts[player.id].toString();
+            const playerShare = Math.round((areaCounts[player.id] / TOTAL_TILES) * 100);
+            const leader = getLeaderEntity();
+            const leaderShare = Math.round((areaCounts[leader.id] / TOTAL_TILES) * 100);
+
+            rankValue.textContent = `Monopolist ${countRank(player)} / ${entities.length}`;
+            leaderText.textContent = `Leader: ${leader.name} ${leaderShare}% • You ${playerShare}%`;
+            renderLeaderBar();
+
+            const activeBoosts = [];
+            if (player.speedUntil > now) {
+                activeBoosts.push(`<span class="boost-pill">SPD ${Math.ceil((player.speedUntil - now) / 1000)}s</span>`);
+            }
+            if (player.shieldUntil > now) {
+                activeBoosts.push(`<span class="boost-pill">SHD ${Math.ceil((player.shieldUntil - now) / 1000)}s</span>`);
+            }
+            boostsValue.innerHTML = activeBoosts.length > 0 ? activeBoosts.join("") : "No boosts";
+
+            if (!player.alive && now < player.respawnAt) {
+                statusText.textContent = "Route collapsed. Relaunching...";
+                tipText.textContent = "Do not cross any active route.";
+            } else if (player.outside) {
+                statusText.textContent = "Delivery route exposed. Return to claim the district.";
+                tipText.textContent = "Your route is vulnerable until you return.";
+            } else if (player.speedUntil > now) {
+                statusText.textContent = "Lightning boost active. Close a huge district.";
+                tipText.textContent = "You are moving faster than rivals.";
+            } else if (player.shieldUntil > now) {
+                statusText.textContent = "Shield active. Your route cannot be cut.";
+                tipText.textContent = "Use the shield for an aggressive expansion.";
+            } else if (countRank(player) === 1) {
+                statusText.textContent = "You lead the city market.";
+                tipText.textContent = "Expand, return, repeat.";
+            } else {
+                statusText.textContent = "";
+                tipText.textContent = "";
+            }
+        }
+
+        function drawBackground() {
+            ctx.fillStyle = "#0b1020";
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+        }
+
+        function drawVisibleTiles() {
+            const startX = clamp(Math.floor((camera.x - (canvasWidth * 0.5)) / TILE_SIZE) - 1, 0, MAP_W - 1);
+            const startY = clamp(Math.floor((camera.y - (canvasHeight * 0.5)) / TILE_SIZE) - 1, 0, MAP_H - 1);
+            const endX = clamp(Math.ceil((camera.x + (canvasWidth * 0.5)) / TILE_SIZE) + 1, 0, MAP_W - 1);
+            const endY = clamp(Math.ceil((camera.y + (canvasHeight * 0.5)) / TILE_SIZE) + 1, 0, MAP_H - 1);
+            const offsetX = camera.x - (canvasWidth * 0.5);
+            const offsetY = camera.y - (canvasHeight * 0.5);
+
+            for (let y = startY; y <= endY; y += 1) {
+                for (let x = startX; x <= endX; x += 1) {
+                    const index = tileIndex(x, y);
+                    const ownerId = territory[index];
+                    const trailId = trail[index];
+                    const drawX = Math.floor((x * TILE_SIZE) - offsetX);
+                    const drawY = Math.floor((y * TILE_SIZE) - offsetY);
+
+                    if (ownerId !== 0) {
+                        ctx.fillStyle = COLORS[ownerId].territory;
+                        ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+                    }
+
+                    if (trailId !== 0) {
+                        ctx.fillStyle = COLORS[trailId].trail;
+                        ctx.fillRect(drawX + 4, drawY + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                    }
+                }
+            }
+
+            ctx.strokeStyle = "rgba(255,255,255,0.05)";
+            ctx.lineWidth = 1;
+
+            for (let x = startX; x <= endX + 1; x += 1) {
+                const sx = Math.floor((x * TILE_SIZE) - offsetX) + 0.5;
+                ctx.beginPath();
+                ctx.moveTo(sx, Math.floor((startY * TILE_SIZE) - offsetY));
+                ctx.lineTo(sx, Math.floor(((endY + 1) * TILE_SIZE) - offsetY));
+                ctx.stroke();
+            }
+
+            for (let y = startY; y <= endY + 1; y += 1) {
+                const sy = Math.floor((y * TILE_SIZE) - offsetY) + 0.5;
+                ctx.beginPath();
+                ctx.moveTo(Math.floor((startX * TILE_SIZE) - offsetX), sy);
+                ctx.lineTo(Math.floor(((endX + 1) * TILE_SIZE) - offsetX), sy);
+                ctx.stroke();
+            }
+        }
+
+        function drawBoosters() {
+            const offsetX = camera.x - (canvasWidth * 0.5);
+            const offsetY = camera.y - (canvasHeight * 0.5);
+
+            for (let index = 0; index < boosters.length; index += 1) {
+                const booster = boosters[index];
+                const def = BOOSTERS[booster.type];
+                const px = Math.floor((booster.x * TILE_SIZE) - offsetX);
+                const py = Math.floor((booster.y * TILE_SIZE) - offsetY);
+                const cx = px + (TILE_SIZE * 0.5);
+                const cy = py + (TILE_SIZE * 0.5);
+
+                ctx.fillStyle = def.color;
+                ctx.fillRect(px + 7, py + 7, TILE_SIZE - 14, TILE_SIZE - 14);
+                ctx.strokeStyle = def.outline;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(px + 7, py + 7, TILE_SIZE - 14, TILE_SIZE - 14);
+
+                ctx.fillStyle = "#09111d";
+                ctx.font = "bold 11px system-ui";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(def.short, cx, cy + 1);
+            }
+        }
+
+        function drawEntity(entity) {
+            if (!entity.alive) {
+                return;
+            }
+
+            const offsetX = camera.x - (canvasWidth * 0.5);
+            const offsetY = camera.y - (canvasHeight * 0.5);
+            const px = Math.floor((entity.x * TILE_SIZE) - offsetX);
+            const py = Math.floor((entity.y * TILE_SIZE) - offsetY);
+            const bodySize = TILE_SIZE - 8;
+
+            ctx.fillStyle = COLORS[entity.id].body;
+            ctx.fillRect(px + 4, py + 4, bodySize, bodySize);
+            ctx.strokeStyle = COLORS[entity.id].edge;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(px + 4, py + 4, bodySize, bodySize);
+
+            ctx.fillStyle = "rgba(0,0,0,0.22)";
+            if (entity.dir === 0) {
+                ctx.fillRect(px + 11, py + 3, 10, 6);
+            } else if (entity.dir === 1) {
+                ctx.fillRect(px + 23, py + 11, 6, 10);
+            } else if (entity.dir === 2) {
+                ctx.fillRect(px + 11, py + 23, 10, 6);
+            } else {
+                ctx.fillRect(px + 3, py + 11, 6, 10);
+            }
+
+            if (entity.shieldUntil > performance.now()) {
+                ctx.strokeStyle = "#c5f5ff";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(px + 1.5, py + 1.5, TILE_SIZE - 3, TILE_SIZE - 3);
+            } else if (entity.speedUntil > performance.now()) {
+                ctx.strokeStyle = "#ffe8a3";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(px + 2.5, py + 2.5, TILE_SIZE - 5, TILE_SIZE - 5);
+            }
+        }
+
+        function render() {
+            drawBackground();
+            drawVisibleTiles();
+            drawBoosters();
+
+            for (let index = 0; index < entities.length; index += 1) {
+                drawEntity(entities[index]);
+            }
+        }
+
+        function setPlayerDirectionFromSwipe(dx, dy) {
+            if (Math.abs(dx) < 18 && Math.abs(dy) < 18) {
+                return;
+            }
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                player.nextDir = dx > 0 ? 1 : 3;
+            } else {
+                player.nextDir = dy > 0 ? 2 : 0;
+            }
+        }
+
+        canvas.addEventListener("pointerdown", function (event) {
+            swipePointerId = event.pointerId;
+            swipeActive = true;
+            swipeStartX = event.clientX;
+            swipeStartY = event.clientY;
+            canvas.setPointerCapture(event.pointerId);
+        });
+
+        canvas.addEventListener("pointermove", function (event) {
+            if (!swipeActive || swipePointerId !== event.pointerId) {
+                return;
+            }
+
+            const dx = event.clientX - swipeStartX;
+            const dy = event.clientY - swipeStartY;
+            if (Math.abs(dx) > 28 || Math.abs(dy) > 28) {
+                setPlayerDirectionFromSwipe(dx, dy);
+                swipeStartX = event.clientX;
+                swipeStartY = event.clientY;
+            }
+        });
+
+        function endSwipe(event) {
+            if (!swipeActive || swipePointerId !== event.pointerId) {
+                return;
+            }
+
+            setPlayerDirectionFromSwipe(event.clientX - swipeStartX, event.clientY - swipeStartY);
+            swipeActive = false;
+            swipePointerId = null;
+        }
+
+        canvas.addEventListener("pointerup", endSwipe);
+        canvas.addEventListener("pointercancel", function () {
+            swipeActive = false;
+            swipePointerId = null;
+        });
+
+        window.addEventListener("keydown", function (event) {
+            if (event.key === "ArrowUp" || event.key === "w") {
+                player.nextDir = 0;
+            } else if (event.key === "ArrowRight" || event.key === "d") {
+                player.nextDir = 1;
+            } else if (event.key === "ArrowDown" || event.key === "s") {
+                player.nextDir = 2;
+            } else if (event.key === "ArrowLeft" || event.key === "a") {
+                player.nextDir = 3;
+            }
+        });
+
+        function init() {
+            const now = performance.now();
+            resize();
+            entities.length = 0;
+            boosters.length = 0;
+            areaCounts.fill(0);
+            territory.fill(0);
+            trail.fill(0);
+            nextBoosterAt = now + rand(BOOSTER_DELAY_MIN, BOOSTER_DELAY_MAX);
+
+            player = makeEntity(1, "You", true);
+            entities.push(player);
+
+            for (let index = 0; index < BOT_COUNT; index += 1) {
+                entities.push(makeEntity(index + 2, `Brand ${index + 1}`, false));
+            }
+
+            for (let index = 0; index < entities.length; index += 1) {
+                spawnEntity(entities[index], now);
+            }
+
+            camera.x = getPlayerPixelX();
+            camera.y = getPlayerPixelY();
+            updateHud(now);
+            requestAnimationFrame(loop);
+        }
+
+        function loop(now) {
+            const dt = Math.min((now - lastFrame) / 1000, 0.05);
+            lastFrame = now;
+            tickAccumulator += dt * 1000;
+
+            // Movement is processed on a fixed grid tick.
+            while (tickAccumulator >= MOVE_TICK_MS) {
+                updateGameTick(now);
+                tickAccumulator -= MOVE_TICK_MS;
+            }
+
+            updateCamera(dt);
+            hudTimer += dt * 1000;
+            if (hudTimer >= 120) {
+                hudTimer = 0;
+                updateHud(now);
+            }
+
+            render();
+            requestAnimationFrame(loop);
+        }
+
+        window.addEventListener("resize", resize);
+        document.addEventListener("visibilitychange", function () {
+            lastFrame = performance.now();
+            tickAccumulator = 0;
+        });
+
+        init();
+    </script>
+</body>
+</html>

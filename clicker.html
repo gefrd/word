@@ -1,0 +1,1538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Street to IPO</title>
+    <style>
+        :root {
+            --bg: #fff6e7;
+            --bg-accent: #f7e2bc;
+            --surface: rgba(255, 251, 243, 0.92);
+            --surface-strong: #fffdf8;
+            --ink: #2f2315;
+            --muted: #7a654b;
+            --line: rgba(101, 74, 39, 0.14);
+            --warm: #ff8a1d;
+            --warm-deep: #ef5a2a;
+            --green: #2c9b62;
+            --green-soft: #dcf6e8;
+            --gold: #ffd266;
+            --shadow: 0 16px 40px rgba(115, 78, 29, 0.12);
+            --radius: 22px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            min-height: 100%;
+        }
+
+        body {
+            position: relative;
+            overflow-x: hidden;
+            background:
+                radial-gradient(circle at top left, rgba(255, 210, 102, 0.45), transparent 30%),
+                radial-gradient(circle at right 20%, rgba(239, 90, 42, 0.12), transparent 24%),
+                linear-gradient(180deg, var(--bg) 0%, #f6efe2 100%);
+            color: var(--ink);
+            font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body::before,
+        body::after {
+            content: "";
+            position: fixed;
+            border-radius: 50%;
+            pointer-events: none;
+            opacity: 0.45;
+            z-index: 0;
+        }
+
+        body::before {
+            width: 280px;
+            height: 280px;
+            top: -110px;
+            right: -80px;
+            background: rgba(255, 138, 29, 0.16);
+        }
+
+        body::after {
+            width: 240px;
+            height: 240px;
+            left: -120px;
+            bottom: 90px;
+            background: rgba(44, 155, 98, 0.1);
+        }
+
+        .app {
+            position: relative;
+            z-index: 1;
+            width: min(1100px, calc(100% - 24px));
+            margin: 0 auto;
+            padding: 18px 0 28px;
+        }
+
+        .hero {
+            padding: 18px;
+            border: 1px solid var(--line);
+            border-radius: calc(var(--radius) + 6px);
+            background: var(--surface);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(6px);
+        }
+
+        .hero-top {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: flex-start;
+            margin-bottom: 18px;
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(255, 210, 102, 0.28);
+            color: #8b4f0c;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        h1 {
+            margin: 12px 0 8px;
+            font-size: clamp(30px, 5vw, 48px);
+            line-height: 0.98;
+        }
+
+        .hero p {
+            margin: 0;
+            max-width: 640px;
+            color: var(--muted);
+            font-size: 15px;
+            line-height: 1.45;
+        }
+
+        .session-note {
+            min-width: 220px;
+            padding: 12px 14px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.72);
+            border: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .stat-card {
+            padding: 14px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.75);
+            border: 1px solid var(--line);
+        }
+
+        .stat-label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .stat-value {
+            font-size: clamp(22px, 3vw, 34px);
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .stat-sub {
+            margin-top: 8px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.95fr);
+            gap: 18px;
+            margin-top: 18px;
+        }
+
+        .panel {
+            padding: 18px;
+            border-radius: calc(var(--radius) + 2px);
+            background: var(--surface);
+            border: 1px solid var(--line);
+            box-shadow: var(--shadow);
+        }
+
+        .panel-title {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            margin: 0 0 14px;
+        }
+
+        .panel-title h2 {
+            margin: 0;
+            font-size: 22px;
+        }
+
+        .panel-kicker {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .tap-zone {
+            position: relative;
+            overflow: hidden;
+            min-height: 360px;
+            background:
+                radial-gradient(circle at top, rgba(255, 210, 102, 0.38), transparent 45%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(255, 251, 243, 0.82));
+        }
+
+        .banner {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            padding: 14px 16px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--line);
+            margin-bottom: 18px;
+        }
+
+        .banner-mark {
+            display: grid;
+            place-items: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--warm), var(--warm-deep));
+            color: #fff;
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .banner-copy strong {
+            display: block;
+            font-size: 15px;
+        }
+
+        .banner-copy span {
+            display: block;
+            color: var(--muted);
+            font-size: 13px;
+            margin-top: 4px;
+        }
+
+        .tap-pad {
+            position: relative;
+            display: grid;
+            place-items: center;
+            min-height: 240px;
+        }
+
+        #click-btn {
+            position: relative;
+            width: min(280px, 72vw);
+            height: min(280px, 72vw);
+            border: 0;
+            border-radius: 34px;
+            padding: 20px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.32), transparent 22%),
+                linear-gradient(140deg, var(--warm) 0%, var(--warm-deep) 100%);
+            color: #fffef8;
+            box-shadow:
+                0 16px 30px rgba(239, 90, 42, 0.26),
+                inset 0 1px 0 rgba(255, 255, 255, 0.34);
+            cursor: pointer;
+            transform: translateZ(0);
+            transition: transform 0.08s ease, box-shadow 0.12s ease;
+        }
+
+        #click-btn:active,
+        #click-btn.burst {
+            transform: scale(0.96);
+            box-shadow:
+                0 8px 18px rgba(239, 90, 42, 0.22),
+                inset 0 1px 0 rgba(255, 255, 255, 0.34);
+        }
+
+        .click-title {
+            display: block;
+            font-size: clamp(28px, 5vw, 38px);
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            line-height: 1;
+        }
+
+        .click-subtitle,
+        .click-hint {
+            display: block;
+            margin-top: 8px;
+            font-size: 14px;
+            line-height: 1.3;
+            color: rgba(255, 255, 255, 0.88);
+        }
+
+        .click-hint {
+            margin-top: 16px;
+            color: rgba(255, 255, 255, 0.76);
+        }
+
+        .mini-stats {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .mini-card {
+            padding: 12px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.78);
+            border: 1px solid var(--line);
+        }
+
+        .mini-card strong {
+            display: block;
+            font-size: 18px;
+        }
+
+        .mini-card span {
+            display: block;
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 12px;
+        }
+
+        .road-card {
+            margin-top: 18px;
+            padding: 14px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--line);
+        }
+
+        .road-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .road-name {
+            font-size: 22px;
+            font-weight: 800;
+            line-height: 1;
+        }
+
+        .road-sub,
+        .road-meta {
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .stage-strip {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            margin-top: 12px;
+            padding-bottom: 4px;
+            scrollbar-width: none;
+        }
+
+        .stage-strip::-webkit-scrollbar {
+            display: none;
+        }
+
+        .stage-node {
+            flex: 0 0 auto;
+            min-width: 88px;
+            padding: 8px 10px;
+            border-radius: 14px;
+            background: rgba(255, 210, 102, 0.14);
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 700;
+            text-align: center;
+        }
+
+        .stage-node.reached {
+            background: rgba(44, 155, 98, 0.16);
+            color: #1f7447;
+        }
+
+        .stage-node.current {
+            background: rgba(255, 210, 102, 0.28);
+            color: #7b510e;
+        }
+
+        .goal-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            align-items: center;
+            margin-top: 14px;
+        }
+
+        .shop-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .upgrade-card {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 14px;
+            align-items: center;
+            padding: 15px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid var(--line);
+            transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+        }
+
+        .upgrade-card.affordable {
+            border-color: rgba(44, 155, 98, 0.34);
+            background: linear-gradient(180deg, rgba(220, 246, 232, 0.85), rgba(255, 255, 255, 0.84));
+        }
+
+        .upgrade-card.flash {
+            animation: card-flash 0.28s ease;
+        }
+
+        .upgrade-name {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .upgrade-desc {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.35;
+        }
+
+        .upgrade-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 28px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255, 210, 102, 0.2);
+            color: #7b510e;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .pill.green {
+            background: rgba(44, 155, 98, 0.16);
+            color: #1f7447;
+        }
+
+        .buy-btn,
+        .prestige-btn {
+            border: 0;
+            border-radius: 16px;
+            padding: 12px 16px;
+            color: #fff;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            background: linear-gradient(135deg, #258f5b, #176341);
+            transition: transform 0.08s ease, opacity 0.12s ease;
+            white-space: nowrap;
+        }
+
+        .ipo-btn {
+            background: linear-gradient(135deg, var(--warm), var(--warm-deep));
+        }
+
+        .buy-btn:active,
+        .prestige-btn:active {
+            transform: scale(0.97);
+        }
+
+        .buy-btn:disabled,
+        .prestige-btn:disabled {
+            opacity: 0.42;
+            cursor: not-allowed;
+        }
+
+        .prestige-card {
+            padding: 16px;
+            border-radius: 22px;
+            background:
+                radial-gradient(circle at top right, rgba(255, 210, 102, 0.26), transparent 34%),
+                rgba(255, 255, 255, 0.84);
+            border: 1px solid var(--line);
+        }
+
+        .progress-track {
+            position: relative;
+            width: 100%;
+            height: 12px;
+            margin: 12px 0 10px;
+            border-radius: 999px;
+            background: rgba(101, 74, 39, 0.12);
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--warm), var(--gold));
+            transition: width 0.15s ease;
+        }
+
+        .prestige-copy {
+            color: var(--muted);
+            font-size: 14px;
+            line-height: 1.45;
+        }
+
+        .prestige-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            margin-top: 14px;
+        }
+
+        .bonus-drop {
+            position: fixed;
+            display: grid;
+            place-items: center;
+            width: 86px;
+            height: 86px;
+            border: 0;
+            border-radius: 28px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.36), transparent 24%),
+                linear-gradient(135deg, #ffd660 0%, #ff8b1d 100%);
+            color: #4d2f00;
+            box-shadow: 0 14px 28px rgba(255, 138, 29, 0.24);
+            font-weight: 800;
+            z-index: 20;
+            cursor: pointer;
+            animation: bonus-drift 2.4s ease-in-out infinite;
+        }
+
+        .bonus-drop small {
+            display: block;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+        }
+
+        .bonus-drop[hidden] {
+            display: none;
+        }
+
+        #effects-layer {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 30;
+        }
+
+        .float-number {
+            position: absolute;
+            left: 0;
+            top: 0;
+            font-size: 22px;
+            font-weight: 800;
+            color: #fff;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+            transform: translate3d(-50%, -50%, 0);
+            animation: float-up 0.82s ease-out forwards;
+            will-change: transform, opacity;
+        }
+
+        .float-number.gold {
+            color: #ffe08c;
+        }
+
+        @keyframes float-up {
+            0% {
+                opacity: 0;
+                transform: translate3d(-50%, -10%, 0) scale(0.75);
+            }
+            18% {
+                opacity: 1;
+            }
+            100% {
+                opacity: 0;
+                transform: translate3d(calc(-50% + var(--drift-x, 0px)), -120px, 0) scale(1.14);
+            }
+        }
+
+        @keyframes bonus-drift {
+            0%,
+            100% {
+                transform: translateY(0px) rotate(-5deg);
+            }
+            50% {
+                transform: translateY(-8px) rotate(4deg);
+            }
+        }
+
+        @keyframes card-flash {
+            0% {
+                transform: scale(1);
+            }
+            40% {
+                transform: scale(1.02);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        @media (max-width: 900px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .app {
+                width: min(100%, calc(100% - 16px));
+                padding-top: 12px;
+            }
+
+            .hero {
+                padding: 14px;
+            }
+
+            .hero-top,
+            .panel-title,
+            .prestige-row,
+            .road-head,
+            .goal-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .stats-grid,
+            .mini-stats {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .upgrade-card {
+                grid-template-columns: 1fr;
+            }
+
+            .buy-btn,
+            .prestige-btn {
+                width: 100%;
+            }
+
+            #click-btn {
+                width: min(250px, 76vw);
+                height: min(250px, 76vw);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <section class="hero">
+            <div class="hero-top">
+                <div>
+                    <div class="eyebrow">Offline run</div>
+                    <h1>Street to IPO</h1>
+                    <p>Tap. Scale. Prestige.</p>
+                    <div class="tags">
+                        <span class="pill">No save</span>
+                        <span class="pill green">Mobile first</span>
+                    </div>
+                </div>
+                <div class="session-note">
+                    Fresh run every launch.
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <span class="stat-label">Cash</span>
+                    <div class="stat-value" id="score">0</div>
+                    <div class="stat-sub">Spend it</div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Per Sec</span>
+                    <div class="stat-value" id="cps">0</div>
+                    <div class="stat-sub">Auto income</div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Per Tap</span>
+                    <div class="stat-value" id="tap-power">1</div>
+                    <div class="stat-sub">Tap power</div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Multi</span>
+                    <div class="stat-value" id="multiplier">x1</div>
+                    <div class="stat-sub" id="boost-timer">Bonus may spawn</div>
+                </div>
+            </div>
+        </section>
+
+        <div class="layout">
+            <section class="panel tap-zone">
+                <div class="banner">
+                    <div class="banner-mark">+</div>
+                    <div class="banner-copy">
+                        <strong id="banner-title">Ready</strong>
+                        <span id="banner-text">Tap to build.</span>
+                    </div>
+                </div>
+
+                <div class="tap-pad">
+                    <button id="click-btn" type="button" aria-label="Tap to earn cash">
+                        <span class="click-title">Tap</span>
+                        <span class="click-subtitle" id="click-value-label">+1 / tap</span>
+                        <span class="click-hint" id="click-hint">Fast taps win.</span>
+                    </button>
+                </div>
+
+                <div class="mini-stats">
+                    <div class="mini-card">
+                        <strong id="cycle-earned">0</strong>
+                        <span>Run</span>
+                    </div>
+                    <div class="mini-card">
+                        <strong id="diamonds">0</strong>
+                        <span>Gems</span>
+                    </div>
+                    <div class="mini-card">
+                        <strong id="total-earned">0</strong>
+                        <span>Total</span>
+                    </div>
+                </div>
+
+                <div class="road-card">
+                    <div class="road-head">
+                        <div>
+                            <div class="road-name" id="stage-name">Street</div>
+                            <div class="road-sub" id="stage-next">Next: Shop</div>
+                        </div>
+                        <span class="pill green" id="stage-bonus-pill">Run x1</span>
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="stage-fill"></div>
+                    </div>
+                    <div class="road-meta" id="stage-progress-text">0 / 400 total</div>
+                    <div class="stage-strip" id="stage-strip"></div>
+                    <div class="goal-row">
+                        <span class="pill" id="ipo-pill">IPO locked</span>
+                        <button type="button" class="prestige-btn ipo-btn" id="ipo-btn" disabled>Launch IPO</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-title">
+                    <div>
+                        <h2>Gems</h2>
+                        <div class="panel-kicker">Reset for x2.</div>
+                    </div>
+                    <span class="pill green" id="prestige-pill">Locked</span>
+                </div>
+
+                <div class="prestige-card">
+                    <div class="prestige-copy" id="prestige-copy">
+                        Sell the run. Gain 1 gem.
+                    </div>
+                    <div class="progress-track">
+                        <div class="progress-fill" id="prestige-fill"></div>
+                    </div>
+                    <div class="prestige-copy" id="prestige-progress-text">More run cash needed.</div>
+                    <div class="prestige-row">
+                        <div class="pill" id="prestige-multiplier-pill">Gem power x1</div>
+                        <button type="button" class="prestige-btn" id="prestige-btn" disabled>Prestige</button>
+                    </div>
+                </div>
+
+                <div class="panel-title" style="margin-top: 20px;">
+                    <div>
+                        <h2>Tap Shop</h2>
+                        <div class="panel-kicker">More per tap.</div>
+                    </div>
+                </div>
+                <div class="shop-grid" id="click-shop"></div>
+
+                <div class="panel-title" style="margin-top: 22px;">
+                    <div>
+                        <h2>Auto Shop</h2>
+                        <div class="panel-kicker">Earn while idle.</div>
+                    </div>
+                </div>
+                <div class="shop-grid" id="passive-shop"></div>
+            </section>
+        </div>
+    </div>
+
+    <button type="button" class="bonus-drop" id="bonus-drop" hidden aria-label="Catch the flying bonus">
+        x2
+        <small>BONUS</small>
+    </button>
+    <div id="effects-layer" aria-hidden="true"></div>
+
+    <script>
+        const clickUpgrades = [
+            {
+                id: "course",
+                name: "Course",
+                desc: "Sharper pitch.",
+                baseCost: 20,
+                cost: 20,
+                power: 1,
+                count: 0,
+                costMultiplier: 1.58
+            },
+            {
+                id: "script",
+                name: "Sales Script",
+                desc: "Faster closes.",
+                baseCost: 150,
+                cost: 150,
+                power: 4,
+                count: 0,
+                costMultiplier: 1.72
+            },
+            {
+                id: "mentor",
+                name: "Mentor",
+                desc: "Bigger deals.",
+                baseCost: 900,
+                cost: 900,
+                power: 12,
+                count: 0,
+                costMultiplier: 1.86
+            },
+            {
+                id: "product",
+                name: "Product Suite",
+                desc: "Higher ticket.",
+                baseCost: 4800,
+                cost: 4800,
+                power: 40,
+                count: 0,
+                costMultiplier: 1.96
+            },
+            {
+                id: "brand",
+                name: "Brand Deal",
+                desc: "Massive reach.",
+                baseCost: 26000,
+                cost: 26000,
+                power: 140,
+                count: 0,
+                costMultiplier: 2.08
+            },
+            {
+                id: "franchise",
+                name: "Franchise Chain",
+                desc: "Huge taps.",
+                baseCost: 145000,
+                cost: 145000,
+                power: 500,
+                count: 0,
+                costMultiplier: 2.2
+            }
+        ];
+
+        const passiveUpgrades = [
+            {
+                id: "walker",
+                name: "Walker",
+                desc: "Cheap first hire.",
+                baseCost: 15,
+                cost: 15,
+                cps: 1,
+                count: 0,
+                costMultiplier: 1.16
+            },
+            {
+                id: "bike",
+                name: "Bike Team",
+                desc: "Solid early flow.",
+                baseCost: 110,
+                cost: 110,
+                cps: 6,
+                count: 0,
+                costMultiplier: 1.18
+            },
+            {
+                id: "moto",
+                name: "Moto Squad",
+                desc: "Fast mid game.",
+                baseCost: 620,
+                cost: 620,
+                cps: 28,
+                count: 0,
+                costMultiplier: 1.2
+            },
+            {
+                id: "hub",
+                name: "Local Hub",
+                desc: "Steady growth.",
+                baseCost: 3200,
+                cost: 3200,
+                cps: 120,
+                count: 0,
+                costMultiplier: 1.22
+            },
+            {
+                id: "center",
+                name: "Logistics Center",
+                desc: "Late-game engine.",
+                baseCost: 17500,
+                cost: 17500,
+                cps: 520,
+                count: 0,
+                costMultiplier: 1.24
+            },
+            {
+                id: "fleet",
+                name: "Cargo Fleet",
+                desc: "Big money.",
+                baseCost: 98000,
+                cost: 98000,
+                cps: 2200,
+                count: 0,
+                costMultiplier: 1.26
+            }
+        ];
+
+        const roadmapStages = [
+            { name: "Street", goal: 0, bonus: 0 },
+            { name: "Shop", goal: 400, bonus: 0.15 },
+            { name: "City", goal: 2500, bonus: 0.2 },
+            { name: "Region", goal: 15000, bonus: 0.25 },
+            { name: "Nation", goal: 90000, bonus: 0.35 },
+            { name: "Continent", goal: 550000, bonus: 0.5 },
+            { name: "Titan", goal: 3200000, bonus: 0.75 }
+        ];
+
+        const state = {
+            score: 0,
+            cycleEarned: 0,
+            totalEarned: 0,
+            diamonds: 0,
+            boostUntil: 0,
+            bonusVisible: false,
+            stageIndex: 0,
+            ipoLaunched: false
+        };
+
+        const dom = {
+            score: document.getElementById("score"),
+            cps: document.getElementById("cps"),
+            tapPower: document.getElementById("tap-power"),
+            multiplier: document.getElementById("multiplier"),
+            boostTimer: document.getElementById("boost-timer"),
+            clickValueLabel: document.getElementById("click-value-label"),
+            clickHint: document.getElementById("click-hint"),
+            cycleEarned: document.getElementById("cycle-earned"),
+            diamonds: document.getElementById("diamonds"),
+            totalEarned: document.getElementById("total-earned"),
+            bannerTitle: document.getElementById("banner-title"),
+            bannerText: document.getElementById("banner-text"),
+            stageName: document.getElementById("stage-name"),
+            stageNext: document.getElementById("stage-next"),
+            stageFill: document.getElementById("stage-fill"),
+            stageProgressText: document.getElementById("stage-progress-text"),
+            stageBonusPill: document.getElementById("stage-bonus-pill"),
+            stageStrip: document.getElementById("stage-strip"),
+            ipoPill: document.getElementById("ipo-pill"),
+            ipoBtn: document.getElementById("ipo-btn"),
+            prestigeFill: document.getElementById("prestige-fill"),
+            prestigeCopy: document.getElementById("prestige-copy"),
+            prestigeProgressText: document.getElementById("prestige-progress-text"),
+            prestigeBtn: document.getElementById("prestige-btn"),
+            prestigePill: document.getElementById("prestige-pill"),
+            prestigeMultiplierPill: document.getElementById("prestige-multiplier-pill"),
+            clickShop: document.getElementById("click-shop"),
+            passiveShop: document.getElementById("passive-shop"),
+            clickBtn: document.getElementById("click-btn"),
+            bonusDrop: document.getElementById("bonus-drop"),
+            effectsLayer: document.getElementById("effects-layer")
+        };
+
+        let lastTick = performance.now();
+        let bonusSpawnTimer = 0;
+        let bonusHideTimer = 0;
+
+        function trimNumber(text) {
+            return text.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+        }
+
+        function formatNumber(value) {
+            const abs = Math.abs(value);
+
+            if (abs >= 1e12) {
+                return trimNumber((value / 1e12).toFixed(abs >= 1e13 ? 0 : 1)) + "T";
+            }
+            if (abs >= 1e9) {
+                return trimNumber((value / 1e9).toFixed(abs >= 1e10 ? 0 : 1)) + "B";
+            }
+            if (abs >= 1e6) {
+                return trimNumber((value / 1e6).toFixed(abs >= 1e7 ? 0 : 1)) + "M";
+            }
+            if (abs >= 1e3) {
+                return trimNumber((value / 1e3).toFixed(abs >= 1e4 ? 0 : 1)) + "K";
+            }
+            if (abs >= 100) {
+                return Math.floor(value).toString();
+            }
+            if (abs >= 10) {
+                return trimNumber(value.toFixed(1));
+            }
+            return trimNumber(value.toFixed(2));
+        }
+
+        function getPrestigeMultiplier() {
+            return Math.pow(2, state.diamonds);
+        }
+
+        function getBoostMultiplier() {
+            return performance.now() < state.boostUntil ? 2 : 1;
+        }
+
+        function getStageMultiplier() {
+            let multiplier = 1;
+
+            for (let index = 1; index <= state.stageIndex; index += 1) {
+                multiplier += roadmapStages[index].bonus;
+            }
+
+            return multiplier;
+        }
+
+        function getIncomeMultiplier() {
+            return getPrestigeMultiplier() * getBoostMultiplier() * getStageMultiplier();
+        }
+
+        function getTapBase() {
+            let total = 1;
+            for (const upgrade of clickUpgrades) {
+                total += upgrade.count * upgrade.power;
+            }
+            return total;
+        }
+
+        function getTapValue() {
+            return getTapBase() * getIncomeMultiplier();
+        }
+
+        function getBaseCps() {
+            let total = 0;
+            for (const upgrade of passiveUpgrades) {
+                total += upgrade.count * upgrade.cps;
+            }
+            return total;
+        }
+
+        function getCps() {
+            return getBaseCps() * getIncomeMultiplier();
+        }
+
+        function getPrestigeGoal() {
+            return 6500 * Math.pow(4, state.diamonds);
+        }
+
+        function addMoney(amount) {
+            state.score += amount;
+            state.cycleEarned += amount;
+            state.totalEarned += amount;
+            syncStageIndex();
+        }
+
+        function createStageNodes() {
+            const fragment = document.createDocumentFragment();
+
+            for (const stage of roadmapStages) {
+                const node = document.createElement("div");
+                node.className = "stage-node";
+                node.textContent = stage.name;
+                stage.dom = node;
+                fragment.appendChild(node);
+            }
+
+            dom.stageStrip.appendChild(fragment);
+        }
+
+        function createUpgradeCards(upgrades, container, type) {
+            const fragment = document.createDocumentFragment();
+
+            for (const upgrade of upgrades) {
+                const card = document.createElement("article");
+                card.className = "upgrade-card";
+                card.innerHTML = [
+                    '<div>',
+                    `<div class="upgrade-name">${upgrade.name}</div>`,
+                    `<div class="upgrade-desc">${upgrade.desc}</div>`,
+                    '<div class="upgrade-meta">',
+                    '<span class="pill" data-role="effect"></span>',
+                    '<span class="pill green" data-role="owned"></span>',
+                    "</div>",
+                    "</div>",
+                    `<button class="buy-btn" type="button">Buy ${formatNumber(upgrade.cost)}</button>`
+                ].join("");
+
+                const effect = card.querySelector('[data-role="effect"]');
+                const owned = card.querySelector('[data-role="owned"]');
+                const button = card.querySelector(".buy-btn");
+
+                button.addEventListener("click", function () {
+                    buyUpgrade(type, upgrade.id);
+                });
+
+                upgrade.dom = { card, effect, owned, button };
+                fragment.appendChild(card);
+            }
+
+            container.appendChild(fragment);
+        }
+
+        function spawnFloatingText(text, x, y, className) {
+            const number = document.createElement("span");
+            number.className = className ? `float-number ${className}` : "float-number";
+            number.textContent = text;
+            number.style.left = `${x}px`;
+            number.style.top = `${y}px`;
+            number.style.setProperty("--drift-x", `${Math.round((Math.random() - 0.5) * 54)}px`);
+            dom.effectsLayer.appendChild(number);
+            number.addEventListener("animationend", function () {
+                number.remove();
+            }, { once: true });
+        }
+
+        function flashCard(card) {
+            card.classList.remove("flash");
+            void card.offsetWidth;
+            card.classList.add("flash");
+        }
+
+        function pulseMainButton() {
+            dom.clickBtn.classList.remove("burst");
+            void dom.clickBtn.offsetWidth;
+            dom.clickBtn.classList.add("burst");
+            window.setTimeout(function () {
+                dom.clickBtn.classList.remove("burst");
+            }, 120);
+        }
+
+        function getUpgradeList(type) {
+            return type === "click" ? clickUpgrades : passiveUpgrades;
+        }
+
+        function getStageIndexForTotal(totalEarned) {
+            let index = 0;
+
+            for (let stageIndex = roadmapStages.length - 1; stageIndex >= 0; stageIndex -= 1) {
+                if (totalEarned >= roadmapStages[stageIndex].goal) {
+                    index = stageIndex;
+                    break;
+                }
+            }
+
+            return index;
+        }
+
+        function syncStageIndex() {
+            const nextIndex = getStageIndexForTotal(state.totalEarned);
+
+            if (nextIndex <= state.stageIndex) {
+                return;
+            }
+
+            for (let index = state.stageIndex + 1; index <= nextIndex; index += 1) {
+                const stage = roadmapStages[index];
+                spawnFloatingText(stage.name, window.innerWidth / 2, Math.min(180, window.innerHeight * 0.24), "gold");
+            }
+
+            state.stageIndex = nextIndex;
+        }
+
+        function canLaunchIPO() {
+            return !state.ipoLaunched &&
+                state.stageIndex === roadmapStages.length - 1 &&
+                state.diamonds >= 5;
+        }
+
+        function buyUpgrade(type, id) {
+            const upgrades = getUpgradeList(type);
+            const upgrade = upgrades.find(function (item) {
+                return item.id === id;
+            });
+
+            if (!upgrade || state.score < upgrade.cost) {
+                return;
+            }
+
+            state.score -= upgrade.cost;
+            upgrade.count += 1;
+            upgrade.cost = Math.floor(upgrade.cost * upgrade.costMultiplier);
+            flashCard(upgrade.dom.card);
+            updateUI();
+        }
+
+        function handleMainTap(event) {
+            const amount = getTapValue();
+            const rect = dom.clickBtn.getBoundingClientRect();
+            const x = event && event.clientX ? event.clientX : rect.left + (rect.width / 2);
+            const y = event && event.clientY ? event.clientY : rect.top + (rect.height / 2);
+
+            addMoney(amount);
+            pulseMainButton();
+            spawnFloatingText(`+${formatNumber(amount)}`, x, y, state.boostUntil > performance.now() ? "gold" : "");
+            updateUI();
+        }
+
+        function updateBanner() {
+            const now = performance.now();
+            const boostRemaining = Math.max(0, state.boostUntil - now);
+            const prestigeReady = state.cycleEarned >= getPrestigeGoal();
+            const nextStage = roadmapStages[state.stageIndex + 1];
+
+            if (state.ipoLaunched) {
+                dom.bannerTitle.textContent = "IPO live";
+                dom.bannerText.textContent = "Run complete.";
+                return;
+            }
+
+            if (state.bonusVisible) {
+                dom.bannerTitle.textContent = "Bonus live";
+                dom.bannerText.textContent = "Catch x2.";
+                return;
+            }
+
+            if (boostRemaining > 0) {
+                dom.bannerTitle.textContent = "x2 active";
+                dom.bannerText.textContent = `${Math.ceil(boostRemaining / 1000)}s left`;
+                return;
+            }
+
+            if (canLaunchIPO()) {
+                dom.bannerTitle.textContent = "IPO ready";
+                dom.bannerText.textContent = "Hit the final button.";
+                return;
+            }
+
+            if (state.stageIndex === roadmapStages.length - 1) {
+                dom.bannerTitle.textContent = "Need gems";
+                dom.bannerText.textContent = `${Math.max(0, 5 - state.diamonds)} more for IPO`;
+                return;
+            }
+
+            if (prestigeReady) {
+                dom.bannerTitle.textContent = "Gem ready";
+                dom.bannerText.textContent = "Prestige for x2.";
+                return;
+            }
+
+            dom.bannerTitle.textContent = nextStage ? `Next: ${nextStage.name}` : "Keep scaling";
+            dom.bannerText.textContent = "Tap to build.";
+        }
+
+        function updateShops() {
+            for (const upgrade of clickUpgrades) {
+                upgrade.dom.effect.textContent = `+${formatNumber(upgrade.power)} tap`;
+                upgrade.dom.owned.textContent = `Owned ${upgrade.count}`;
+                upgrade.dom.button.textContent = `Buy ${formatNumber(upgrade.cost)}`;
+                upgrade.dom.button.disabled = state.score < upgrade.cost;
+                upgrade.dom.card.classList.toggle("affordable", state.score >= upgrade.cost);
+            }
+
+            for (const upgrade of passiveUpgrades) {
+                upgrade.dom.effect.textContent = `+${formatNumber(upgrade.cps)}/s`;
+                upgrade.dom.owned.textContent = `Owned ${upgrade.count}`;
+                upgrade.dom.button.textContent = `Buy ${formatNumber(upgrade.cost)}`;
+                upgrade.dom.button.disabled = state.score < upgrade.cost;
+                upgrade.dom.card.classList.toggle("affordable", state.score >= upgrade.cost);
+            }
+        }
+
+        function updateStageProgress() {
+            const currentStage = roadmapStages[state.stageIndex];
+            const nextStage = roadmapStages[state.stageIndex + 1];
+
+            dom.stageName.textContent = currentStage.name;
+            dom.stageBonusPill.textContent = `Run x${formatNumber(getStageMultiplier())}`;
+
+            if (nextStage) {
+                const span = nextStage.goal - currentStage.goal;
+                const progress = Math.min(1, Math.max(0, (state.totalEarned - currentStage.goal) / span));
+                dom.stageNext.textContent = `Next: ${nextStage.name}`;
+                dom.stageFill.style.width = `${progress * 100}%`;
+                dom.stageProgressText.textContent = `${formatNumber(state.totalEarned)} / ${formatNumber(nextStage.goal)} total`;
+            } else {
+                dom.stageNext.textContent = state.diamonds >= 5 ? "IPO ready" : `Need ${Math.max(0, 5 - state.diamonds)} gems`;
+                dom.stageFill.style.width = "100%";
+                dom.stageProgressText.textContent = `${formatNumber(state.totalEarned)} total`;
+            }
+
+            for (let index = 0; index < roadmapStages.length; index += 1) {
+                const stage = roadmapStages[index];
+                stage.dom.classList.toggle("reached", index < state.stageIndex);
+                stage.dom.classList.toggle("current", index === state.stageIndex);
+            }
+
+            if (state.ipoLaunched) {
+                dom.ipoPill.textContent = "IPO live";
+                dom.ipoBtn.disabled = true;
+                dom.ipoBtn.textContent = "IPO Launched";
+            } else if (canLaunchIPO()) {
+                dom.ipoPill.textContent = "IPO ready";
+                dom.ipoBtn.disabled = false;
+                dom.ipoBtn.textContent = "Launch IPO";
+            } else {
+                dom.ipoPill.textContent = `IPO ${Math.min(state.diamonds, 5)}/5 gems`;
+                dom.ipoBtn.disabled = true;
+                dom.ipoBtn.textContent = "Launch IPO";
+            }
+        }
+
+        function updatePrestige() {
+            const goal = getPrestigeGoal();
+            const progress = Math.min(1, state.cycleEarned / goal);
+            const remaining = Math.max(0, goal - state.cycleEarned);
+            const ready = state.cycleEarned >= goal;
+
+            dom.prestigeFill.style.width = `${progress * 100}%`;
+            dom.prestigeBtn.disabled = !ready;
+            dom.prestigePill.textContent = ready ? "Ready" : "Locked";
+            dom.prestigeMultiplierPill.textContent = `Gem power x${formatNumber(getPrestigeMultiplier())}`;
+
+            if (ready) {
+                dom.prestigeCopy.textContent = "Reset now for 1 gem.";
+                dom.prestigeProgressText.textContent = "Gems double all income.";
+            } else {
+                dom.prestigeCopy.textContent = "Reach the run goal.";
+                dom.prestigeProgressText.textContent = `${formatNumber(remaining)} to next gem`;
+            }
+        }
+
+        function updateBoostInfo() {
+            const now = performance.now();
+            const boostRemaining = Math.max(0, state.boostUntil - now);
+            const multiplier = getIncomeMultiplier();
+
+            dom.multiplier.textContent = `x${formatNumber(multiplier)}`;
+
+            if (boostRemaining > 0) {
+                dom.boostTimer.textContent = `x2 for ${Math.ceil(boostRemaining / 1000)}s`;
+                dom.clickHint.textContent = "Buy hard. Tap fast.";
+            } else if (canLaunchIPO()) {
+                dom.boostTimer.textContent = "IPO ready";
+                dom.clickHint.textContent = "Final goal unlocked.";
+            } else {
+                dom.boostTimer.textContent = "Bonus may spawn";
+                dom.clickHint.textContent = "Fast taps win.";
+            }
+        }
+
+        function updateUI() {
+            dom.score.textContent = formatNumber(state.score);
+            dom.cps.textContent = formatNumber(getCps());
+            dom.tapPower.textContent = formatNumber(getTapValue());
+            dom.clickValueLabel.textContent = `+${formatNumber(getTapValue())} / tap`;
+            dom.cycleEarned.textContent = formatNumber(state.cycleEarned);
+            dom.diamonds.textContent = formatNumber(state.diamonds);
+            dom.totalEarned.textContent = formatNumber(state.totalEarned);
+
+            updateBoostInfo();
+            updateBanner();
+            updateStageProgress();
+            updatePrestige();
+            updateShops();
+        }
+
+        function positionBonusDrop() {
+            const width = Math.max(90, window.innerWidth - 110);
+            const topLimit = Math.min(window.innerHeight * 0.45, 360);
+            const x = 12 + Math.random() * Math.max(12, width - 24);
+            const y = 100 + Math.random() * Math.max(30, topLimit);
+            dom.bonusDrop.style.left = `${x}px`;
+            dom.bonusDrop.style.top = `${y}px`;
+        }
+
+        function scheduleBonus(minDelay, maxDelay) {
+            window.clearTimeout(bonusSpawnTimer);
+            const delay = Math.floor((Math.random() * (maxDelay - minDelay)) + minDelay);
+
+            bonusSpawnTimer = window.setTimeout(function () {
+                showBonusDrop();
+            }, delay);
+        }
+
+        function hideBonusDrop() {
+            state.bonusVisible = false;
+            dom.bonusDrop.hidden = true;
+            window.clearTimeout(bonusHideTimer);
+            updateUI();
+        }
+
+        function showBonusDrop() {
+            state.bonusVisible = true;
+            positionBonusDrop();
+            dom.bonusDrop.hidden = false;
+
+            window.clearTimeout(bonusHideTimer);
+            bonusHideTimer = window.setTimeout(function () {
+                hideBonusDrop();
+                scheduleBonus(32000, 60000);
+            }, 5000);
+
+            updateUI();
+        }
+
+        function collectBonus() {
+            const rect = dom.bonusDrop.getBoundingClientRect();
+            state.boostUntil = Math.max(performance.now(), state.boostUntil) + 30000;
+            spawnFloatingText("x2", rect.left + (rect.width / 2), rect.top + 18, "gold");
+            hideBonusDrop();
+            scheduleBonus(40000, 70000);
+            updateUI();
+        }
+
+        function resetProgressUpgrades(upgrades) {
+            for (const upgrade of upgrades) {
+                upgrade.count = 0;
+                upgrade.cost = upgrade.baseCost;
+            }
+        }
+
+        function prestige() {
+            if (state.cycleEarned < getPrestigeGoal()) {
+                return;
+            }
+
+            const shouldReset = window.confirm("Prestige this run for 1 gem?");
+            if (!shouldReset) {
+                return;
+            }
+
+            state.diamonds += 1;
+            state.score = 0;
+            state.cycleEarned = 0;
+            state.boostUntil = 0;
+
+            resetProgressUpgrades(clickUpgrades);
+            resetProgressUpgrades(passiveUpgrades);
+            hideBonusDrop();
+            scheduleBonus(16000, 28000);
+            updateUI();
+        }
+
+        function launchIPO() {
+            if (!canLaunchIPO()) {
+                return;
+            }
+
+            const shouldLaunch = window.confirm("Launch IPO and complete this run?");
+            if (!shouldLaunch) {
+                return;
+            }
+
+            state.ipoLaunched = true;
+            state.boostUntil = Math.max(state.boostUntil, performance.now()) + 60000;
+            spawnFloatingText("IPO!", window.innerWidth / 2, Math.min(160, window.innerHeight * 0.22), "gold");
+            updateUI();
+        }
+
+        function gameStep() {
+            const now = performance.now();
+            const delta = Math.min((now - lastTick) / 1000, 0.5);
+            lastTick = now;
+
+            const cps = getCps();
+            if (cps > 0 && delta > 0) {
+                addMoney(cps * delta);
+            }
+
+            if (state.boostUntil > 0 && now >= state.boostUntil) {
+                state.boostUntil = 0;
+            }
+
+            updateUI();
+        }
+
+        document.addEventListener("visibilitychange", function () {
+            lastTick = performance.now();
+        });
+
+        window.addEventListener("resize", function () {
+            if (state.bonusVisible) {
+                positionBonusDrop();
+            }
+        });
+
+        if (window.PointerEvent) {
+            dom.clickBtn.addEventListener("pointerdown", handleMainTap);
+            dom.bonusDrop.addEventListener("pointerdown", function (event) {
+                event.preventDefault();
+                collectBonus();
+            });
+        } else {
+            dom.clickBtn.addEventListener("click", handleMainTap);
+            dom.bonusDrop.addEventListener("click", collectBonus);
+        }
+        dom.prestigeBtn.addEventListener("click", prestige);
+        dom.ipoBtn.addEventListener("click", launchIPO);
+
+        createStageNodes();
+        createUpgradeCards(clickUpgrades, dom.clickShop, "click");
+        createUpgradeCards(passiveUpgrades, dom.passiveShop, "passive");
+        updateUI();
+        scheduleBonus(18000, 32000);
+        window.setInterval(gameStep, 200);
+    </script>
+</body>
+</html>

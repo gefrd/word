@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Sky Jumper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(180deg, #87CEEB 0%, #E0F6FF 100%);
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+
+        #ui {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 28px;
+            font-weight: bold;
+            text-align: center;
+            z-index: 10;
+            text-shadow: 3px 3px 6px rgba(0,0,0,0.5);
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            padding: 0 30px;
+            z-index: 10;
+        }
+
+        .control-btn {
+            width: 90px;
+            height: 90px;
+            background: rgba(255, 255, 255, 0.3);
+            border: 4px solid #fff;
+            border-radius: 50%;
+            color: #fff;
+            font-size: 36px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            touch-action: manipulation;
+        }
+
+        .control-btn:active {
+            background: rgba(255, 255, 255, 0.6);
+            transform: scale(0.95);
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.95);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            display: none;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            z-index: 100;
+        }
+
+        #gameOver h1 {
+            color: #ff6b6b;
+            font-size: 42px;
+            margin-bottom: 20px;
+        }
+
+        #gameOver p {
+            color: #333;
+            font-size: 22px;
+            margin: 12px 0;
+        }
+
+        #restartBtn {
+            margin-top: 25px;
+            padding: 15px 50px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            border: none;
+            font-size: 22px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 30px;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        #restartBtn:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui">
+        <div>HEIGHT: <span id="score">0</span>M</div>
+    </div>
+
+    <div id="controls">
+        <div class="control-btn" id="leftBtn">◄</div>
+        <div class="control-btn" id="rightBtn">►</div>
+    </div>
+
+    <div id="gameOver">
+        <h1>GAME OVER!</h1>
+        <p>MAX HEIGHT: <span id="finalScore">0</span>M</p>
+        <p>PLATFORMS: <span id="platformCount">0</span></p>
+        <button id="restartBtn">PLAY AGAIN</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        canvas.width = Math.min(window.innerWidth, 450);
+        canvas.height = window.innerHeight;
+
+        let gameActive = false;
+        let score = 0;
+        let platformsPassed = 0;
+        let cameraY = 0;
+
+        const player = {
+            x: 0,
+            y: 0,
+            width: 40,
+            height: 40,
+            dx: 0,
+            dy: 0,
+            gravity: 0.5,
+            jumpPower: -12,
+            speed: 5,
+            onPlatform: false
+        };
+
+        let platforms = [];
+        let clouds = [];
+        let particles = [];
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(freq, duration, type = 'sine') {
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            oscillator.type = type;
+            oscillator.frequency.value = freq;
+            gainNode.gain.value = 0.08;
+            
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + duration);
+        }
+
+        function createClouds() {
+            clouds = [];
+            for (let i = 0; i < 8; i++) {
+                clouds.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    width: 60 + Math.random() * 40,
+                    speed: 0.3 + Math.random() * 0.5
+                });
+            }
+        }
+
+        function createPlatforms() {
+            platforms = [];
+            
+            // Starting platform
+            platforms.push({
+                x: canvas.width / 2 - 50,
+                y: canvas.height - 100,
+                width: 100,
+                height: 15,
+                type: 'normal'
+            });
+
+            // Generate platforms
+            let y = canvas.height - 200;
+            while (y > -3000) {
+                const x = Math.random() * (canvas.width - 80);
+                const type = Math.random() < 0.15 ? 'spring' : 'normal';
+                
+                platforms.push({
+                    x: x,
+                    y: y,
+                    width: type === 'spring' ? 60 : 80,
+                    height: 15,
+                    type: type
+                });
+                
+                y -= 60 + Math.random() * 80;
+            }
+        }
+
+        function createParticles(x, y, color, count = 10) {
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 6,
+                    vy: (Math.random() - 0.5) * 6 - 2,
+                    life: 1,
+                    color: color,
+                    size: Math.random() * 4 + 2
+                });
+            }
+        }
+
+        function init() {
+            gameActive = true;
+            score = 0;
+            platformsPassed = 0;
+            cameraY = 0;
+            
+            player.x = canvas.width / 2 - player.width / 2;
+            player.y = canvas.height - 150;
+            player.dx = 0;
+            player.dy = 0;
+            player.onPlatform = true;
+            
+            particles = [];
+            createClouds();
+            createPlatforms();
+            
+            document.getElementById('gameOver').style.display = 'none';
+            gameLoop();
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            // Update player
+            player.x += player.dx;
+            player.dy += player.gravity;
+            player.y += player.dy;
+
+            // Wrap around screen
+            if (player.x < -player.width) player.x = canvas.width;
+            if (player.x > canvas.width) player.x = -player.width;
+
+            // Camera follows player
+            if (player.y < canvas.height / 2) {
+                const offset = canvas.height / 2 - player.y;
+                cameraY += offset;
+                player.y = canvas.height / 2;
+                
+                platforms.forEach(platform => {
+                    platform.y += offset;
+                });
+                
+                clouds.forEach(cloud => {
+                    cloud.y += offset * 0.5;
+                    if (cloud.y > canvas.height + 50) {
+                        cloud.y = -50;
+                        cloud.x = Math.random() * canvas.width;
+                    }
+                });
+            }
+
+            // Update score
+            score = Math.max(score, Math.floor(cameraY / 10));
+
+            // Platform collision
+            player.onPlatform = false;
+            platforms.forEach((platform, index) => {
+                if (player.dy > 0 &&
+                    player.y + player.height > platform.y &&
+                    player.y + player.height < platform.y + platform.height + 5 &&
+                    player.x + player.width > platform.x &&
+                    player.x < platform.x + platform.width) {
+                    
+                    if (platform.type === 'spring') {
+                        player.dy = player.jumpPower * 1.5;
+                        createParticles(player.x + player.width/2, player.y + player.height, '#ff0', 20);
+                        playSound(800, 0.15);
+                    } else {
+                        player.dy = player.jumpPower;
+                        playSound(400, 0.1);
+                    }
+                    
+                    player.onPlatform = true;
+                    player.y = platform.y - player.height;
+                    
+                    // Count platform
+                    if (!platform.counted) {
+                        platformsPassed++;
+                        platform.counted = true;
+                    }
+                }
+            });
+
+            // Remove platforms that are off screen
+            platforms = platforms.filter(p => p.y < canvas.height + 100);
+
+            // Generate new platforms
+            const highestPlatform = Math.min(...platforms.map(p => p.y));
+            if (highestPlatform > -2000) {
+                let y = highestPlatform - 100;
+                for (let i = 0; i < 5; i++) {
+                    const x = Math.random() * (canvas.width - 80);
+                    const type = Math.random() < 0.15 ? 'spring' : 'normal';
+                    platforms.push({
+                        x: x,
+                        y: y,
+                        width: type === 'spring' ? 60 : 80,
+                        height: 15,
+                        type: type,
+                        counted: false
+                    });
+                    y -= 60 + Math.random() * 80;
+                }
+            }
+
+            // Update clouds
+            clouds.forEach(cloud => {
+                cloud.x += cloud.speed;
+                if (cloud.x > canvas.width + cloud.width) {
+                    cloud.x = -cloud.width;
+                }
+            });
+
+            // Update particles
+            particles = particles.filter(p => {
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.3;
+                p.life -= 0.02;
+                return p.life > 0;
+            });
+
+            // Game over
+            if (player.y > canvas.height + 50) {
+                gameOver();
+            }
+
+            // Update UI
+            document.getElementById('score').textContent = score;
+        }
+
+        function draw() {
+            // Sky gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#87CEEB');
+            gradient.addColorStop(1, '#E0F6FF');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw clouds
+            clouds.forEach(cloud => {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.beginPath();
+                ctx.arc(cloud.x, cloud.y, cloud.width * 0.3, 0, Math.PI * 2);
+                ctx.arc(cloud.x + cloud.width * 0.4, cloud.y - 10, cloud.width * 0.35, 0, Math.PI * 2);
+                ctx.arc(cloud.x + cloud.width * 0.7, cloud.y, cloud.width * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw platforms
+            platforms.forEach(platform => {
+                if (platform.type === 'spring') {
+                    // Spring platform
+                    ctx.fillStyle = '#FFD700';
+                    ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                    ctx.fillStyle = '#FFA500';
+                    ctx.fillRect(platform.x + 5, platform.y - 5, platform.width - 10, 5);
+                    
+                    // Spring coils
+                    ctx.strokeStyle = '#FF6347';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    for (let i = 0; i < 3; i++) {
+                        ctx.moveTo(platform.x + 15 + i * 15, platform.y - 3);
+                        ctx.lineTo(platform.x + 15 + i * 15, platform.y + 3);
+                    }
+                    ctx.stroke();
+                } else {
+                    // Normal platform
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+                    ctx.fillStyle = '#A0522D';
+                    ctx.fillRect(platform.x, platform.y, platform.width, platform.height / 2);
+                }
+            });
+
+            // Draw particles
+            particles.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1;
+
+            // Draw player
+            ctx.fillStyle = '#FF6B6B';
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+            
+            // Player face
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(player.x + 8, player.y + 10, 8, 8);
+            ctx.fillRect(player.x + 24, player.y + 10, 8, 8);
+            
+            ctx.fillStyle = '#000';
+            ctx.fillRect(player.x + 10, player.y + 12, 4, 4);
+            ctx.fillRect(player.x + 26, player.y + 12, 4, 4);
+            
+            // Smile
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(player.x + player.width/2, player.y + 25, 8, 0, Math.PI);
+            ctx.stroke();
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            if (gameActive) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        function gameOver() {
+            gameActive = false;
+            document.getElementById('finalScore').textContent = score;
+            document.getElementById('platformCount').textContent = platformsPassed;
+            document.getElementById('gameOver').style.display = 'block';
+            playSound(200, 0.3, 'triangle'); 
+        }
+
+        // Controls
+        let leftPressed = false;
+        let rightPressed = false;
+
+        document.getElementById('leftBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            leftPressed = true;
+            player.dx = -player.speed;
+        });
+
+        document.getElementById('leftBtn').addEventListener('touchend', () => {
+            leftPressed = false;
+            if (!rightPressed) player.dx = 0;
+        });
+
+        document.getElementById('rightBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            rightPressed = true;
+            player.dx = player.speed;
+        });
+
+        document.getElementById('rightBtn').addEventListener('touchend', () => {
+            rightPressed = false;
+            if (!leftPressed) player.dx = 0;
+        });
+
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') player.dx = -player.speed;
+            if (e.key === 'ArrowRight') player.dx = player.speed;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') player.dx = 0;
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', init);
+
+        init();
+    </script>
+</body>
+</html>

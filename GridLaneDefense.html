@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+  >
+  <title>Warehouse Defense</title>
+  <style>
+    :root {
+      --bg-top: #f2d6a2;
+      --bg-bottom: #bc7740;
+      --panel: rgba(31, 43, 31, 0.92);
+      --panel-soft: rgba(49, 63, 49, 0.88);
+      --line: rgba(255, 246, 210, 0.14);
+      --text: #fff7df;
+      --muted: #d7c49a;
+      --accent: #f6d05d;
+      --danger: #ff8d76;
+      --active: #5ab8ff;
+      --shadow: rgba(0, 0, 0, 0.28);
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      touch-action: none;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at top, rgba(255, 238, 174, 0.35), transparent 36%),
+        linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+      color: var(--text);
+      font-family: "Avenir Next", "Trebuchet MS", Verdana, sans-serif;
+    }
+
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+    }
+
+    .app {
+      width: min(100vw, 720px);
+      height: 100vh;
+      padding:
+        max(10px, env(safe-area-inset-top))
+        12px
+        max(10px, env(safe-area-inset-bottom))
+        12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .hud,
+    .controls {
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: 0 10px 26px var(--shadow);
+    }
+
+    .hud {
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+
+    .title-block {
+      min-width: 0;
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: clamp(1.05rem, 3.4vw, 1.45rem);
+      line-height: 1.05;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .title-block p {
+      margin: 4px 0 0;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+
+    .stats {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .stat {
+      min-width: 74px;
+      padding: 10px 10px 8px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.08);
+      text-align: center;
+    }
+
+    .stat span {
+      display: block;
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .stat strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 1rem;
+      color: var(--accent);
+    }
+
+    .board-shell {
+      position: relative;
+      flex: 1;
+      min-height: 320px;
+      border-radius: 24px;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(255, 252, 238, 0.16), rgba(74, 34, 13, 0.2)),
+        rgba(77, 42, 18, 0.38);
+      box-shadow: inset 0 0 0 1px rgba(255, 244, 209, 0.12), 0 10px 24px var(--shadow);
+    }
+
+    #gameCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      background: rgba(14, 14, 14, 0.62);
+      backdrop-filter: blur(4px);
+    }
+
+    .overlay.hidden {
+      display: none;
+    }
+
+    .panel {
+      width: min(100%, 320px);
+      padding: 22px 18px 18px;
+      border-radius: 20px;
+      background: rgba(24, 31, 24, 0.95);
+      border: 1px solid rgba(255, 235, 168, 0.2);
+      text-align: center;
+      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    .panel h2 {
+      margin: 0;
+      font-size: 1.4rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .panel p {
+      margin: 10px 0 16px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .panel button {
+      width: 100%;
+      border: 0;
+      border-radius: 16px;
+      padding: 14px;
+      font: inherit;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #182212;
+      background: linear-gradient(180deg, #ffe37e, #f1b952);
+      box-shadow: 0 8px 18px rgba(241, 185, 82, 0.3);
+    }
+
+    .controls {
+      padding: 10px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .unit-card {
+      border: 0;
+      border-radius: 16px;
+      padding: 10px 8px;
+      background: var(--panel-soft);
+      color: var(--text);
+      font: inherit;
+      text-align: left;
+      box-shadow: inset 0 0 0 1px rgba(255, 240, 210, 0.08);
+    }
+
+    .unit-card.active {
+      background: rgba(24, 113, 180, 0.96);
+      box-shadow: inset 0 0 0 2px rgba(210, 237, 255, 0.42), 0 8px 18px rgba(29, 109, 168, 0.26);
+    }
+
+    .unit-card.dimmed {
+      opacity: 0.6;
+    }
+
+    .unit-card strong,
+    .unit-card span,
+    .unit-card small {
+      display: block;
+      pointer-events: none;
+    }
+
+    .unit-card strong {
+      font-size: 0.84rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .unit-card span {
+      margin-top: 4px;
+      font-size: 0.78rem;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .unit-card small {
+      margin-top: 4px;
+      font-size: 0.68rem;
+      color: var(--muted);
+      line-height: 1.2;
+    }
+
+    @media (max-width: 520px) {
+      .hud {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .stats {
+        justify-content: space-between;
+      }
+
+      .controls {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="hud">
+      <div class="title-block">
+        <h1>Warehouse Defense</h1>
+      </div>
+      <div class="stats">
+        <div class="stat">
+          <span>Orders</span>
+          <strong id="energyValue">0</strong>
+        </div>
+        <div class="stat">
+          <span>Wave</span>
+          <strong id="waveValue">1</strong>
+        </div>
+        <div class="stat">
+          <span>Mode</span>
+          <strong id="modeValue">Courier</strong>
+        </div>
+      </div>
+    </header>
+
+    <main class="board-shell">
+      <canvas id="gameCanvas" aria-label="Game board"></canvas>
+      <div class="overlay hidden" id="overlay">
+        <div class="panel">
+          <h2 id="overlayTitle">Warehouse Lost</h2>
+          <p id="overlayText">A problem reached the hub. Restart and reinforce the lanes.</p>
+          <button id="restartButton" type="button">Restart</button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="controls">
+      <button class="unit-card" data-unit="generator" type="button">
+        <strong>Agent</strong>
+        <span>60</span>
+        <small>Generates new orders</small>
+      </button>
+      <button class="unit-card" data-unit="shooter" type="button">
+        <strong>Courier</strong>
+        <span>100</span>
+        <small>Throws parcels down the lane</small>
+      </button>
+      <button class="unit-card" data-unit="wall" type="button">
+        <strong>Technician</strong>
+        <span>75</span>
+        <small>Heavy blocker with high durability</small>
+      </button>
+      <button class="unit-card" data-unit="manager" type="button">
+        <strong>Manager</strong>
+        <span>0</span>
+        <small>Removes a defender and refunds part of the cost</small>
+      </button>
+    </footer>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const ROWS = 5;
+      const COLS = 7;
+      const START_ENERGY = 180;
+      const REFUND_RATE = 0.5;
+
+      const UNIT_TYPES = {
+        generator: {
+          key: "generator",
+          label: "Agent",
+          cost: 60,
+          maxHealth: 95,
+          size: 0.5,
+          produceEvery: 6.2,
+          produceValue: 30
+        },
+        shooter: {
+          key: "shooter",
+          label: "Courier",
+          cost: 100,
+          maxHealth: 90,
+          size: 0.48,
+          fireEvery: 0.85,
+          projectileSpeed: 300,
+          projectileDamage: 24
+        },
+        wall: {
+          key: "wall",
+          label: "Technician",
+          cost: 75,
+          maxHealth: 330,
+          size: 0.72
+        }
+      };
+
+      const ENEMY_TYPES = [
+        { label: "Jam", speed: 18, maxHealth: 92, damage: 18, size: 0.5, color: "#de5d4a" },
+        { label: "Truck", speed: 12, maxHealth: 145, damage: 24, size: 0.64, color: "#c44434" },
+        { label: "Rival", speed: 24, maxHealth: 74, damage: 14, size: 0.46, color: "#f07d66" }
+      ];
+
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const shell = document.querySelector(".board-shell");
+      const energyValue = document.getElementById("energyValue");
+      const waveValue = document.getElementById("waveValue");
+      const modeValue = document.getElementById("modeValue");
+      const overlay = document.getElementById("overlay");
+      const overlayTitle = document.getElementById("overlayTitle");
+      const overlayText = document.getElementById("overlayText");
+      const restartButton = document.getElementById("restartButton");
+      const unitButtons = Array.from(document.querySelectorAll(".unit-card"));
+
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const pointer = { x: -9999, y: -9999, active: false };
+      const view = {
+        width: 0,
+        height: 0,
+        boardX: 0,
+        boardY: 0,
+        baseWidth: 0,
+        gridX: 0,
+        gridY: 0,
+        gridWidth: 0,
+        gridHeight: 0,
+        cell: 0
+      };
+
+      let state = null;
+
+      function createInitialState() {
+        return {
+          energy: START_ENERGY,
+          wave: 1,
+          elapsed: 0,
+          lastTime: 0,
+          gameOver: false,
+          defenders: [],
+          enemies: [],
+          projectiles: [],
+          coins: [],
+          occupancy: Array.from({ length: ROWS }, () => Array(COLS).fill(null)),
+          selectedUnit: "shooter",
+          spawnTimer: 1.5,
+          ambientOrderTimer: 8.5,
+          infoMessage: "Tap yellow diamonds for orders.",
+          messageTimer: 4
+        };
+      }
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function laneCenter(row) {
+        return view.gridY + row * view.cell + view.cell * 0.5;
+      }
+
+      function cellCenter(row, col) {
+        return {
+          x: view.gridX + col * view.cell + view.cell * 0.5,
+          y: laneCenter(row)
+        };
+      }
+
+      function setMessage(text, duration = 1.6) {
+        state.infoMessage = text;
+        state.messageTimer = duration;
+      }
+
+      function recalcLayout() {
+        const rect = shell.getBoundingClientRect();
+        const cssWidth = Math.max(320, Math.floor(rect.width));
+        const cssHeight = Math.max(320, Math.floor(rect.height));
+        const oldView = { ...view };
+
+        canvas.style.width = cssWidth + "px";
+        canvas.style.height = cssHeight + "px";
+        canvas.width = Math.floor(cssWidth * dpr);
+        canvas.height = Math.floor(cssHeight * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+
+        const maxCellWidth = (cssWidth - 20) / (COLS + 1.1);
+        const maxCellHeight = (cssHeight - 18) / ROWS;
+        view.cell = Math.floor(Math.min(maxCellWidth, maxCellHeight));
+        view.baseWidth = Math.floor(view.cell * 1.05);
+        view.gridWidth = view.cell * COLS;
+        view.gridHeight = view.cell * ROWS;
+        view.width = cssWidth;
+        view.height = cssHeight;
+
+        const boardWidth = view.baseWidth + view.gridWidth;
+        view.boardX = Math.floor((cssWidth - boardWidth) / 2);
+        view.boardY = Math.floor((cssHeight - view.gridHeight) / 2);
+        view.gridX = view.boardX + view.baseWidth;
+        view.gridY = view.boardY;
+
+        if (oldView.gridWidth > 0) {
+          remapMovingEntities(oldView);
+        }
+        syncDefenderPositions();
+      }
+
+      function remapMovingEntities(oldView) {
+        for (const enemy of state.enemies) {
+          const ratio = clamp((enemy.x - oldView.gridX) / oldView.gridWidth, -0.2, 1.25);
+          enemy.x = view.gridX + ratio * view.gridWidth;
+          enemy.y = laneCenter(enemy.row);
+        }
+
+        for (const shot of state.projectiles) {
+          const ratio = clamp((shot.x - oldView.gridX) / oldView.gridWidth, -0.1, 1.2);
+          shot.x = view.gridX + ratio * view.gridWidth;
+          shot.y = laneCenter(shot.row);
+        }
+
+        for (const coin of state.coins) {
+          if (typeof coin.row === "number" && typeof coin.col === "number") {
+            const center = cellCenter(coin.row, coin.col);
+            const offsetRatioX = (coin.baseX - (oldView.gridX + coin.col * oldView.cell)) / oldView.cell;
+            const offsetRatioY = (coin.baseY - (oldView.gridY + coin.row * oldView.cell)) / oldView.cell;
+            coin.baseX = view.gridX + coin.col * view.cell + offsetRatioX * view.cell;
+            coin.baseY = view.gridY + coin.row * view.cell + offsetRatioY * view.cell;
+            coin.x = coin.baseX;
+            coin.y = coin.baseY;
+            coin.targetY = center.y - view.cell * 0.08;
+          } else {
+            const ratio = clamp((coin.baseX - oldView.gridX) / oldView.gridWidth, -0.05, 1.1);
+            coin.baseX = view.gridX + ratio * view.gridWidth;
+            coin.x = coin.baseX;
+            coin.baseY = view.gridY + clamp((coin.baseY - oldView.gridY) / oldView.gridHeight, 0, 1) * view.gridHeight;
+            coin.y = coin.baseY;
+            coin.targetY = Math.min(coin.baseY, view.gridY + view.gridHeight - view.cell * 0.2);
+          }
+        }
+
+        pointer.x = clamp(pointer.x, view.boardX, view.gridX + view.gridWidth);
+        pointer.y = clamp(pointer.y, view.boardY, view.boardY + view.gridHeight);
+      }
+
+      function syncDefenderPositions() {
+        for (const defender of state.defenders) {
+          const center = cellCenter(defender.row, defender.col);
+          defender.x = center.x;
+          defender.y = center.y;
+        }
+      }
+
+      function updateHud() {
+        energyValue.textContent = String(state.energy);
+        waveValue.textContent = String(state.wave);
+        modeValue.textContent = state.selectedUnit === "manager" ? "Manager" : UNIT_TYPES[state.selectedUnit].label;
+
+        for (const button of unitButtons) {
+          const unit = button.dataset.unit;
+          const isManager = unit === "manager";
+          const cost = isManager ? 0 : UNIT_TYPES[unit].cost;
+          button.classList.toggle("active", unit === state.selectedUnit);
+          button.classList.toggle("dimmed", !isManager && cost > state.energy);
+        }
+      }
+
+      function spawnDefender(typeKey, row, col) {
+        const unitType = UNIT_TYPES[typeKey];
+        const center = cellCenter(row, col);
+        const defender = {
+          type: typeKey,
+          row,
+          col,
+          x: center.x,
+          y: center.y,
+          health: unitType.maxHealth,
+          maxHealth: unitType.maxHealth,
+          cooldown: Math.random() * 0.3,
+          cost: unitType.cost
+        };
+
+        state.defenders.push(defender);
+        state.occupancy[row][col] = defender;
+      }
+
+      function removeDefender(defender, refund = true) {
+        state.occupancy[defender.row][defender.col] = null;
+        const index = state.defenders.indexOf(defender);
+        if (index >= 0) {
+          state.defenders.splice(index, 1);
+        }
+        if (refund) {
+          state.energy += Math.round(defender.cost * REFUND_RATE);
+        }
+      }
+
+      function spawnCoin(baseX, baseY, value, options = {}) {
+        const coin = {
+          value,
+          row: options.row,
+          col: options.col,
+          baseX,
+          baseY,
+          x: baseX,
+          y: baseY,
+          age: 0,
+          ttl: options.ttl || 10,
+          fall: options.fall || 0,
+          targetY: options.targetY || baseY,
+          phase: Math.random() * Math.PI * 2
+        };
+        state.coins.push(coin);
+      }
+
+      function spawnGeneratorCoin(defender) {
+        spawnCoin(defender.x, defender.y - view.cell * 0.18, UNIT_TYPES.generator.produceValue, {
+          row: defender.row,
+          col: defender.col,
+          ttl: 11
+        });
+      }
+
+      function spawnAmbientCoin() {
+        const col = Math.floor(Math.random() * COLS);
+        const row = Math.floor(Math.random() * ROWS);
+        const center = cellCenter(row, col);
+        spawnCoin(center.x, view.gridY - view.cell * 0.35, 25, {
+          row,
+          col,
+          ttl: 9,
+          fall: view.cell * 0.9,
+          targetY: center.y - view.cell * 0.08
+        });
+      }
+
+      function enemyPowerScale() {
+        return 1 + state.elapsed * 0.012;
+      }
+
+      function spawnEnemy() {
+        const type = ENEMY_TYPES[Math.floor(Math.random() * ENEMY_TYPES.length)];
+        const row = Math.floor(Math.random() * ROWS);
+        const scale = enemyPowerScale();
+        state.enemies.push({
+          row,
+          x: view.gridX + view.gridWidth + view.cell * 0.58,
+          y: laneCenter(row),
+          speed: type.speed * Math.min(scale, 1.9),
+          damage: type.damage * Math.min(1 + state.elapsed * 0.006, 1.7),
+          health: type.maxHealth * Math.min(scale, 2.1),
+          maxHealth: type.maxHealth * Math.min(scale, 2.1),
+          size: type.size,
+          label: type.label,
+          color: type.color,
+          wobble: Math.random() * Math.PI * 2
+        });
+      }
+
+      function scheduleNextEnemy() {
+        const baseInterval = clamp(2.4 - state.elapsed * 0.02, 0.72, 2.4);
+        state.spawnTimer = baseInterval * (0.82 + Math.random() * 0.45);
+      }
+
+      function fireProjectile(defender) {
+        const unitType = UNIT_TYPES.shooter;
+        state.projectiles.push({
+          row: defender.row,
+          x: defender.x + view.cell * 0.18,
+          y: defender.y,
+          radius: Math.max(3, view.cell * 0.075),
+          vx: unitType.projectileSpeed,
+          damage: unitType.projectileDamage
+        });
+      }
+
+      function getEnemyBounds(enemy) {
+        const size = view.cell * enemy.size;
+        return {
+          left: enemy.x - size * 0.5,
+          right: enemy.x + size * 0.5,
+          top: enemy.y - size * 0.45,
+          bottom: enemy.y + size * 0.45,
+          size
+        };
+      }
+
+      function getDefenderBounds(defender) {
+        const unitType = UNIT_TYPES[defender.type];
+        const size = view.cell * unitType.size;
+        return {
+          left: defender.x - size * 0.5,
+          right: defender.x + size * 0.5,
+          top: defender.y - size * 0.5,
+          bottom: defender.y + size * 0.5,
+          size
+        };
+      }
+
+      function getRenderableCoinPosition(coin) {
+        return {
+          x: coin.baseX,
+          y: coin.baseY + Math.sin(coin.age * 4.8 + coin.phase) * view.cell * 0.04
+        };
+      }
+
+      function collectCoin(index) {
+        const coin = state.coins[index];
+        state.energy += coin.value;
+        state.coins.splice(index, 1);
+      }
+
+      function triggerGameOver() {
+        state.gameOver = true;
+        overlayTitle.textContent = "Warehouse Lost";
+        overlayText.textContent = "A problem reached the main hub. Restart and reinforce the lanes.";
+        overlay.classList.remove("hidden");
+      }
+
+      function resetGame() {
+        state = createInitialState();
+        overlay.classList.add("hidden");
+        recalcLayout();
+        updateHud();
+      }
+
+      function pointToCanvas(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = view.width / rect.width;
+        const scaleY = view.height / rect.height;
+        return {
+          x: (clientX - rect.left) * scaleX,
+          y: (clientY - rect.top) * scaleY
+        };
+      }
+
+      function pickCoinAt(x, y) {
+        for (let i = state.coins.length - 1; i >= 0; i -= 1) {
+          const coinPos = getRenderableCoinPosition(state.coins[i]);
+          const dx = x - coinPos.x;
+          const dy = y - coinPos.y;
+          if (dx * dx + dy * dy <= Math.pow(view.cell * 0.18, 2)) {
+            return i;
+          }
+        }
+        return -1;
+      }
+
+      function pickCellAt(x, y) {
+        if (
+          x < view.gridX ||
+          x >= view.gridX + view.gridWidth ||
+          y < view.gridY ||
+          y >= view.gridY + view.gridHeight
+        ) {
+          return null;
+        }
+        const col = Math.floor((x - view.gridX) / view.cell);
+        const row = Math.floor((y - view.gridY) / view.cell);
+        return { row, col };
+      }
+
+      function handleBoardPress(event) {
+        if (state.gameOver) {
+          return;
+        }
+
+        const point = pointToCanvas(event.clientX, event.clientY);
+        pointer.x = point.x;
+        pointer.y = point.y;
+        pointer.active = true;
+
+        const coinIndex = pickCoinAt(point.x, point.y);
+        if (coinIndex >= 0) {
+          collectCoin(coinIndex);
+          updateHud();
+          return;
+        }
+
+        const cell = pickCellAt(point.x, point.y);
+        if (!cell) {
+          return;
+        }
+
+        const occupant = state.occupancy[cell.row][cell.col];
+
+        if (state.selectedUnit === "manager") {
+          if (occupant) {
+            removeDefender(occupant, true);
+            setMessage("Manager cleared the cell and refunded part of the budget.");
+            updateHud();
+          } else {
+            setMessage("Nothing to remove here.");
+          }
+          return;
+        }
+
+        if (occupant) {
+          setMessage("Cell already occupied.");
+          return;
+        }
+
+        const selected = UNIT_TYPES[state.selectedUnit];
+        if (state.energy < selected.cost) {
+          setMessage("Not enough orders for that unit.");
+          return;
+        }
+
+        state.energy -= selected.cost;
+        spawnDefender(state.selectedUnit, cell.row, cell.col);
+        updateHud();
+      }
+
+      function handleBoardMove(event) {
+        const point = pointToCanvas(event.clientX, event.clientY);
+        pointer.x = point.x;
+        pointer.y = point.y;
+      }
+
+      function updateState(dt) {
+        if (state.gameOver) {
+          return;
+        }
+
+        state.elapsed += dt;
+        const currentWave = 1 + Math.floor(state.elapsed / 20);
+        if (currentWave !== state.wave) {
+          state.wave = currentWave;
+          updateHud();
+        }
+        state.spawnTimer -= dt;
+        if (state.spawnTimer <= 0) {
+          spawnEnemy();
+          scheduleNextEnemy();
+        }
+
+        state.ambientOrderTimer -= dt;
+        if (state.ambientOrderTimer <= 0) {
+          spawnAmbientCoin();
+          state.ambientOrderTimer = 8 + Math.random() * 4.5;
+        }
+
+        if (state.messageTimer > 0) {
+          state.messageTimer -= dt;
+          if (state.messageTimer <= 0) {
+            state.infoMessage = "Tap yellow diamonds for orders.";
+          }
+        }
+
+        for (let i = state.coins.length - 1; i >= 0; i -= 1) {
+          const coin = state.coins[i];
+          coin.age += dt;
+          coin.ttl -= dt;
+          if (coin.fall > 0) {
+            coin.baseY = Math.min(coin.baseY + coin.fall * dt * 2.1, coin.targetY);
+            if (coin.baseY >= coin.targetY - 0.5) {
+              coin.fall = 0;
+            }
+          }
+          if (coin.ttl <= 0) {
+            state.coins.splice(i, 1);
+          }
+        }
+
+        for (const defender of state.defenders) {
+          defender.cooldown -= dt;
+        }
+
+        for (let i = state.enemies.length - 1; i >= 0; i -= 1) {
+          const enemy = state.enemies[i];
+          enemy.wobble += dt * 3.2;
+          let blocked = false;
+
+          for (const defender of state.defenders) {
+            if (defender.row !== enemy.row) {
+              continue;
+            }
+
+            const enemyBox = getEnemyBounds(enemy);
+            const defenderBox = getDefenderBounds(defender);
+            if (enemyBox.left <= defenderBox.right && enemyBox.right >= defenderBox.left) {
+              defender.health -= enemy.damage * dt;
+              blocked = true;
+              break;
+            }
+          }
+
+          if (!blocked) {
+            enemy.x -= enemy.speed * dt;
+          }
+
+          if (enemy.health <= 0) {
+            if (Math.random() < 0.38) {
+              spawnCoin(enemy.x, enemy.y - view.cell * 0.06, 20, { ttl: 7.5 });
+            }
+            state.enemies.splice(i, 1);
+            continue;
+          }
+
+          if (enemy.x - view.cell * enemy.size * 0.5 <= view.boardX + view.baseWidth * 0.18) {
+            triggerGameOver();
+            return;
+          }
+        }
+
+        for (let i = state.defenders.length - 1; i >= 0; i -= 1) {
+          const defender = state.defenders[i];
+          if (defender.health <= 0) {
+            removeDefender(defender, false);
+          }
+        }
+
+        for (const defender of state.defenders) {
+          if (defender.type === "generator" && defender.cooldown <= 0) {
+            spawnGeneratorCoin(defender);
+            defender.cooldown = UNIT_TYPES.generator.produceEvery;
+          }
+
+          if (defender.type === "shooter" && defender.cooldown <= 0) {
+            let enemyAhead = false;
+            for (const enemy of state.enemies) {
+              if (enemy.row === defender.row && enemy.x > defender.x + view.cell * 0.12) {
+                enemyAhead = true;
+                break;
+              }
+            }
+
+            if (enemyAhead) {
+              fireProjectile(defender);
+              defender.cooldown = UNIT_TYPES.shooter.fireEvery;
+            }
+          }
+        }
+
+        for (let i = state.projectiles.length - 1; i >= 0; i -= 1) {
+          const shot = state.projectiles[i];
+          shot.x += shot.vx * dt;
+
+          let hitEnemy = null;
+          let hitIndex = -1;
+          let bestX = Infinity;
+
+          for (let j = 0; j < state.enemies.length; j += 1) {
+            const enemy = state.enemies[j];
+            if (enemy.row !== shot.row) {
+              continue;
+            }
+            const enemyBox = getEnemyBounds(enemy);
+            if (
+              shot.x + shot.radius >= enemyBox.left &&
+              shot.x - shot.radius <= enemyBox.right &&
+              shot.y >= enemyBox.top &&
+              shot.y <= enemyBox.bottom &&
+              enemy.x < bestX
+            ) {
+              hitEnemy = enemy;
+              hitIndex = j;
+              bestX = enemy.x;
+            }
+          }
+
+          if (hitEnemy) {
+            hitEnemy.health -= shot.damage;
+            state.projectiles.splice(i, 1);
+            if (hitEnemy.health <= 0 && hitIndex >= 0) {
+              if (Math.random() < 0.38) {
+                spawnCoin(hitEnemy.x, hitEnemy.y - view.cell * 0.06, 20, { ttl: 7.5 });
+              }
+              state.enemies.splice(hitIndex, 1);
+            }
+            continue;
+          }
+
+          if (shot.x > view.gridX + view.gridWidth + view.cell * 0.2) {
+            state.projectiles.splice(i, 1);
+          }
+        }
+      }
+
+      function drawRoundedRect(x, y, width, height, radius, fillStyle, strokeStyle) {
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + width - radius, y);
+        ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        ctx.lineTo(x + width, y + height - radius);
+        ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        ctx.lineTo(x + radius, y + height);
+        ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        if (fillStyle) {
+          ctx.fillStyle = fillStyle;
+          ctx.fill();
+        }
+        if (strokeStyle) {
+          ctx.strokeStyle = strokeStyle;
+          ctx.stroke();
+        }
+      }
+
+      function drawDiamond(x, y, size, fillStyle, strokeStyle) {
+        ctx.beginPath();
+        ctx.moveTo(x, y - size);
+        ctx.lineTo(x + size, y);
+        ctx.lineTo(x, y + size);
+        ctx.lineTo(x - size, y);
+        ctx.closePath();
+        if (fillStyle) {
+          ctx.fillStyle = fillStyle;
+          ctx.fill();
+        }
+        if (strokeStyle) {
+          ctx.strokeStyle = strokeStyle;
+          ctx.stroke();
+        }
+      }
+
+      function drawBackground() {
+        const sky = ctx.createLinearGradient(0, 0, 0, view.height);
+        sky.addColorStop(0, "#f0d796");
+        sky.addColorStop(0.55, "#cc8b4a");
+        sky.addColorStop(1, "#6f3d24");
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, view.width, view.height);
+
+        const dust = ctx.createLinearGradient(0, view.boardY, 0, view.boardY + view.gridHeight);
+        dust.addColorStop(0, "rgba(255,255,255,0.14)");
+        dust.addColorStop(1, "rgba(93,43,14,0.2)");
+        ctx.fillStyle = dust;
+        ctx.fillRect(0, view.boardY, view.width, view.gridHeight);
+
+        for (let i = 0; i < 8; i += 1) {
+          const stallX = view.gridX + i * view.cell * 0.92 - view.cell * 0.4;
+          const awningY = view.boardY - view.cell * 0.36;
+          const awningWidth = view.cell * 0.88;
+          const awningHeight = view.cell * 0.22;
+          ctx.fillStyle = i % 2 === 0 ? "rgba(208, 73, 42, 0.55)" : "rgba(242, 193, 89, 0.6)";
+          ctx.fillRect(stallX, awningY + awningHeight * 0.45, awningWidth, awningHeight);
+          ctx.beginPath();
+          ctx.moveTo(stallX, awningY + awningHeight * 0.45);
+          ctx.lineTo(stallX + awningWidth * 0.5, awningY);
+          ctx.lineTo(stallX + awningWidth, awningY + awningHeight * 0.45);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      function drawGrid() {
+        for (let row = 0; row < ROWS; row += 1) {
+          const laneY = view.gridY + row * view.cell;
+          const road = ctx.createLinearGradient(view.gridX, laneY, view.gridX + view.gridWidth, laneY);
+          road.addColorStop(0, "rgba(105, 70, 35, 0.8)");
+          road.addColorStop(0.5, "rgba(138, 96, 51, 0.88)");
+          road.addColorStop(1, "rgba(105, 70, 35, 0.8)");
+          ctx.fillStyle = road;
+          ctx.fillRect(view.gridX, laneY + view.cell * 0.08, view.gridWidth, view.cell * 0.84);
+
+          ctx.fillStyle = "rgba(254, 231, 171, 0.12)";
+          ctx.fillRect(view.gridX, laneY + view.cell * 0.47, view.gridWidth, view.cell * 0.06);
+        }
+
+        ctx.strokeStyle = "rgba(255, 245, 215, 0.18)";
+        ctx.lineWidth = 1;
+        for (let row = 0; row <= ROWS; row += 1) {
+          const y = view.gridY + row * view.cell;
+          ctx.beginPath();
+          ctx.moveTo(view.gridX, y);
+          ctx.lineTo(view.gridX + view.gridWidth, y);
+          ctx.stroke();
+        }
+
+        for (let col = 0; col <= COLS; col += 1) {
+          const x = view.gridX + col * view.cell;
+          ctx.beginPath();
+          ctx.moveTo(x, view.gridY);
+          ctx.lineTo(x, view.gridY + view.gridHeight);
+          ctx.stroke();
+        }
+
+        if (!state.gameOver) {
+          const hovered = pickCellAt(pointer.x, pointer.y);
+          if (hovered) {
+            const canPlace = state.selectedUnit === "manager" || !state.occupancy[hovered.row][hovered.col];
+            ctx.fillStyle = canPlace ? "rgba(90, 184, 255, 0.16)" : "rgba(255, 122, 102, 0.14)";
+            ctx.fillRect(
+              view.gridX + hovered.col * view.cell,
+              view.gridY + hovered.row * view.cell,
+              view.cell,
+              view.cell
+            );
+          }
+        }
+      }
+
+      function drawHub() {
+        const x = view.boardX + view.cell * 0.06;
+        const y = view.boardY + view.cell * 0.35;
+        const width = view.baseWidth - view.cell * 0.14;
+        const height = view.gridHeight - view.cell * 0.7;
+
+        drawRoundedRect(x, y, width, height, view.cell * 0.12, "rgba(34, 54, 59, 0.92)");
+        drawRoundedRect(
+          x + width * 0.14,
+          y + height * 0.12,
+          width * 0.72,
+          height * 0.18,
+          view.cell * 0.08,
+          "rgba(98, 163, 183, 0.75)"
+        );
+        ctx.fillStyle = "rgba(255, 214, 104, 0.8)";
+        ctx.fillRect(x + width * 0.26, y + height * 0.42, width * 0.48, height * 0.34);
+        ctx.fillStyle = "rgba(28, 35, 26, 0.92)";
+        ctx.fillRect(x + width * 0.42, y + height * 0.56, width * 0.16, height * 0.2);
+
+        for (let i = 0; i < 3; i += 1) {
+          ctx.fillStyle = i % 2 === 0 ? "#d48f49" : "#c36f3f";
+          ctx.fillRect(
+            x + width * 0.12 + (i % 2) * width * 0.23,
+            y + height * 0.8 + Math.floor(i / 2) * width * 0.16,
+            width * 0.2,
+            width * 0.13
+          );
+        }
+      }
+
+      function drawHealthBar(x, y, width, ratio) {
+        ctx.fillStyle = "rgba(10, 16, 12, 0.78)";
+        ctx.fillRect(x, y, width, 4);
+        ctx.fillStyle = ratio > 0.45 ? "#77dd77" : ratio > 0.2 ? "#f7d154" : "#ff7a66";
+        ctx.fillRect(x, y, width * clamp(ratio, 0, 1), 4);
+      }
+
+      function drawDefenders() {
+        for (const defender of state.defenders) {
+          const bounds = getDefenderBounds(defender);
+          const baseColor = defender.type === "wall" ? "#2f78d8" : "#45a7ff";
+          const accent = defender.type === "generator" ? "#8be0ff" : "#d7f4ff";
+
+          if (defender.type === "generator") {
+            drawRoundedRect(bounds.left, bounds.top, bounds.size, bounds.size, view.cell * 0.08, baseColor);
+            ctx.fillStyle = "#13466e";
+            ctx.fillRect(bounds.left + bounds.size * 0.18, bounds.top + bounds.size * 0.18, bounds.size * 0.64, bounds.size * 0.2);
+            drawDiamond(defender.x, defender.y + bounds.size * 0.08, bounds.size * 0.16, accent);
+          } else if (defender.type === "shooter") {
+            ctx.fillStyle = baseColor;
+            ctx.beginPath();
+            ctx.arc(defender.x, defender.y, bounds.size * 0.52, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = accent;
+            ctx.beginPath();
+            ctx.moveTo(defender.x + bounds.size * 0.08, defender.y);
+            ctx.lineTo(defender.x - bounds.size * 0.08, defender.y - bounds.size * 0.14);
+            ctx.lineTo(defender.x - bounds.size * 0.08, defender.y + bounds.size * 0.14);
+            ctx.closePath();
+            ctx.fill();
+          } else {
+            drawRoundedRect(bounds.left, bounds.top, bounds.size, bounds.size, view.cell * 0.1, baseColor);
+            ctx.fillStyle = "#1d4f9d";
+            ctx.fillRect(bounds.left + bounds.size * 0.14, bounds.top + bounds.size * 0.16, bounds.size * 0.72, bounds.size * 0.16);
+            ctx.fillRect(bounds.left + bounds.size * 0.14, bounds.top + bounds.size * 0.68, bounds.size * 0.72, bounds.size * 0.12);
+          }
+
+          drawHealthBar(bounds.left, bounds.top - 8, bounds.size, defender.health / defender.maxHealth);
+        }
+      }
+
+      function drawEnemies() {
+        for (const enemy of state.enemies) {
+          const bounds = getEnemyBounds(enemy);
+          const bounce = Math.sin(enemy.wobble) * view.cell * 0.02;
+          drawRoundedRect(
+            bounds.left,
+            bounds.top + bounce,
+            bounds.size,
+            bounds.size * 0.9,
+            view.cell * 0.08,
+            enemy.color
+          );
+          ctx.fillStyle = "#ffe8d8";
+          ctx.fillRect(bounds.left + bounds.size * 0.18, bounds.top + bounds.size * 0.2 + bounce, bounds.size * 0.18, bounds.size * 0.12);
+          ctx.fillRect(bounds.left + bounds.size * 0.62, bounds.top + bounds.size * 0.2 + bounce, bounds.size * 0.18, bounds.size * 0.12);
+          ctx.fillStyle = "#79291f";
+          ctx.fillRect(bounds.left + bounds.size * 0.28, bounds.top + bounds.size * 0.58 + bounce, bounds.size * 0.44, bounds.size * 0.12);
+          drawHealthBar(bounds.left, bounds.top - 8, bounds.size, enemy.health / enemy.maxHealth);
+        }
+      }
+
+      function drawProjectiles() {
+        ctx.fillStyle = "#ffd84f";
+        for (const shot of state.projectiles) {
+          ctx.beginPath();
+          ctx.arc(shot.x, shot.y, shot.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      function drawCoins() {
+        for (const coin of state.coins) {
+          const pos = getRenderableCoinPosition(coin);
+          drawDiamond(pos.x, pos.y, view.cell * 0.12, "#f9cf4b", "#fff2c9");
+          ctx.fillStyle = "rgba(51, 33, 8, 0.58)";
+          ctx.fillRect(pos.x - view.cell * 0.1, pos.y + view.cell * 0.15, view.cell * 0.2, 3);
+        }
+      }
+
+      function drawHudText() {
+        ctx.fillStyle = "rgba(19, 26, 20, 0.52)";
+        ctx.fillRect(view.gridX, view.gridY + view.gridHeight - view.cell * 0.36, view.gridWidth, view.cell * 0.3);
+        ctx.fillStyle = "#fff4d2";
+        ctx.font = `600 ${Math.max(11, view.cell * 0.18)}px "Avenir Next", "Trebuchet MS", Verdana, sans-serif`;
+        ctx.textAlign = "left";
+        ctx.fillText(state.infoMessage, view.gridX + view.cell * 0.18, view.gridY + view.gridHeight - view.cell * 0.15);
+      }
+
+      function render() {
+        ctx.clearRect(0, 0, view.width, view.height);
+        drawBackground();
+        drawHub();
+        drawGrid();
+        drawDefenders();
+        drawEnemies();
+        drawProjectiles();
+        drawCoins();
+        drawHudText();
+      }
+
+      function frame(time) {
+        if (!state.lastTime) {
+          state.lastTime = time;
+        }
+        const dt = clamp((time - state.lastTime) / 1000, 0, 0.033);
+        state.lastTime = time;
+
+        updateState(dt);
+        render();
+        requestAnimationFrame(frame);
+      }
+
+      function selectUnit(unit) {
+        state.selectedUnit = unit;
+        updateHud();
+      }
+
+      unitButtons.forEach((button) => {
+        button.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          selectUnit(button.dataset.unit);
+        });
+      });
+
+      canvas.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        handleBoardPress(event);
+      });
+
+      canvas.addEventListener("pointermove", (event) => {
+        handleBoardMove(event);
+      });
+
+      canvas.addEventListener("pointerleave", () => {
+        pointer.active = false;
+        pointer.x = -9999;
+        pointer.y = -9999;
+      });
+
+      restartButton.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        resetGame();
+      });
+
+      window.addEventListener("resize", recalcLayout);
+      document.addEventListener(
+        "touchmove",
+        (event) => {
+          event.preventDefault();
+        },
+        { passive: false }
+      );
+      document.addEventListener(
+        "gesturestart",
+        (event) => {
+          event.preventDefault();
+        },
+        { passive: false }
+      );
+      document.addEventListener(
+        "dblclick",
+        (event) => {
+          event.preventDefault();
+        },
+        { passive: false }
+      );
+
+      resetGame();
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

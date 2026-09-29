@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+  >
+  <title>Troll Run</title>
+  <style>
+    :root {
+      --bg-top: #e9f3ff;
+      --bg-bottom: #cdddf4;
+      --ink: #0f1723;
+      --ink-soft: rgba(15, 23, 35, 0.14);
+      --panel: rgba(255, 255, 255, 0.9);
+      --panel-border: rgba(15, 23, 35, 0.14);
+      --btn: rgba(15, 23, 35, 0.88);
+      --btn-active: rgba(15, 23, 35, 1);
+      --btn-text: #f4f7fb;
+      --danger: #e24040;
+      --goal: #2ea043;
+      --player: #3178ff;
+      --block: #1b1f28;
+      --block-edge: #343a46;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      touch-action: none;
+      overscroll-behavior: none;
+      background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+      font-family: "Trebuchet MS", Verdana, sans-serif;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+    }
+
+    #gameShell {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    #gameCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    #hud {
+      position: fixed;
+      top: calc(env(safe-area-inset-top, 0px) + 12px);
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    .hudGroup {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .pill {
+      min-width: 88px;
+      padding: 10px 14px;
+      border-radius: 14px;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      color: var(--ink);
+      box-shadow: 0 10px 30px rgba(15, 23, 35, 0.08);
+      backdrop-filter: blur(8px);
+    }
+
+    .pillLabel {
+      display: block;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      opacity: 0.72;
+      margin-bottom: 4px;
+    }
+
+    .pillValue {
+      display: block;
+      font-size: 24px;
+      line-height: 1;
+      font-weight: 700;
+    }
+
+    #status {
+      max-width: min(46ch, 58vw);
+      padding: 10px 14px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid var(--panel-border);
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.35;
+      box-shadow: 0 10px 30px rgba(15, 23, 35, 0.08);
+      backdrop-filter: blur(8px);
+    }
+
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    #overlayCard {
+      max-width: 520px;
+      padding: 22px 24px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(15, 23, 35, 0.1);
+      color: var(--ink);
+      text-align: center;
+      box-shadow: 0 26px 60px rgba(15, 23, 35, 0.18);
+      opacity: 0;
+      transform: translateY(18px);
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    #overlayCard.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    #overlayTitle {
+      margin: 0 0 8px;
+      font-size: 28px;
+      line-height: 1.05;
+    }
+
+    #overlayText {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.45;
+      opacity: 0.86;
+    }
+
+    #controls {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px;
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+      z-index: 4;
+      pointer-events: none;
+    }
+
+    #leftControls,
+    #rightControls {
+      display: flex;
+      gap: 14px;
+      pointer-events: auto;
+    }
+
+    .controlButton {
+      width: min(22vw, 92px);
+      height: min(22vw, 92px);
+      min-width: 74px;
+      min-height: 74px;
+      border: 0;
+      border-radius: 24px;
+      background: var(--btn);
+      color: var(--btn-text);
+      font: inherit;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      box-shadow: 0 14px 28px rgba(15, 23, 35, 0.22);
+      touch-action: none;
+      pointer-events: auto;
+      transition: transform 80ms ease, background 80ms ease;
+    }
+
+    .controlButton.wide {
+      width: min(26vw, 116px);
+      border-radius: 30px;
+    }
+
+    .controlButton.active {
+      background: var(--btn-active);
+      transform: translateY(2px) scale(0.98);
+    }
+
+    @media (max-width: 540px) {
+      #hud {
+        gap: 8px;
+      }
+
+      .pill {
+        padding: 8px 12px;
+      }
+
+      .pillValue {
+        font-size: 21px;
+      }
+
+      #status {
+        max-width: 54vw;
+        font-size: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="gameShell">
+    <canvas id="gameCanvas" aria-label="Troll Run"></canvas>
+
+    <div id="hud">
+      <div class="hudGroup">
+        <div class="pill">
+          <span class="pillLabel">Deaths</span>
+          <span class="pillValue" id="deathCount">0</span>
+        </div>
+        <div class="pill">
+          <span class="pillLabel">Level</span>
+          <span class="pillValue" id="levelCount">1 / 3</span>
+        </div>
+      </div>
+      <div id="status">Fake floors, ambush spikes, and lying exits ahead.</div>
+    </div>
+
+    <div id="overlay">
+      <div id="overlayCard">
+        <h1 id="overlayTitle">You escaped.</h1>
+        <p id="overlayText">Tap Jump or press Space to replay the whole troll run.</p>
+      </div>
+    </div>
+
+    <div id="controls">
+      <div id="leftControls">
+        <button class="controlButton" data-input="left" aria-label="Move left">LEFT</button>
+        <button class="controlButton" data-input="right" aria-label="Move right">RIGHT</button>
+      </div>
+      <div id="rightControls">
+        <button class="controlButton wide" data-input="jump" aria-label="Jump">JUMP</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const canvas = document.getElementById("gameCanvas");
+      const ctx = canvas.getContext("2d");
+      const deathCountEl = document.getElementById("deathCount");
+      const levelCountEl = document.getElementById("levelCount");
+      const statusEl = document.getElementById("status");
+      const overlayCard = document.getElementById("overlayCard");
+      const overlayTitle = document.getElementById("overlayTitle");
+      const overlayText = document.getElementById("overlayText");
+
+      const TILE = 40;
+      const PLAYER_SIZE = 28;
+      const PLAYER_SPEED = 320;
+      const GROUND_ACCEL = 2500;
+      const AIR_ACCEL = 1850;
+      const GROUND_FRICTION = 2850;
+      const AIR_FRICTION = 700;
+      const JUMP_SPEED = 760;
+      const BASE_GRAVITY = 2200;
+      const FAST_FALL_GRAVITY = 2900;
+      const JUMP_CUT_GRAVITY = 3400;
+      const MAX_FALL_SPEED = 1180;
+      const COYOTE_TIME = 0.085;
+      const JUMP_BUFFER_TIME = 0.12;
+      const SHAKE_TIME = 0.22;
+      const FLOOR_DROP_GRAVITY = 2300;
+      const FALLING_SPIKE_GRAVITY = 2600;
+      const GOAL_DROP_GRAVITY = 2400;
+
+      const COLORS = {
+        skyTop: "#eaf3ff",
+        skyBottom: "#cadcf4",
+        hillFar: "#d1dff3",
+        hillNear: "#b8cbe8",
+        floor: "#1b1f28",
+        floorEdge: "#343a46",
+        spike: "#e24040",
+        player: "#3178ff",
+        playerEye: "#f8fbff",
+        goal: "#2ea043",
+        goalDark: "#1c7f31",
+        fakeGlow: "rgba(255, 255, 255, 0.04)"
+      };
+
+      const view = {
+        width: 0,
+        height: 0,
+        dpr: 1
+      };
+
+      const input = {
+        left: false,
+        right: false,
+        jump: false,
+        jumpPressed: false
+      };
+
+      const camera = {
+        x: 0,
+        y: 0,
+        shakeTimer: 0,
+        shakeStrength: 0
+      };
+
+      let deaths = 0;
+      let currentLevelIndex = 0;
+      let level = null;
+      let entitiesById = new Map();
+      let lastFrame = 0;
+      let winState = false;
+
+      const player = {
+        x: 0,
+        y: 0,
+        w: PLAYER_SIZE,
+        h: PLAYER_SIZE,
+        vx: 0,
+        vy: 0,
+        facing: 1,
+        onGround: false,
+        coyoteTimer: 0,
+        jumpBufferTimer: 0
+      };
+
+      function rect(x, y, w, h) {
+        return { x, y, w, h };
+      }
+
+      function tileArea(x, y, cols, rows = 1) {
+        const blocks = [];
+        for (let row = 0; row < rows; row += 1) {
+          for (let col = 0; col < cols; col += 1) {
+            blocks.push({ x: x + col * TILE, y: y + row * TILE, w: TILE, h: TILE });
+          }
+        }
+        return blocks;
+      }
+
+      function spikeRow(x, y, count) {
+        return Array.from({ length: count }, (_, index) => ({
+          x: x + index * TILE,
+          y,
+          w: TILE,
+          h: TILE
+        }));
+      }
+
+      /*
+        Levels are plain data. Add more by copying one object and editing:
+        - `blocks` are solid tiles.
+        - `fakeBlocks` are drawn the same way but have no collision.
+        - `fallingFloors` support `mode: "drop"` or `mode: "vanish"`.
+        - `triggers` are invisible boxes that fire one or more `effects`.
+        - `effects` target trap ids, so you can wire new troll tricks together
+          without touching the core update loop.
+      */
+      const LEVEL_BLUEPRINTS = [
+        {
+          name: "Lesson In Trust",
+          hint: "Level 1: solid-looking floors can lie, and the exit is not loyal.",
+          width: 1840,
+          height: 720,
+          start: { x: 72, y: 572 },
+          blocks: [
+            ...tileArea(0, 600, 6, 3),
+            ...tileArea(360, 600, 10, 3),
+            ...tileArea(880, 600, 10, 3),
+            ...tileArea(1280, 600, 14, 3)
+          ],
+          fakeBlocks: [
+            ...tileArea(240, 600, 3, 3)
+          ],
+          spikes: [
+            ...spikeRow(760, 680, 3)
+          ],
+          fallingFloors: [
+            {
+              id: "floor-bridge-1",
+              x: 760,
+              y: 600,
+              w: 80,
+              h: 40,
+              mode: "drop"
+            }
+          ],
+          fallingSpikes: [],
+          movingSpikes: [],
+          goal: {
+            x: 1440,
+            y: 520,
+            w: 42,
+            h: 80,
+            behavior: {
+              type: "runAway",
+              targetX: 1610,
+              speed: 560
+            }
+          },
+          triggers: [
+            {
+              x: 1320,
+              y: 470,
+              w: 170,
+              h: 170,
+              once: true,
+              effects: [
+                { type: "triggerGoal" }
+              ]
+            }
+          ]
+        },
+        {
+          name: "Ambush Practice",
+          hint: "Level 2: some spikes drop from nowhere, others sprint across the floor.",
+          width: 1960,
+          height: 720,
+          start: { x: 72, y: 572 },
+          blocks: [
+            ...tileArea(0, 600, 49, 3),
+            ...tileArea(1200, 520, 2, 2)
+          ],
+          fakeBlocks: [],
+          spikes: [],
+          fallingFloors: [],
+          fallingSpikes: [
+            { id: "rain-1", x: 640, y: -120, w: 40, h: 40, startSpeed: 1020 },
+            { id: "rain-2", x: 680, y: -160, w: 40, h: 40, startSpeed: 1120 },
+            { id: "rain-3", x: 720, y: -120, w: 40, h: 40, startSpeed: 1040 }
+          ],
+          movingSpikes: [
+            {
+              id: "slider-1",
+              x: 1480,
+              y: 560,
+              w: 80,
+              h: 40,
+              speed: 760,
+              maxTravel: 380
+            }
+          ],
+          goal: {
+            x: 1820,
+            y: 520,
+            w: 42,
+            h: 80,
+            behavior: {
+              type: "none"
+            }
+          },
+          triggers: [
+            {
+              x: 520,
+              y: 500,
+              w: 90,
+              h: 140,
+              once: true,
+              effects: [
+                { type: "activate", ids: ["rain-1", "rain-2", "rain-3"] }
+              ]
+            },
+            {
+              x: 1290,
+              y: 500,
+              w: 110,
+              h: 140,
+              once: true,
+              effects: [
+                { type: "activate", ids: ["slider-1"], towardPlayer: true }
+              ]
+            }
+          ]
+        },
+        {
+          name: "Last Lie",
+          hint: "Level 3: the fake bridge returns, the floor betrays you, and the door drops away.",
+          width: 2040,
+          height: 720,
+          start: { x: 72, y: 572 },
+          blocks: [
+            ...tileArea(0, 600, 6, 3),
+            ...tileArea(320, 600, 9, 3),
+            ...tileArea(800, 600, 8, 3),
+            ...tileArea(1120, 560, 2, 2),
+            ...tileArea(1200, 520, 4, 1),
+            ...tileArea(1440, 600, 15, 3),
+            ...tileArea(1520, 480, 5, 1)
+          ],
+          fakeBlocks: [
+            ...tileArea(680, 600, 3, 3)
+          ],
+          spikes: [
+            ...spikeRow(680, 680, 3)
+          ],
+          fallingFloors: [
+            {
+              id: "floor-bridge-2",
+              x: 1360,
+              y: 520,
+              w: 80,
+              h: 40,
+              mode: "drop"
+            }
+          ],
+          fallingSpikes: [],
+          movingSpikes: [],
+          goal: {
+            x: 1680,
+            y: 400,
+            w: 42,
+            h: 80,
+            behavior: {
+              type: "dropAway",
+              targetY: 520
+            }
+          },
+          triggers: [
+            {
+              x: 1560,
+              y: 340,
+              w: 110,
+              h: 180,
+              once: true,
+              effects: [
+                { type: "triggerGoal" }
+              ]
+            }
+          ]
+        }
+      ];
+
+      function resize() {
+        view.width = window.innerWidth;
+        view.height = window.innerHeight;
+        view.dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.max(1, Math.floor(view.width * view.dpr));
+        canvas.height = Math.max(1, Math.floor(view.height * view.dpr));
+        canvas.style.width = `${view.width}px`;
+        canvas.style.height = `${view.height}px`;
+      }
+
+      function cloneRuntimeLevel(index) {
+        const blueprint = LEVEL_BLUEPRINTS[index];
+        entitiesById = new Map();
+
+        const runtime = {
+          index,
+          name: blueprint.name,
+          hint: blueprint.hint,
+          width: blueprint.width,
+          height: blueprint.height,
+          start: { ...blueprint.start },
+          blocks: blueprint.blocks.map((block) => ({ ...block })),
+          fakeBlocks: blueprint.fakeBlocks.map((block) => ({ ...block })),
+          spikes: blueprint.spikes.map((spike) => ({ ...spike, kind: "staticSpike" })),
+          fallingFloors: blueprint.fallingFloors.map((floor) => ({
+            ...floor,
+            kind: "fallingFloor",
+            active: false,
+            hidden: false,
+            vy: 0
+          })),
+          fallingSpikes: blueprint.fallingSpikes.map((spike) => ({
+            ...spike,
+            kind: "fallingSpike",
+            active: false,
+            started: false,
+            landed: false,
+            vy: 0,
+            startX: spike.x,
+            startY: spike.y
+          })),
+          movingSpikes: blueprint.movingSpikes.map((spike) => ({
+            ...spike,
+            kind: "movingSpike",
+            active: false,
+            vx: 0,
+            originX: spike.x,
+            traveled: 0
+          })),
+          goal: {
+            ...blueprint.goal,
+            kind: "goal",
+            baseX: blueprint.goal.x,
+            baseY: blueprint.goal.y,
+            vx: 0,
+            vy: 0,
+            triggered: false
+          },
+          triggers: blueprint.triggers.map((trigger) => ({
+            ...trigger,
+            used: false
+          }))
+        };
+
+        for (const entity of runtime.fallingFloors) {
+          entitiesById.set(entity.id, entity);
+        }
+        for (const entity of runtime.fallingSpikes) {
+          entitiesById.set(entity.id, entity);
+        }
+        for (const entity of runtime.movingSpikes) {
+          entitiesById.set(entity.id, entity);
+        }
+
+        return runtime;
+      }
+
+      function startLevel(index) {
+        currentLevelIndex = index;
+        level = cloneRuntimeLevel(index);
+        player.x = level.start.x;
+        player.y = level.start.y;
+        player.vx = 0;
+        player.vy = 0;
+        player.onGround = false;
+        player.coyoteTimer = 0;
+        player.jumpBufferTimer = 0;
+        camera.x = 0;
+        camera.y = 0;
+        winState = false;
+        overlayCard.classList.remove("show");
+        levelCountEl.textContent = `${index + 1} / ${LEVEL_BLUEPRINTS.length}`;
+        statusEl.textContent = `${level.name}: ${level.hint}`;
+      }
+
+      function fullRestart() {
+        deaths = 0;
+        updateDeathCounter();
+        startLevel(0);
+      }
+
+      function updateDeathCounter() {
+        deathCountEl.textContent = String(deaths);
+      }
+
+      function triggerShake(strength = 10) {
+        camera.shakeTimer = SHAKE_TIME;
+        camera.shakeStrength = strength;
+      }
+
+      function killPlayer() {
+        if (winState) {
+          return;
+        }
+        deaths += 1;
+        updateDeathCounter();
+        triggerShake(11);
+        startLevel(currentLevelIndex);
+      }
+
+      function finishGame() {
+        winState = true;
+        overlayTitle.textContent = "You escaped.";
+        overlayText.textContent = `Final death count: ${deaths}. Tap Jump or press Space to replay.`;
+        overlayCard.classList.add("show");
+        statusEl.textContent = "Every trap reset. The troll run loops if you dare.";
+      }
+
+      function winLevel() {
+        if (currentLevelIndex >= LEVEL_BLUEPRINTS.length - 1) {
+          finishGame();
+          return;
+        }
+        startLevel(currentLevelIndex + 1);
+      }
+
+      function aabb(a, b) {
+        return (
+          a.x < b.x + b.w &&
+          a.x + a.w > b.x &&
+          a.y < b.y + b.h &&
+          a.y + a.h > b.y
+        );
+      }
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function moveToward(value, target, amount) {
+        if (value < target) {
+          return Math.min(value + amount, target);
+        }
+        if (value > target) {
+          return Math.max(value - amount, target);
+        }
+        return value;
+      }
+
+      function setInputState(name, pressed) {
+        if (name === "jump") {
+          if (pressed && !input.jump) {
+            input.jumpPressed = true;
+          }
+          input.jump = pressed;
+          return;
+        }
+        input[name] = pressed;
+      }
+
+      function installMobileControls() {
+        const pointerToInput = new Map();
+        const buttons = document.querySelectorAll("[data-input]");
+
+        buttons.forEach((button) => {
+          const inputName = button.dataset.input;
+
+          function release(pointerId) {
+            if (pointerToInput.get(pointerId) !== inputName) {
+              return;
+            }
+            pointerToInput.delete(pointerId);
+            setInputState(inputName, false);
+            button.classList.remove("active");
+          }
+
+          button.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            pointerToInput.set(event.pointerId, inputName);
+            button.setPointerCapture(event.pointerId);
+            setInputState(inputName, true);
+            button.classList.add("active");
+          });
+
+          button.addEventListener("pointerup", (event) => {
+            event.preventDefault();
+            release(event.pointerId);
+          });
+
+          button.addEventListener("pointercancel", (event) => {
+            event.preventDefault();
+            release(event.pointerId);
+          });
+
+          button.addEventListener("lostpointercapture", (event) => {
+            release(event.pointerId);
+          });
+        });
+      }
+
+      function installKeyboardControls() {
+        const keyToInput = {
+          ArrowLeft: "left",
+          KeyA: "left",
+          ArrowRight: "right",
+          KeyD: "right",
+          ArrowUp: "jump",
+          Space: "jump",
+          KeyW: "jump"
+        };
+
+        window.addEventListener("keydown", (event) => {
+          if (event.repeat) {
+            if (event.code === "Space") {
+              event.preventDefault();
+            }
+          }
+
+          const inputName = keyToInput[event.code];
+          if (!inputName) {
+            if (event.code === "KeyR") {
+              event.preventDefault();
+              fullRestart();
+            }
+            return;
+          }
+
+          event.preventDefault();
+          setInputState(inputName, true);
+        });
+
+        window.addEventListener("keyup", (event) => {
+          const inputName = keyToInput[event.code];
+          if (!inputName) {
+            return;
+          }
+          event.preventDefault();
+          setInputState(inputName, false);
+        });
+      }
+
+      function installInteractionGuards() {
+        const prevent = (event) => event.preventDefault();
+        document.addEventListener("touchstart", prevent, { passive: false });
+        document.addEventListener("touchmove", prevent, { passive: false });
+        document.addEventListener("gesturestart", prevent, { passive: false });
+        document.addEventListener("gesturechange", prevent, { passive: false });
+        document.addEventListener("gestureend", prevent, { passive: false });
+        document.addEventListener("contextmenu", prevent);
+        document.addEventListener("dblclick", prevent);
+      }
+
+      function isFloorSolid(floor) {
+        return !floor.hidden && !floor.active;
+      }
+
+      function resolvePlayerX(solid) {
+        if (!aabb(player, solid)) {
+          return;
+        }
+        if (player.vx > 0) {
+          player.x = solid.x - player.w;
+        } else if (player.vx < 0) {
+          player.x = solid.x + solid.w;
+        }
+        player.vx = 0;
+      }
+
+      function resolvePlayerY(solid, previousBottom, landingRef) {
+        if (!aabb(player, solid)) {
+          return;
+        }
+
+        if (player.vy > 0 && previousBottom <= solid.y + 8) {
+          player.y = solid.y - player.h;
+          player.vy = 0;
+          player.onGround = true;
+          landingRef.floor = solid.kind === "fallingFloor" ? solid : null;
+          return;
+        }
+
+        if (player.vy < 0 && player.y >= solid.y + solid.h - 8) {
+          player.y = solid.y + solid.h;
+          player.vy = 0;
+        }
+      }
+
+      // Tight, arcade-style platformer movement with jump buffering and coyote time.
+      function updatePlayer(dt) {
+        if (winState) {
+          player.vx = moveToward(player.vx, 0, GROUND_FRICTION * dt);
+          return;
+        }
+
+        if (input.jumpPressed) {
+          player.jumpBufferTimer = JUMP_BUFFER_TIME;
+        } else {
+          player.jumpBufferTimer = Math.max(0, player.jumpBufferTimer - dt);
+        }
+
+        if (player.onGround) {
+          player.coyoteTimer = COYOTE_TIME;
+        } else {
+          player.coyoteTimer = Math.max(0, player.coyoteTimer - dt);
+        }
+
+        const horizontal = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+        if (horizontal !== 0) {
+          player.facing = horizontal;
+        }
+
+        const accel = player.onGround ? GROUND_ACCEL : AIR_ACCEL;
+        const friction = player.onGround ? GROUND_FRICTION : AIR_FRICTION;
+
+        if (horizontal !== 0) {
+          player.vx += horizontal * accel * dt;
+        } else {
+          player.vx = moveToward(player.vx, 0, friction * dt);
+        }
+
+        player.vx = clamp(player.vx, -PLAYER_SPEED, PLAYER_SPEED);
+
+        if (player.jumpBufferTimer > 0 && player.coyoteTimer > 0) {
+          player.vy = -JUMP_SPEED;
+          player.onGround = false;
+          player.coyoteTimer = 0;
+          player.jumpBufferTimer = 0;
+        }
+
+        const gravity =
+          player.vy > 0 ? FAST_FALL_GRAVITY : input.jump ? BASE_GRAVITY : JUMP_CUT_GRAVITY;
+        player.vy = Math.min(player.vy + gravity * dt, MAX_FALL_SPEED);
+
+        const previousBottom = player.y + player.h;
+        player.x += player.vx * dt;
+        for (const block of level.blocks) {
+          resolvePlayerX(block);
+        }
+        for (const floor of level.fallingFloors) {
+          if (isFloorSolid(floor)) {
+            resolvePlayerX(floor);
+          }
+        }
+
+        player.onGround = false;
+        player.y += player.vy * dt;
+        const landingRef = { floor: null };
+        for (const block of level.blocks) {
+          resolvePlayerY(block, previousBottom, landingRef);
+        }
+        for (const floor of level.fallingFloors) {
+          if (isFloorSolid(floor)) {
+            resolvePlayerY(floor, previousBottom, landingRef);
+          }
+        }
+
+        if (landingRef.floor && !landingRef.floor.active) {
+          armFallingFloor(landingRef.floor);
+        }
+
+        player.x = clamp(player.x, -40, level.width - player.w + 40);
+      }
+
+      // Landing on these tiles flips them from solid platform into a trap entity.
+      function armFallingFloor(floor) {
+        floor.active = true;
+        floor.vy = floor.mode === "vanish" ? 0 : 160;
+        if (floor.mode === "vanish") {
+          floor.hidden = true;
+        }
+      }
+
+      function updateFallingFloors(dt) {
+        for (const floor of level.fallingFloors) {
+          if (!floor.active || floor.hidden || floor.mode === "vanish") {
+            continue;
+          }
+          floor.vy = Math.min(floor.vy + FLOOR_DROP_GRAVITY * dt, 1200);
+          floor.y += floor.vy * dt;
+          if (floor.y > level.height + 120) {
+            floor.hidden = true;
+          }
+        }
+      }
+
+      function activateEntity(entity) {
+        if (!entity) {
+          return;
+        }
+
+        if (entity.kind === "fallingSpike") {
+          entity.active = true;
+          entity.started = true;
+          entity.vy = entity.startSpeed || 980;
+          return;
+        }
+
+        if (entity.kind === "movingSpike") {
+          entity.active = true;
+          return;
+        }
+
+        if (entity.kind === "fallingFloor") {
+          armFallingFloor(entity);
+        }
+      }
+
+      /*
+        Trigger effects are intentionally generic:
+        - `activate` can wake one or many traps by id.
+        - `triggerGoal` starts the goal's troll behavior.
+        This makes it easy to add new trigger types later without changing level data.
+      */
+      function runEffect(effect) {
+        if (effect.type === "activate") {
+          for (const id of effect.ids) {
+            const entity = entitiesById.get(id);
+            activateEntity(entity);
+            if (entity && entity.kind === "movingSpike") {
+              const direction =
+                effect.towardPlayer && player.x + player.w * 0.5 < entity.x + entity.w * 0.5
+                  ? -1
+                  : 1;
+              entity.vx = direction * (effect.speed || entity.speed || 720);
+            }
+          }
+          return;
+        }
+
+        if (effect.type === "triggerGoal") {
+          level.goal.triggered = true;
+        }
+      }
+
+      function updateTriggers() {
+        for (const trigger of level.triggers) {
+          if (trigger.used && trigger.once) {
+            continue;
+          }
+          if (!aabb(player, trigger)) {
+            continue;
+          }
+          trigger.used = true;
+          for (const effect of trigger.effects) {
+            runEffect(effect);
+          }
+        }
+      }
+
+      function landHazardOnBlocks(hazard, previousBottom) {
+        for (const block of level.blocks) {
+          if (!aabb(hazard, block)) {
+            continue;
+          }
+          if (previousBottom <= block.y + 8) {
+            hazard.y = block.y - hazard.h;
+            return true;
+          }
+        }
+        for (const floor of level.fallingFloors) {
+          if (!isFloorSolid(floor) || !aabb(hazard, floor)) {
+            continue;
+          }
+          if (previousBottom <= floor.y + 8) {
+            hazard.y = floor.y - hazard.h;
+            return true;
+          }
+        }
+        return false;
+      }
+
+      // Ceiling spikes use the same AABB hazard checks as static spikes after landing.
+      function updateFallingSpikes(dt) {
+        for (const spike of level.fallingSpikes) {
+          if (!spike.active) {
+            continue;
+          }
+          const previousBottom = spike.y + spike.h;
+          spike.vy = Math.min(spike.vy + FALLING_SPIKE_GRAVITY * dt, 1450);
+          spike.y += spike.vy * dt;
+          if (landHazardOnBlocks(spike, previousBottom)) {
+            spike.vy = 0;
+            spike.landed = true;
+          }
+        }
+      }
+
+      function updateMovingSpikes(dt) {
+        for (const spike of level.movingSpikes) {
+          if (!spike.active || spike.vx === 0) {
+            continue;
+          }
+          const delta = spike.vx * dt;
+          spike.x += delta;
+          spike.traveled += Math.abs(delta);
+          if (spike.maxTravel && spike.traveled >= spike.maxTravel) {
+            spike.vx = 0;
+          }
+        }
+      }
+
+      // Goals can behave like traps too, which is why their movement is data-driven.
+      function updateGoal(dt) {
+        const goal = level.goal;
+        if (!goal.triggered) {
+          return;
+        }
+
+        if (goal.behavior.type === "runAway") {
+          goal.x = moveToward(goal.x, goal.behavior.targetX, goal.behavior.speed * dt);
+          return;
+        }
+
+        if (goal.behavior.type === "dropAway") {
+          goal.vy = Math.min(goal.vy + GOAL_DROP_GRAVITY * dt, 1300);
+          goal.y += goal.vy * dt;
+          if (goal.y > goal.behavior.targetY) {
+            goal.y = goal.behavior.targetY;
+            goal.vy = 0;
+          }
+        }
+      }
+
+      function spikeHitbox(spike) {
+        return {
+          x: spike.x + 6,
+          y: spike.y + 10,
+          w: spike.w - 12,
+          h: spike.h - 10
+        };
+      }
+
+      function checkHazards() {
+        for (const spike of level.spikes) {
+          if (aabb(player, spikeHitbox(spike))) {
+            return true;
+          }
+        }
+        for (const spike of level.fallingSpikes) {
+          if (spike.active && aabb(player, spikeHitbox(spike))) {
+            return true;
+          }
+        }
+        for (const spike of level.movingSpikes) {
+          if (aabb(player, spikeHitbox(spike))) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function updateCamera(dt) {
+        const targetX = clamp(
+          player.x + player.w * 0.5 - view.width * 0.5,
+          0,
+          Math.max(0, level.width - view.width)
+        );
+        const targetY = clamp(
+          player.y + player.h * 0.5 - view.height * 0.56,
+          0,
+          Math.max(0, level.height - view.height)
+        );
+        camera.x += (targetX - camera.x) * Math.min(1, dt * 8);
+        camera.y += (targetY - camera.y) * Math.min(1, dt * 8);
+        camera.shakeTimer = Math.max(0, camera.shakeTimer - dt);
+      }
+
+      function worldShakeOffset() {
+        if (camera.shakeTimer <= 0) {
+          return { x: 0, y: 0 };
+        }
+        const power = camera.shakeStrength * (camera.shakeTimer / SHAKE_TIME);
+        return {
+          x: (Math.random() * 2 - 1) * power,
+          y: (Math.random() * 2 - 1) * power * 0.55
+        };
+      }
+
+      // Keep the background geometric and cheap to render for low-end mobile devices.
+      function drawBackground() {
+        const gradient = ctx.createLinearGradient(0, 0, 0, view.height);
+        gradient.addColorStop(0, COLORS.skyTop);
+        gradient.addColorStop(1, COLORS.skyBottom);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, view.width, view.height);
+
+        const farOffset = -camera.x * 0.18;
+        ctx.fillStyle = COLORS.hillFar;
+        for (let i = -1; i < 6; i += 1) {
+          const baseX = farOffset + i * 260;
+          ctx.beginPath();
+          ctx.moveTo(baseX, view.height);
+          ctx.lineTo(baseX + 120, view.height - 210);
+          ctx.lineTo(baseX + 280, view.height);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        const nearOffset = -camera.x * 0.34;
+        ctx.fillStyle = COLORS.hillNear;
+        for (let i = -1; i < 7; i += 1) {
+          const baseX = nearOffset + i * 200;
+          ctx.beginPath();
+          ctx.moveTo(baseX, view.height);
+          ctx.lineTo(baseX + 90, view.height - 140);
+          ctx.lineTo(baseX + 220, view.height);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      function drawBlock(block, alpha = 1) {
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = COLORS.floor;
+        ctx.fillRect(block.x, block.y, block.w, block.h);
+        ctx.strokeStyle = COLORS.floorEdge;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(block.x + 1, block.y + 1, block.w - 2, block.h - 2);
+        ctx.fillStyle = COLORS.fakeGlow;
+        ctx.fillRect(block.x + 4, block.y + 4, block.w - 8, 5);
+        ctx.globalAlpha = 1;
+      }
+
+      function drawSpike(spike) {
+        ctx.fillStyle = COLORS.spike;
+        ctx.beginPath();
+        ctx.moveTo(spike.x, spike.y + spike.h);
+        ctx.lineTo(spike.x + spike.w * 0.5, spike.y);
+        ctx.lineTo(spike.x + spike.w, spike.y + spike.h);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      function drawGoal(goal) {
+        ctx.fillStyle = COLORS.goal;
+        ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
+        ctx.fillStyle = COLORS.goalDark;
+        ctx.fillRect(goal.x + 6, goal.y + 8, goal.w - 12, goal.h - 16);
+        ctx.fillStyle = "#d8ffd8";
+        ctx.beginPath();
+        ctx.arc(goal.x + goal.w - 10, goal.y + goal.h * 0.5, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function drawPlayer() {
+        ctx.fillStyle = COLORS.player;
+        ctx.fillRect(player.x, player.y, player.w, player.h);
+        const eyeOffset = player.facing > 0 ? 16 : 7;
+        ctx.fillStyle = COLORS.playerEye;
+        ctx.fillRect(player.x + eyeOffset, player.y + 7, 5, 5);
+        ctx.fillRect(player.x + eyeOffset, player.y + 15, 5, 5);
+      }
+
+      function renderWorld() {
+        drawBackground();
+
+        const shake = worldShakeOffset();
+        ctx.save();
+        ctx.translate(-camera.x + shake.x, -camera.y + shake.y);
+
+        for (const block of level.blocks) {
+          drawBlock(block);
+        }
+        for (const block of level.fakeBlocks) {
+          drawBlock(block);
+        }
+        for (const floor of level.fallingFloors) {
+          if (!floor.hidden) {
+            drawBlock(floor, 1);
+          }
+        }
+        for (const spike of level.spikes) {
+          drawSpike(spike);
+        }
+        for (const spike of level.fallingSpikes) {
+          if (spike.active) {
+            drawSpike(spike);
+          }
+        }
+        for (const spike of level.movingSpikes) {
+          drawSpike(spike);
+        }
+        drawGoal(level.goal);
+        drawPlayer();
+
+        ctx.restore();
+      }
+
+      function update(dt) {
+        if (winState) {
+          if (input.jumpPressed) {
+            fullRestart();
+          }
+          input.jumpPressed = false;
+          updateCamera(dt);
+          return;
+        }
+
+        updateTriggers();
+        updatePlayer(dt);
+        updateFallingFloors(dt);
+        updateFallingSpikes(dt);
+        updateMovingSpikes(dt);
+        updateGoal(dt);
+
+        if (
+          player.y > level.height + 120 ||
+          player.x < -120 ||
+          player.x > level.width + 120 ||
+          checkHazards()
+        ) {
+          killPlayer();
+          input.jumpPressed = false;
+          return;
+        }
+
+        if (aabb(player, level.goal)) {
+          winLevel();
+          input.jumpPressed = false;
+          return;
+        }
+
+        updateCamera(dt);
+        input.jumpPressed = false;
+      }
+
+      function frame(time) {
+        const dt = Math.min(0.033, (time - lastFrame) / 1000 || 0.016);
+        lastFrame = time;
+        update(dt);
+
+        ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+        ctx.clearRect(0, 0, view.width, view.height);
+        renderWorld();
+
+        requestAnimationFrame(frame);
+      }
+
+      resize();
+      installMobileControls();
+      installKeyboardControls();
+      installInteractionGuards();
+      updateDeathCounter();
+      startLevel(0);
+
+      window.addEventListener("resize", resize);
+      requestAnimationFrame((time) => {
+        lastFrame = time;
+        requestAnimationFrame(frame);
+      });
+    })();
+  </script>
+</body>
+</html>

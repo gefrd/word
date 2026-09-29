@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>TriPeaks Solitaire</title>
+    <style>
+        :root {
+            --bg-color: #0d1f0d;
+            --accent-color: #ffd700;
+            --text-color: #ffffff;
+            --card-width: 60px;
+            --card-height: 84px;
+            --card-radius: 6px;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at center, #153315 0%, #0a170a 100%);
+            color: var(--text-color);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
+            touch-action: manipulation;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            width: 100vw;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
+        }
+
+        #header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+            z-index: 10;
+        }
+
+        .stat-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: #aaa;
+            letter-spacing: 1px;
+        }
+
+        .stat-value {
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+
+        #streak-container {
+            position: relative;
+        }
+
+        #streak-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #ff5722;
+            text-shadow: 0 0 10px rgba(255, 87, 34, 0.8);
+            transition: all 0.2s ease;
+        }
+
+        .streak-fire {
+            animation: burn 0.5s infinite alternate;
+        }
+
+        @keyframes burn {
+            0% { text-shadow: 0 0 5px #ffeb3b, 0 -5px 10px #ff9800, 0 -10px 15px #ff5722; }
+            100% { text-shadow: 0 0 10px #ffeb3b, 0 -10px 15px #ff9800, 0 -15px 20px #ff5722; }
+        }
+
+        #game-area {
+            flex: 1;
+            position: relative;
+            perspective: 1000px;
+            width: 100%;
+            height: 100%;
+        }
+
+        .card {
+            position: absolute;
+            width: var(--card-width);
+            height: var(--card-height);
+            border-radius: var(--card-radius);
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            transition: transform 0.3s ease, top 0.4s ease, left 0.4s ease, opacity 0.4s ease;
+            transform-style: preserve-3d;
+            cursor: pointer;
+        }
+
+        .card.face-down {
+            transform: rotateY(180deg);
+        }
+
+        .card-face, .card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: var(--card-radius);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        .card-back {
+            background-color: #1a237e;
+            background-image: 
+                repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.1) 5px, rgba(255,255,255,0.1) 10px),
+                repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.1) 5px, rgba(255,255,255,0.1) 10px);
+            transform: rotateY(180deg);
+            border: 2px solid white;
+        }
+
+        .card-face {
+            background: white;
+            padding: 2px;
+        }
+
+        .card-value {
+            font-size: 16px;
+            font-weight: bold;
+            position: absolute;
+            top: 2px;
+            left: 4px;
+        }
+
+        .card-suit {
+            font-size: 24px;
+        }
+
+        .card-value-bottom {
+            font-size: 16px;
+            font-weight: bold;
+            position: absolute;
+            bottom: 2px;
+            right: 4px;
+            transform: rotate(180deg);
+        }
+
+        .red { color: #d32f2f; }
+        .black { color: #212121; }
+
+        .playable {
+            box-shadow: 0 0 10px var(--accent-color), 0 2px 5px rgba(0,0,0,0.5);
+        }
+
+        #footer {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px 20px;
+            background: rgba(0, 0, 0, 0.4);
+            border-top: 1px solid rgba(255, 215, 0, 0.2);
+            z-index: 10;
+        }
+
+        .btn {
+            background: linear-gradient(to bottom, #d4af37, #996515);
+            color: #000;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn:disabled {
+            background: #555;
+            color: #888;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Screens */
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            backdrop-filter: blur(5px);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .title {
+            font-size: 36px;
+            color: var(--accent-color);
+            text-shadow: 0 2px 10px rgba(255, 215, 0, 0.5);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .instructions {
+            max-width: 80%;
+            text-align: center;
+            margin-bottom: 30px;
+            line-height: 1.5;
+            font-size: 14px;
+        }
+
+        .big-btn {
+            padding: 15px 40px;
+            font-size: 18px;
+            border-radius: 30px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 30px;
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .stats-grid .stat-box {
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 8px;
+            min-width: 100px;
+        }
+
+        /* Particle container */
+        #particles {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        .particle {
+            position: absolute;
+            background: var(--accent-color);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        #cascade-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 40;
+            overflow: hidden;
+        }
+
+        @media (max-width: 400px) {
+            :root {
+                --card-width: 45px;
+                --card-height: 65px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <div class="stat-box">
+            <span class="stat-label">Score</span>
+            <span class="stat-value" id="score-display">0</span>
+        </div>
+        <div class="stat-box" id="streak-container">
+            <span class="stat-label">Streak</span>
+            <span class="stat-value" id="streak-value">0</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-label">High Score</span>
+            <span class="stat-value" id="highscore-display">0</span>
+        </div>
+    </div>
+
+    <div id="game-area"></div>
+    <div id="particles"></div>
+    <div id="cascade-container"></div>
+
+    <div id="footer">
+        <button class="btn" id="btn-undo" disabled>Undo</button>
+        <button class="btn" id="btn-new-deal">New Deal</button>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="screen">
+        <h1 class="title">TriPeaks</h1>
+        <div class="instructions">
+            <p>Clear all cards from the peaks!</p>
+            <p>Tap cards one rank higher or lower than the top discard card.</p>
+            <p>Aces wrap to Kings. Build your streak for massive points!</p>
+        </div>
+        <button class="btn big-btn" id="btn-play">Play Now</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="screen hidden">
+        <h1 class="title" id="game-over-title">Game Over</h1>
+        <div class="stats-grid">
+            <div class="stat-box">
+                <span class="stat-label">Score</span>
+                <span class="stat-value" id="final-score">0</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Best Streak</span>
+                <span class="stat-value" id="final-streak">0</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Games Won</span>
+                <span class="stat-value" id="stats-won">0</span>
+            </div>
+            <div class="stat-box">
+                <span class="stat-label">Total Played</span>
+                <span class="stat-value" id="stats-played">0</span>
+            </div>
+        </div>
+        <button class="btn big-btn" id="btn-restart">Play Again</button>
+    </div>
+
+<script>
+// --- Audio System ---
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playTone(freq, type, duration, vol=0.1) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+    
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+
+const sounds = {
+    flip: () => playTone(300, 'sine', 0.1, 0.05),
+    place: () => playTone(200, 'square', 0.1, 0.05),
+    error: () => playTone(150, 'sawtooth', 0.2, 0.05),
+    streak: (level) => playTone(400 + (level * 50), 'sine', 0.2, 0.1),
+    win: () => {
+        [400, 500, 600, 800, 1000].forEach((f, i) => {
+            setTimeout(() => playTone(f, 'sine', 0.15, 0.1), i * 150);
+        });
+    },
+    lose: () => {
+        [300, 250, 200, 150].forEach((f, i) => {
+            setTimeout(() => playTone(f, 'triangle', 0.3, 0.1), i * 250);
+        });
+    }
+};
+
+function vibrate(ms) {
+    if (navigator.vibrate) navigator.vibrate(ms);
+}
+
+// --- Game Logic ---
+const SUITS = ['♠', '♥', '♦', '♣'];
+const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+const VALUES = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
+
+let deck = [];
+let tableCards = [];
+let stockCards = [];
+let wasteCards = [];
+let history = []; // For undo
+
+let score = 0;
+let streak = 0;
+let maxStreak = 0;
+let stats = { played: 0, won: 0, highScore: 0, maxStreak: 0 };
+
+// Layout configuration (TriPeaks)
+// 28 cards total in 4 rows
+// Row 0: 3 cards (0-2)
+// Row 1: 6 cards (3-8)
+// Row 2: 9 cards (9-17)
+// Row 3: 10 cards (18-27)
+const TABLE_LAYOUT = [
+    // Row 0
+    { id: 0, r: 0, c: 2, parents: [3,4] },
+    { id: 1, r: 0, c: 5, parents: [5,6] },
+    { id: 2, r: 0, c: 8, parents: [7,8] },
+    // Row 1
+    { id: 3, r: 1, c: 1.5, parents: [9,10] },
+    { id: 4, r: 1, c: 2.5, parents: [10,11] },
+    { id: 5, r: 1, c: 4.5, parents: [12,13] },
+    { id: 6, r: 1, c: 5.5, parents: [13,14] },
+    { id: 7, r: 1, c: 7.5, parents: [15,16] },
+    { id: 8, r: 1, c: 8.5, parents: [16,17] },
+    // Row 2
+    { id: 9, r: 2, c: 1, parents: [18,19] },
+    { id: 10, r: 2, c: 2, parents: [19,20] },
+    { id: 11, r: 2, c: 3, parents: [20,21] },
+    { id: 12, r: 2, c: 4, parents: [21,22] },
+    { id: 13, r: 2, c: 5, parents: [22,23] },
+    { id: 14, r: 2, c: 6, parents: [23,24] },
+    { id: 15, r: 2, c: 7, parents: [24,25] },
+    { id: 16, r: 2, c: 8, parents: [25,26] },
+    { id: 17, r: 2, c: 9, parents: [26,27] },
+    // Row 3
+    { id: 18, r: 3, c: 0.5, parents: [] },
+    { id: 19, r: 3, c: 1.5, parents: [] },
+    { id: 20, r: 3, c: 2.5, parents: [] },
+    { id: 21, r: 3, c: 3.5, parents: [] },
+    { id: 22, r: 3, c: 4.5, parents: [] },
+    { id: 23, r: 3, c: 5.5, parents: [] },
+    { id: 24, r: 3, c: 6.5, parents: [] },
+    { id: 25, r: 3, c: 7.5, parents: [] },
+    { id: 26, r: 3, c: 8.5, parents: [] },
+    { id: 27, r: 3, c: 9.5, parents: [] }
+];
+
+function loadStats() {
+    const saved = localStorage.getItem('tripeaks_stats');
+    if (saved) stats = JSON.parse(saved);
+    updateDisplays();
+}
+
+function saveStats() {
+    localStorage.setItem('tripeaks_stats', JSON.stringify(stats));
+}
+
+function initDeck() {
+    deck = [];
+    for (let s of SUITS) {
+        for (let r of RANKS) {
+            deck.push({ suit: s, rank: r, value: VALUES[r], color: (s==='♥'||s==='♦') ? 'red' : 'black' });
+        }
+    }
+    // Shuffle
+    for (let i = deck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+}
+
+function createCardElement(cardData) {
+    const el = document.createElement('div');
+    el.className = 'card face-down';
+    
+    const face = document.createElement('div');
+    face.className = `card-face ${cardData.color}`;
+    face.innerHTML = `
+        <div class="card-value">${cardData.rank}</div>
+        <div class="card-suit">${cardData.suit}</div>
+        <div class="card-value-bottom">${cardData.rank}</div>
+    `;
+    
+    const back = document.createElement('div');
+    back.className = 'card-back';
+    
+    el.appendChild(face);
+    el.appendChild(back);
+    
+    return el;
+}
+
+function startNewGame() {
+    document.getElementById('game-over-screen').classList.add('hidden');
+    document.getElementById('start-screen').classList.add('hidden');
+    
+    const gameArea = document.getElementById('game-area');
+    gameArea.innerHTML = '';
+    
+    initDeck();
+    tableCards = [];
+    stockCards = [];
+    wasteCards = [];
+    history = [];
+    
+    score = 0;
+    streak = 0;
+    maxStreak = 0;
+    stats.played++;
+    saveStats();
+    
+    updateDisplays();
+    
+    // Position sizing
+    const gameAreaRect = gameArea.getBoundingClientRect();
+    const cardW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-width'));
+    const cardH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-height'));
+    
+    // Calculate layout metrics
+    const startX = (gameAreaRect.width - (10 * cardW)) / 2; // Max width is roughly 10 cards
+    const startY = 40;
+    const spacingX = cardW;
+    const spacingY = cardH * 0.55;
+    
+    // Deal table
+    for (let i = 0; i < 28; i++) {
+        const config = TABLE_LAYOUT[i];
+        const cardInfo = deck.pop();
+        cardInfo.id = 'table-' + i;
+        cardInfo.config = config;
+        cardInfo.isFaceUp = (config.parents.length === 0);
+        
+        const el = createCardElement(cardInfo);
+        cardInfo.el = el;
+        
+        // Final position
+        const x = startX + config.c * spacingX;
+        const y = startY + config.r * spacingY;
+        
+        // Start from bottom center
+        el.style.left = (gameAreaRect.width / 2 - cardW/2) + 'px';
+        el.style.top = (gameAreaRect.height + cardH) + 'px';
+        
+        gameArea.appendChild(el);
+        tableCards.push(cardInfo);
+        
+        // Animate to position
+        setTimeout(() => {
+            sounds.place();
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+            el.style.zIndex = i;
+            
+            if (cardInfo.isFaceUp) {
+                setTimeout(() => {
+                    el.classList.remove('face-down');
+                    sounds.flip();
+                }, 300);
+            }
+            
+            el.addEventListener('click', () => handleTableClick(cardInfo));
+        }, i * 50);
+    }
+    
+    // Stock pile
+    const stockX = gameAreaRect.width / 2 - cardW - 20;
+    const stockY = gameAreaRect.height - cardH - 30;
+    
+    const wasteX = gameAreaRect.width / 2 + 20;
+    
+    deck.forEach((cardInfo, i) => {
+        cardInfo.id = 'stock-' + i;
+        const el = createCardElement(cardInfo);
+        cardInfo.el = el;
+        
+        el.style.left = stockX + 'px';
+        el.style.top = stockY + 'px';
+        el.style.zIndex = i;
+        
+        gameArea.appendChild(el);
+        stockCards.push(cardInfo);
+        
+        el.addEventListener('click', () => handleStockClick());
+    });
+    
+    // Deal first card to waste
+    setTimeout(() => {
+        drawFromStock(wasteX, stockY);
+        updatePlayableHighlights();
+    }, 28 * 50 + 500);
+    
+    document.getElementById('btn-undo').disabled = true;
+}
+
+function updateDisplays() {
+    document.getElementById('score-display').innerText = score;
+    document.getElementById('highscore-display').innerText = stats.highScore;
+    
+    const streakEl = document.getElementById('streak-value');
+    streakEl.innerText = streak;
+    if (streak >= 3) {
+        streakEl.classList.add('streak-fire');
+    } else {
+        streakEl.classList.remove('streak-fire');
+    }
+}
+
+function isAdjacentRank(val1, val2) {
+    if (val1 === 1 && val2 === 13) return true; // A - K
+    if (val1 === 13 && val2 === 1) return true; // K - A
+    return Math.abs(val1 - val2) === 1;
+}
+
+function updatePlayableHighlights() {
+    tableCards.forEach(c => c.el.classList.remove('playable'));
+    
+    if (wasteCards.length === 0) return;
+    const topWaste = wasteCards[wasteCards.length - 1];
+    
+    tableCards.forEach(c => {
+        if (c.isFaceUp && !c.removed && isAdjacentRank(c.value, topWaste.value)) {
+            c.el.classList.add('playable');
+        }
+    });
+}
+
+function checkUncover() {
+    let newlyFaceUp = [];
+    tableCards.forEach(c => {
+        if (!c.removed && !c.isFaceUp) {
+            // Check if any parents are NOT removed
+            const hasCoveringParents = c.config.parents.some(pid => {
+                const parent = tableCards.find(tc => tc.config.id === pid);
+                return parent && !parent.removed;
+            });
+            if (!hasCoveringParents) {
+                c.isFaceUp = true;
+                c.el.classList.remove('face-down');
+                newlyFaceUp.push(c);
+                sounds.flip();
+            }
+        }
+    });
+    return newlyFaceUp;
+}
+
+function spawnParticles(x, y) {
+    const container = document.getElementById('particles');
+    for (let i = 0; i < 10; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        const size = Math.random() * 6 + 4;
+        p.style.width = size + 'px';
+        p.style.height = size + 'px';
+        p.style.left = x + 'px';
+        p.style.top = y + 'px';
+        
+        container.appendChild(p);
+        
+        const angle = Math.random() * Math.PI * 2;
+        const vel = Math.random() * 50 + 20;
+        const dx = Math.cos(angle) * vel;
+        const dy = Math.sin(angle) * vel;
+        
+        p.animate([
+            { transform: 'translate(0,0) scale(1)', opacity: 1 },
+            { transform: `translate(${dx}px, ${dy}px) scale(0)`, opacity: 0 }
+        ], { duration: 500 + Math.random() * 500, easing: 'ease-out' }).onfinish = () => p.remove();
+    }
+}
+
+function handleTableClick(card) {
+    if (card.removed || !card.isFaceUp) return;
+    if (wasteCards.length === 0) return;
+    
+    const topWaste = wasteCards[wasteCards.length - 1];
+    
+    if (isAdjacentRank(card.value, topWaste.value)) {
+        // Valid move
+        history.push({
+            type: 'table',
+            card: card,
+            previousWaste: topWaste,
+            streakBefore: streak,
+            scoreBefore: score,
+            newlyFlipped: [] // populate after checkUncover
+        });
+        
+        card.removed = true;
+        wasteCards.push(card);
+        
+        // Move element
+        const gameAreaRect = document.getElementById('game-area').getBoundingClientRect();
+        const cardW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-width'));
+        const cardH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-height'));
+        const wasteX = gameAreaRect.width / 2 + 20;
+        const wasteY = gameAreaRect.height - cardH - 30;
+        
+        card.el.style.left = wasteX + 'px';
+        card.el.style.top = wasteY + 'px';
+        card.el.style.zIndex = 100 + wasteCards.length;
+        card.el.classList.remove('playable');
+        
+        // Score & Streak
+        streak++;
+        if (streak > maxStreak) maxStreak = streak;
+        const points = 100 + (streak * 50);
+        score += points;
+        
+        if (score > stats.highScore) {
+            stats.highScore = score;
+        }
+        
+        sounds.place();
+        if (streak > 2) sounds.streak(streak);
+        vibrate(30);
+        
+        const rect = card.el.getBoundingClientRect();
+        spawnParticles(rect.left + rect.width/2, rect.top + rect.height/2);
+        
+        // Check uncover
+        const newlyFlipped = checkUncover();
+        history[history.length - 1].newlyFlipped = newlyFlipped;
+        
+        document.getElementById('btn-undo').disabled = false;
+        
+        updateDisplays();
+        updatePlayableHighlights();
+        checkWinLose();
+    } else {
+        sounds.error();
+        // Shake animation
+        card.el.animate([
+            { transform: 'translateX(-5px)' },
+            { transform: 'translateX(5px)' },
+            { transform: 'translateX(-5px)' },
+            { transform: 'translateX(0)' }
+        ], { duration: 200 });
+        vibrate(50);
+    }
+}
+
+function handleStockClick() {
+    if (stockCards.length === 0) return;
+    
+    const gameAreaRect = document.getElementById('game-area').getBoundingClientRect();
+    const cardH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-height'));
+    const wasteX = gameAreaRect.width / 2 + 20;
+    const wasteY = gameAreaRect.height - cardH - 30;
+    
+    drawFromStock(wasteX, wasteY);
+}
+
+function drawFromStock(wasteX, wasteY) {
+    if (stockCards.length === 0) return;
+    
+    history.push({
+        type: 'stock',
+        streakBefore: streak,
+        scoreBefore: score
+    });
+    
+    const card = stockCards.pop();
+    wasteCards.push(card);
+    
+    card.el.style.left = wasteX + 'px';
+    card.el.style.top = wasteY + 'px';
+    card.el.style.zIndex = 100 + wasteCards.length;
+    card.el.classList.remove('face-down');
+    
+    streak = 0; // Reset streak
+    
+    sounds.flip();
+    document.getElementById('btn-undo').disabled = false;
+    
+    updateDisplays();
+    updatePlayableHighlights();
+    checkWinLose();
+}
+
+function handleUndo() {
+    if (history.length === 0) return;
+    const move = history.pop();
+    
+    if (move.type === 'table') {
+        const card = move.card;
+        card.removed = false;
+        wasteCards.pop();
+        
+        // Move back to table
+        const gameAreaRect = document.getElementById('game-area').getBoundingClientRect();
+        const cardW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-width'));
+        const cardH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-height'));
+        const startX = (gameAreaRect.width - (10 * cardW)) / 2;
+        const startY = 40;
+        const spacingX = cardW;
+        const spacingY = cardH * 0.55;
+        
+        card.el.style.left = (startX + card.config.c * spacingX) + 'px';
+        card.el.style.top = (startY + card.config.r * spacingY) + 'px';
+        card.el.style.zIndex = card.config.id;
+        
+        // Re-cover flipped cards
+        move.newlyFlipped.forEach(c => {
+            c.isFaceUp = false;
+            c.el.classList.add('face-down');
+        });
+        
+    } else if (move.type === 'stock') {
+        const card = wasteCards.pop();
+        stockCards.push(card);
+        
+        const gameAreaRect = document.getElementById('game-area').getBoundingClientRect();
+        const cardW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-width'));
+        const cardH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--card-height'));
+        const stockX = gameAreaRect.width / 2 - cardW - 20;
+        const stockY = gameAreaRect.height - cardH - 30;
+        
+        card.el.style.left = stockX + 'px';
+        card.el.style.top = stockY + 'px';
+        card.el.style.zIndex = stockCards.length;
+        card.el.classList.add('face-down');
+    }
+    
+    streak = move.streakBefore;
+    score = move.scoreBefore;
+    
+    sounds.place();
+    updateDisplays();
+    updatePlayableHighlights();
+    
+    if (history.length === 0) {
+        document.getElementById('btn-undo').disabled = true;
+    }
+}
+
+function winCascade() {
+    const container = document.getElementById('cascade-container');
+    container.innerHTML = '';
+    const cards = [];
+    
+    for(let i=0; i<30; i++) {
+        const c = document.createElement('div');
+        c.className = `card ${Math.random()>0.5?'red':'black'}`;
+        const face = document.createElement('div');
+        face.className = 'card-face';
+        face.innerHTML = `<div class="card-suit">${SUITS[Math.floor(Math.random()*4)]}</div>`;
+        c.appendChild(face);
+        
+        c.style.left = Math.random() * window.innerWidth + 'px';
+        c.style.top = -100 + 'px';
+        c.style.zIndex = Math.floor(Math.random() * 100);
+        
+        container.appendChild(c);
+        
+        let vx = (Math.random() - 0.5) * 5;
+        let vy = Math.random() * 2;
+        
+        cards.push({el: c, x: parseFloat(c.style.left), y: -100, vx: vx, vy: vy});
+    }
+    
+    let lastTime = performance.now();
+    
+    function animate() {
+        const now = performance.now();
+        const dt = (now - lastTime) / 16;
+        lastTime = now;
+        
+        let active = false;
+        cards.forEach(c => {
+            if (c.y < window.innerHeight + 100) {
+                active = true;
+                c.vy += 0.2 * dt; // gravity
+                c.x += c.vx * dt;
+                c.y += c.vy * dt;
+                c.el.style.transform = `translate(${c.x - parseFloat(c.el.style.left)}px, ${c.y - (-100)}px) rotate(${c.vx * 10}deg)`;
+            }
+        });
+        
+        if (active) requestAnimationFrame(animate);
+    }
+    
+    animate();
+}
+
+function checkWinLose() {
+    const allCleared = tableCards.every(c => c.removed);
+    
+    if (allCleared) {
+        // WIN
+        stats.won++;
+        if (maxStreak > stats.maxStreak) stats.maxStreak = maxStreak;
+        saveStats();
+        
+        sounds.win();
+        winCascade();
+        
+        setTimeout(() => showGameOver(true), 2500);
+        return;
+    }
+    
+    // Check Lose
+    if (stockCards.length === 0) {
+        const topWaste = wasteCards[wasteCards.length - 1];
+        const hasMoves = tableCards.some(c => !c.removed && c.isFaceUp && isAdjacentRank(c.value, topWaste.value));
+        
+        if (!hasMoves) {
+            // LOSE
+            if (maxStreak > stats.maxStreak) stats.maxStreak = maxStreak;
+            saveStats();
+            
+            sounds.lose();
+            setTimeout(() => showGameOver(false), 1000);
+        }
+    }
+}
+
+function showGameOver(won) {
+    const scr = document.getElementById('game-over-screen');
+    scr.classList.remove('hidden');
+    
+    document.getElementById('game-over-title').innerText = won ? 'You Won!' : 'Out of Moves';
+    document.getElementById('final-score').innerText = score;
+    document.getElementById('final-streak').innerText = maxStreak;
+    document.getElementById('stats-won').innerText = stats.won;
+    document.getElementById('stats-played').innerText = stats.played;
+}
+
+// Event Listeners
+document.getElementById('btn-play').addEventListener('click', () => {
+    // initialize audio context
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    startNewGame();
+});
+
+document.getElementById('btn-restart').addEventListener('click', startNewGame);
+document.getElementById('btn-new-deal').addEventListener('click', startNewGame);
+document.getElementById('btn-undo').addEventListener('click', handleUndo);
+
+// Prevent default scrolling/zooming behaviors
+document.addEventListener('touchmove', e => { e.preventDefault(); }, { passive: false });
+document.addEventListener('contextmenu', e => { e.preventDefault(); });
+
+window.onload = loadStats;
+window.addEventListener('resize', () => {
+    // Optional: add logic to re-layout cards on resize, though mobile usually maintains orientation
+});
+
+</script>
+</body>
+</html>

@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, maximum-scale=2.0">
+  <title>UNO • 4-player table</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Poppins', 'Segoe UI', system-ui, sans-serif;
+      background: radial-gradient(circle at 20% 30%, #1e1b4b, #0f172a);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 15px;
+      margin: 0;
+      user-select: none;
+      overflow-x: hidden;
+    }
+
+    /* main table grid : player bottom, 3 bots around */
+    .uno-table {
+      display: grid;
+      grid-template-columns: 1fr 2fr 1fr;
+      grid-template-rows: auto auto auto;
+      grid-template-areas:
+        ".    bot1  ."
+        "bot2 center bot3"
+        ".    player .";
+      gap: 20px;
+      align-items: center;
+      justify-items: center;
+      width: 100%;
+      max-width: 1300px;
+      background: rgba(255, 248, 235, 0.08);
+      backdrop-filter: blur(18px);
+      border-radius: 60px;
+      padding: 30px 20px;
+      box-shadow: 0 30px 50px rgba(0, 0, 0, 0.5), inset 0 2px 8px rgba(255, 255, 255, 0.15);
+      border: 2px solid rgba(255, 215, 150, 0.25);
+    }
+
+    /* center area (draw + discard) */
+    .center-area {
+      grid-area: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .piles {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 30px;
+      flex-wrap: wrap;
+    }
+
+    .draw-pile {
+      cursor: pointer;
+      transition: transform 0.25s ease, filter 0.2s;
+    }
+    .draw-pile:hover {
+      transform: translateY(-8px) scale(1.07);
+      filter: drop-shadow(0 16px 18px rgba(0, 0, 0, 0.6));
+    }
+    .draw-pile:active {
+      transform: scale(0.93);
+    }
+
+    .pile-card {
+      width: 130px;
+      height: 195px;
+      background: linear-gradient(145deg, #2d2a4a, #1b1a30);
+      border-radius: 16px;
+      border: 3px solid #fbbf24;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 3.5rem;
+      color: #fcd34d;
+      letter-spacing: 3px;
+      box-shadow: 0 12px 25px rgba(0,0,0,0.5);
+      text-shadow: 2px 2px 0 #00000040;
+      position: relative;
+    }
+    .pile-label {
+      color: #fffbeb;
+      font-weight: 700;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-top: 6px;
+      text-align: center;
+    }
+
+    .discard-pile {
+      min-width: 130px;
+      min-height: 195px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* CARDS (player & discard) */
+    .card {
+      width: 130px;
+      height: 195px;
+      border-radius: 18px;
+      background: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.3);
+      border: 3px solid #1e1b4b;
+      flex-shrink: 0;
+      position: relative;
+      color: #0f172a;
+    }
+    .card.playable {
+      border-color: #facc15;
+      box-shadow: 0 0 18px #fbbf24;
+      animation: gentlePulse 1.8s infinite;
+    }
+    @keyframes gentlePulse {
+      0% { box-shadow: 0 0 8px #fbbf24; }
+      50% { box-shadow: 0 0 26px #f59e0b; }
+      100% { box-shadow: 0 0 8px #fbbf24; }
+    }
+    .card:hover {
+      transform: translateY(-14px) scale(1.08);
+      box-shadow: 0 18px 30px rgba(0,0,0,0.5);
+      z-index: 20;
+    }
+    .card:active {
+      transform: scale(0.94);
+    }
+    .card-corner {
+      position: absolute;
+      top: 8px;
+      left: 12px;
+      font-size: 1rem;
+      font-weight: 900;
+    }
+    .card-center {
+      font-size: 3.5rem;
+      font-weight: 900;
+      z-index: 1;
+    }
+    .card-center.small-text {
+      font-size: 1.8rem;
+      font-weight: 800;
+    }
+    .card-bottom {
+      position: absolute;
+      bottom: 8px;
+      right: 12px;
+      font-size: 1rem;
+      font-weight: 900;
+      transform: rotate(180deg);
+    }
+
+    .card.red { background: #fff5f5; border-color: #dc2626; color: #b91c1c; }
+    .card.blue { background: #eff6ff; border-color: #2563eb; color: #1e3a8a; }
+    .card.green { background: #f0fdf4; border-color: #16a34a; color: #14532d; }
+    .card.yellow { background: #fffbeb; border-color: #ca8a04; color: #854d0e; }
+    .card.wild {
+      background: linear-gradient(135deg, #2d2a4a, #4b3b60);
+      border-color: #fbbf24;
+      color: #fff;
+      text-shadow: 0 2px 6px black;
+    }
+
+    /* РУБАШКИ КАРТ БОТОВ */
+    .bot-hand {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-left: 30px;
+      min-height: 100px;
+    }
+    .bot-card-back {
+      width: 65px; 
+      height: 100px;
+      background: linear-gradient(145deg, #2d2a4a, #1b1a30);
+      border: 2px solid #fbbf24;
+      border-radius: 10px;
+      margin-left: -35px;
+      box-shadow: -4px 0 12px rgba(0,0,0,0.4);
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .bot-card-back::after {
+      content: 'UNO';
+      color: rgba(255,255,255,0.1);
+      font-weight: 900;
+      font-size: 1rem;
+      transform: rotate(-45deg);
+    }
+
+    /* Bot zones (big number cards) */
+    .bot-slot {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .bot-name {
+      font-weight: 700;
+      font-size: 1.1rem;
+      background: rgba(0,0,0,0.5);
+      padding: 8px 22px;
+      border-radius: 40px;
+      color: #fff;
+      letter-spacing: 0.8px;
+      backdrop-filter: blur(10px);
+    }
+    .bot-name.active-turn {
+      background: #fbbf24;
+      color: #0f172a;
+      box-shadow: 0 0 20px #fbbf24;
+    }
+    .bot-big-card {
+      width: 110px;
+      height: 150px;
+      border-radius: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 4.5rem;
+      font-weight: 900;
+      color: white;
+      text-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      box-shadow: 0 15px 30px rgba(0,0,0,0.5);
+      border: 3px solid rgba(255,255,255,0.7);
+      transition: transform 0.2s;
+      background: linear-gradient(145deg, #334155, #1e293b);
+    }
+    .bot-big-card.alice { background: linear-gradient(145deg, #f43f5e, #be123c); }
+    .bot-big-card.bob   { background: linear-gradient(145deg, #3b82f6, #1d4ed8); }
+    .bot-big-card.carol { background: linear-gradient(145deg, #10b981, #047857); }
+
+    /* Player area inside bottom grid cell */
+    .player-area {
+      grid-area: player;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+    }
+    .player-label {
+      font-weight: 700;
+      background: rgba(255,255,255,0.15);
+      padding: 6px 24px;
+      border-radius: 30px;
+      color: #fff;
+      letter-spacing: 1px;
+    }
+    .player-label.active-turn {
+      background: #fbbf24;
+      color: #000;
+      box-shadow: 0 0 20px #fbbf24;
+    }
+    .player-hand {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 110px;
+    }
+
+    #uno-btn {
+      background: #fbbf24;
+      border: none;
+      color: #0f172a;
+      font-weight: 800;
+      font-size: 1rem;
+      padding: 10px 28px;
+      border-radius: 40px;
+      cursor: pointer;
+      letter-spacing: 1px;
+      box-shadow: 0 6px 20px rgba(251,191,36,0.5);
+      transition: 0.2s;
+      display: none;
+    }
+    #uno-btn:hover {
+      background: #f59e0b;
+      transform: scale(1.05);
+    }
+
+    /* color picker modal */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      backdrop-filter: blur(6px);
+    }
+    .color-picker {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 110;
+      background: rgba(20,20,40,0.9);
+      backdrop-filter: blur(20px);
+      padding: 30px 35px;
+      border-radius: 35px;
+      text-align: center;
+      border: 2px solid #fbbf24;
+      box-shadow: 0 30px 45px rgba(0,0,0,0.7);
+    }
+    .picker-title {
+      color: #fff;
+      font-weight: 700;
+      font-size: 1.2rem;
+      margin-bottom: 20px;
+    }
+    .color-options {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+    }
+    .color-btn {
+      width: 65px;
+      height: 65px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 3px solid white;
+      transition: 0.2s;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.5);
+    }
+    .color-btn:hover { transform: scale(1.15); }
+
+    .toast {
+      position: fixed;
+      top: 25px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1e1b4b;
+      color: #fcd34d;
+      padding: 12px 28px;
+      border-radius: 40px;
+      font-weight: 700;
+      z-index: 200;
+      opacity: 0;
+      transition: opacity 0.3s;
+      border: 2px solid #fbbf24;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+
+    .winner-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      z-index: 150;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      gap: 20px;
+    }
+    .winner-text {
+      font-size: 3rem;
+      font-weight: 900;
+      color: #fbbf24;
+    }
+    .winner-overlay button {
+      background: #fbbf24;
+      border: none;
+      padding: 14px 35px;
+      border-radius: 40px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    @media (max-width: 750px) {
+      .uno-table {
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+          "bot1 bot2"
+          "center bot3"
+          "player player";
+        gap: 12px;
+      }
+      .card, .pile-card { width: 72px; height: 108px; }
+      .card-center { font-size: 1.8rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="uno-table">
+  <!-- top bot -->
+  <div class="bot-slot" style="grid-area: bot1;" id="bot1-zone">
+    <div class="bot-name" id="bot1-name">Alice</div>
+    <div class="bot-hand" id="bot1-hand"></div>
+  </div>
+  <div class="bot-slot" style="grid-area: bot2;" id="bot2-zone">
+    <div class="bot-name" id="bot2-name">Bob</div>
+    <div class="bot-hand" id="bot2-hand"></div>
+  </div>
+  <div class="bot-slot" style="grid-area: bot3;" id="bot3-zone">
+    <div class="bot-name" id="bot3-name">Carol</div>
+    <div class="bot-hand" id="bot3-hand"></div>
+  </div>
+
+  <!-- center -->
+  <div class="center-area">
+    <div class="piles">
+      <div class="draw-pile" id="draw-pile" title="Draw card (D)">
+        <div class="pile-card"><span>🃏</span></div>
+        <div class="pile-label">DRAW</div>
+      </div>
+      <div class="discard-pile" id="discard-pile"></div>
+    </div>
+    <div style="color:#fff; font-weight:600; margin-top:6px;" id="turn-indicator">Your turn</div>
+  </div>
+
+  <!-- player -->
+  <div class="player-area">
+    <div class="player-label active-turn" id="player-label">👤 You</div>
+    <div class="player-hand" id="player-hand"></div>
+    <button id="uno-btn">🔴 UNO!</button>
+  </div>
+</div>
+
+<!-- color picker -->
+<div class="overlay" id="overlay"></div>
+<div class="color-picker" id="color-picker">
+  <div class="picker-title">✨ Choose a color</div>
+  <div class="color-options">
+    <div class="color-btn" style="background:#ef4444;" data-color="red"></div>
+    <div class="color-btn" style="background:#3b82f6;" data-color="blue"></div>
+    <div class="color-btn" style="background:#22c55e;" data-color="green"></div>
+    <div class="color-btn" style="background:#eab308;" data-color="yellow"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="winner-overlay" id="winner-overlay">
+  <div class="winner-text" id="winner-message"></div>
+  <button id="restart-btn">🔄 Play again</button>
+</div>
+
+<script>
+  (() => {
+    // ---------- game state ----------
+    const COLORS = ['red', 'blue', 'green', 'yellow'];
+    const ACTIONS = ['skip', 'reverse', 'draw2'];
+    let deck = [], discardPile = [];
+    let players = [
+      { name: 'You', hand: [], isHuman: true },
+      { name: 'Alice', hand: [], isHuman: false },
+      { name: 'Bob', hand: [], isHuman: false },
+      { name: 'Carol', hand: [], isHuman: false }
+    ];
+    let currentPlayerIndex = 0;
+    let currentColor = 'red';
+    let direction = 1;
+    let gameOver = false;
+    let pendingWild = null;
+    let unoCalled = {};
+
+    // ---------- DOM ----------
+    const playerHandEl = document.getElementById('player-hand');
+    const discardPileEl = document.getElementById('discard-pile');
+    const drawPileEl = document.getElementById('draw-pile');
+    const turnIndicator = document.getElementById('turn-indicator');
+    const unoBtn = document.getElementById('uno-btn');
+    const overlay = document.getElementById('overlay');
+    const colorPicker = document.getElementById('color-picker');
+    const toastEl = document.getElementById('toast');
+    const winnerOverlay = document.getElementById('winner-overlay');
+    const winnerMsg = document.getElementById('winner-message');
+    const playerLabel = document.getElementById('player-label');
+
+    function buildDeck() {
+      deck = [];
+      COLORS.forEach(color => {
+        deck.push({ type:'number', value:'0', color });
+        for(let i=1;i<=9;i++){
+          deck.push({ type:'number', value:String(i), color });
+          deck.push({ type:'number', value:String(i), color });
+        }
+        ACTIONS.forEach(act => {
+          deck.push({ type:act, value:act, color });
+          deck.push({ type:act, value:act, color });
+        });
+      });
+      for(let i=0;i<4;i++) deck.push({ type:'wild', value:'wild', color:'wild' });
+      for(let i=0;i<4;i++) deck.push({ type:'wild4', value:'wild4', color:'wild' });
+      shuffleDeck();
+    }
+    function shuffleDeck() { for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; } }
+    function getDisplay(card){ if(card.type==='number')return card.value; if(card.type==='skip')return '⊘'; if(card.type==='reverse')return '⇄'; if(card.type==='draw2')return '+2'; if(card.type==='wild')return 'W'; if(card.type==='wild4')return '+4'; }
+    function isPlayable(card, top, activeColor){
+      if(card.type==='wild'||card.type==='wild4')return true;
+      if(card.color===activeColor)return true;
+      if(top.type==='number'&&card.type==='number'&&card.value===top.value)return true;
+      if(top.type!=='number'&&top.type!=='wild'&&top.type!=='wild4'&&card.type===top.type)return true;
+      return false;
+    }
+    function playableCards(hand,top,activeColor){ return hand.filter(c=>isPlayable(c,top,activeColor)); }
+
+    function drawCards(player,count){
+      for(let i=0;i<count;i++){
+        if(deck.length===0) reshuffleDiscardToDeck();
+        if(deck.length>0) player.hand.push(deck.pop());
+      }
+    }
+    function reshuffleDiscardToDeck(){
+      if(discardPile.length<=1)return;
+      const top=discardPile.pop();
+      while(discardPile.length) deck.push(discardPile.pop());
+      shuffleDeck();
+      discardPile.push(top);
+      showToast('🔄 Deck reshuffled');
+    }
+
+    function nextPlayerIndex(from=currentPlayerIndex){ return (from+direction+players.length)%players.length; }
+    function advanceTurn(){ currentPlayerIndex=nextPlayerIndex(); }
+
+    function handleAction(card, player){
+      const next=players[nextPlayerIndex()];
+      if(card.type==='skip'){ showToast(`${next.name} skipped`); advanceTurn(); return true; }
+      if(card.type==='reverse'){ direction*=-1; showToast('↔️ Direction reversed'); if(players.length===2) advanceTurn(); return true; }
+      if(card.type==='draw2'){ drawCards(next,2); showToast(`${next.name} +2 cards & skipped`); advanceTurn(); return true; }
+      if(card.type==='wild4'){ drawCards(next,4); showToast(`${next.name} +4 cards & skipped`); advanceTurn(); return true; }
+      return false;
+    }
+
+    function checkWinner(p){
+      if(p.hand.length===0){
+        gameOver=true;
+        winnerMsg.textContent=p.isHuman?'🎉 You win! 🎉':`😞 ${p.name} wins!`;
+        winnerOverlay.style.display='flex';
+        unoBtn.style.display='none';
+        return true;
+      }
+      return false;
+    }
+    function penalizeUno(p){
+      if(p.hand.length===1 && !unoCalled[p.name]){
+        drawCards(p,2);
+        showToast(`${p.name} forgot UNO! +2 penalty`);
+        unoCalled[p.name]=true;
+      }
+    }
+
+    // ----- rendering -----
+    function renderDiscard(){
+      discardPileEl.innerHTML='';
+      if(!discardPile.length)return;
+      const top=discardPile[discardPile.length-1];
+      const el=document.createElement('div');
+      el.className=`card ${top.color==='wild'?'wild':top.color}`;
+      el.innerHTML=`<div class="card-corner">${getDisplay(top)}</div><div class="card-center ${top.type==='wild'||top.type==='wild4'?'small-text':''}">${getDisplay(top)}</div><div class="card-bottom">${getDisplay(top)}</div>`;
+      el.style.cursor='default';
+      discardPileEl.appendChild(el);
+    }
+
+    function renderPlayerHand(){
+      playerHandEl.innerHTML='';
+      const player=players[0];
+      const top=discardPile.length?discardPile[discardPile.length-1]:null;
+      const playableSet=new Set(top?playableCards(player.hand,top,currentColor):player.hand);
+      player.hand.forEach((card,idx)=>{
+        const el=document.createElement('div');
+        el.className=`card ${card.color==='wild'?'wild':card.color} ${playableSet.has(card)?'playable':''}`;
+        el.innerHTML=`<div class="card-corner">${getDisplay(card)}</div><div class="card-center ${card.type==='wild'||card.type==='wild4'?'small-text':''}">${getDisplay(card)}</div><div class="card-bottom">${getDisplay(card)}</div>`;
+        el.addEventListener('click',()=>handlePlayerCard(idx,card,playableSet.has(card)));
+        playerHandEl.appendChild(el);
+      });
+      if(player.hand.length<=2 && player.hand.length>=1 && !gameOver) unoBtn.style.display='inline-block';
+      else unoBtn.style.display='none';
+    }
+
+    function renderBots(){
+      [1,2,3].forEach(i=>{
+        const bot = players[i];
+        const handContainer = document.getElementById(`bot${i}-hand`);
+        handContainer.innerHTML = ''; // Очищаем контейнер
+        
+        // Создаем рубашки карт по количеству карт в руке бота
+        for(let j = 0; j < bot.hand.length; j++) {
+          const cardBack = document.createElement('div');
+          cardBack.className = 'bot-card-back';
+          handContainer.appendChild(cardBack);
+        }
+        
+        document.getElementById(`bot${i}-name`).classList.toggle('active-turn', currentPlayerIndex===i);
+      });
+      playerLabel.classList.toggle('active-turn', currentPlayerIndex===0);
+      turnIndicator.textContent=players[currentPlayerIndex].name+"'s turn";
+    }
+
+    function renderAll(){ renderDiscard(); renderPlayerHand(); renderBots(); }
+
+    // ----- player actions -----
+    function handlePlayerCard(idx,card,playable){
+      if(gameOver||currentPlayerIndex!==0||pendingWild) return;
+      if(!playable){ showToast("Can't play this card"); return; }
+      // penalize others
+      players.forEach(p=>{ if(p!==players[0]&&p.hand.length===1&&!unoCalled[p.name]) penalizeUno(p); });
+      players[0].hand.splice(idx,1);
+      discardPile.push(card);
+      if(card.type==='wild'||card.type==='wild4'){
+        pendingWild=card;
+        showColorPicker();
+        renderAll();
+        return;
+      }
+      currentColor=card.color;
+      handleAction(card,players[0]);
+      if(checkWinner(players[0])){ renderAll(); return; }
+      unoCalled['You']=false;
+      advanceTurn();
+      renderAll();
+      scheduleBot();
+    }
+
+    function drawFromPile(){
+      if(gameOver||currentPlayerIndex!==0||pendingWild) return;
+      drawCards(players[0],1);
+      showToast('You drew a card');
+      unoCalled['You']=false;
+      advanceTurn();
+      renderAll();
+      scheduleBot();
+    }
+
+    function showColorPicker(){ overlay.style.display='block'; colorPicker.style.display='block'; }
+    function hideColorPicker(){ overlay.style.display='none'; colorPicker.style.display='none'; }
+    function chooseColor(color){
+      if(!pendingWild)return;
+      hideColorPicker();
+      currentColor=color;
+      if(pendingWild.type==='wild4') handleAction(pendingWild,players[0]);
+      if(checkWinner(players[0])){ pendingWild=null; renderAll(); return; }
+      unoCalled['You']=false;
+      pendingWild=null;
+      advanceTurn();
+      renderAll();
+      scheduleBot();
+    }
+
+    document.querySelectorAll('.color-btn').forEach(b=>b.addEventListener('click',e=>chooseColor(e.target.dataset.color)));
+    overlay.addEventListener('click',()=>{ if(pendingWild) showToast('Choose a color!'); });
+    drawPileEl.addEventListener('click',drawFromPile);
+    unoBtn.addEventListener('click',()=>{
+      if(currentPlayerIndex===0&&players[0].hand.length<=2&&players[0].hand.length>=1){
+        unoCalled['You']=true; showToast('🔴 UNO!'); unoBtn.style.display='none';
+      }
+    });
+    document.addEventListener('keydown',e=>{
+      if(e.key==='d'&&currentPlayerIndex===0&&!gameOver&&!pendingWild) drawFromPile();
+      if(e.key==='u'&&currentPlayerIndex===0&&!gameOver) unoBtn.click();
+    });
+
+    // ----- bot AI -----
+    function scheduleBot(){
+      if(gameOver||currentPlayerIndex===0) return;
+      setTimeout(()=>{
+        if(gameOver||currentPlayerIndex===0) return;
+        executeBot(currentPlayerIndex);
+      }, 500+Math.random()*700);
+    }
+    function executeBot(idx){
+      if(gameOver||currentPlayerIndex!==idx) return;
+      const bot=players[idx];
+      const top=discardPile[discardPile.length-1];
+      const playable=playableCards(bot.hand,top,currentColor);
+      players.forEach(p=>{ if(p!==bot&&p.hand.length===1&&!unoCalled[p.name]) penalizeUno(p); });
+      if(playable.length>0){
+        let chosen=playable[0];
+        const prio={wild4:10,wild:9,draw2:8,skip:7,reverse:6,number:1};
+        playable.forEach(c=>{ if((prio[c.type]||0)>(prio[chosen.type]||0)) chosen=c; });
+        const idxInHand=bot.hand.indexOf(chosen);
+        const card=bot.hand.splice(idxInHand,1)[0];
+        discardPile.push(card);
+        if(card.type==='wild'||card.type==='wild4'){
+          const counts={red:0,blue:0,green:0,yellow:0};
+          bot.hand.forEach(c=>{ if(c.color in counts) counts[c.color]++; });
+          let best='red', max=-1;
+          COLORS.forEach(col=>{ if(counts[col]>max){ max=counts[col]; best=col; } });
+          currentColor=best;
+          showToast(`${bot.name} plays ${card.type==='wild4'?'Wild+4':'Wild'} ➔ ${best}`);
+          handleAction(card,bot);
+        } else {
+          currentColor=card.color;
+          showToast(`${bot.name} plays ${getDisplay(card)}`);
+          handleAction(card,bot);
+        }
+      } else {
+        drawCards(bot,1);
+        showToast(`${bot.name} draws a card`);
+        unoCalled[bot.name]=false;
+      }
+      if(checkWinner(bot)){ renderAll(); return; }
+      unoCalled[bot.name]=bot.hand.length===1? true : false;
+      advanceTurn();
+      renderAll();
+      scheduleBot();
+    }
+
+    function showToast(msg){
+      toastEl.textContent=msg; toastEl.classList.add('show');
+      clearTimeout(window.toastT); window.toastT=setTimeout(()=>toastEl.classList.remove('show'),2200);
+    }
+
+    function init(){
+      gameOver=false; direction=1; pendingWild=null; unoCalled={};
+      deck=[]; discardPile=[]; players.forEach(p=>p.hand=[]);
+      currentPlayerIndex=0; currentColor='red';
+      buildDeck();
+      players.forEach(p=>{ for(let i=0;i<7;i++) p.hand.push(deck.pop()); });
+      while(deck.length&&(discardPile.length===0||discardPile[discardPile.length-1].type==='wild'||discardPile[discardPile.length-1].type==='wild4')){
+        if(discardPile.length) deck.push(discardPile.pop());
+        discardPile.push(deck.pop());
+        shuffleDeck();
+      }
+      currentColor=discardPile[discardPile.length-1].color;
+      winnerOverlay.style.display='none';
+      hideColorPicker();
+      renderAll();
+      if(currentPlayerIndex!==0) scheduleBot();
+    }
+    document.getElementById('restart-btn').addEventListener('click',init);
+    init();
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Maze Runner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #2c3e50;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            background: #1a1a1a;
+            max-width: 100vw;
+            max-height: 100vh;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            color: #fff;
+            font-size: 20px;
+            z-index: 10;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            padding: 0 20px;
+        }
+
+        #controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: grid;
+            grid-template-columns: repeat(3, 90px);
+            grid-template-rows: repeat(3, 90px);
+            gap: 10px;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .control-btn {
+            background: rgba(52, 152, 219, 0.3);
+            border: 3px solid #3498db;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 15px rgba(52, 152, 219, 0.5);
+            touch-action: manipulation;
+            user-select: none;
+        }
+
+        .control-btn:active {
+            background: rgba(52, 152, 219, 0.7);
+            box-shadow: 0 0 25px rgba(52, 152, 219, 0.8);
+        }
+
+        #upBtn { grid-column: 2; grid-row: 1; }
+        #leftBtn { grid-column: 1; grid-row: 2; }
+        #rightBtn { grid-column: 3; grid-row: 2; }
+        #downBtn { grid-column: 2; grid-row: 3; }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            padding: 40px;
+            border: 4px solid #27ae60;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+            box-shadow: 0 0 50px rgba(39, 174, 96, 0.5);
+            z-index: 100;
+        }
+
+        #gameOver h1 {
+            color: #27ae60;
+            font-size: 42px;
+            margin-bottom: 20px;
+        }
+
+        #gameOver p {
+            color: #fff;
+            font-size: 22px;
+            margin: 15px 0;
+        }
+
+        #restartBtn {
+            margin-top: 25px;
+            padding: 15px 50px;
+            background: #27ae60;
+            color: #fff;
+            border: none;
+            font-size: 22px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 10px;
+        }
+
+        #restartBtn:active {
+            background: #2ecc71;
+            transform: scale(0.95);
+        }
+
+        #timer {
+            color: #e74c3c;
+            font-size: 24px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui">
+        <div>LEVEL: <span id="level">1</span></div>
+        <div id="timer">TIME: <span id="time">90</span>s</div>
+        <div>COINS: <span id="coins">0</span>/5</div>
+    </div>
+
+    <div id="controls">
+        <div class="control-btn" id="upBtn">▲</div>
+        <div class="control-btn" id="leftBtn">◄</div>
+        <div class="control-btn" id="rightBtn">►</div>
+        <div class="control-btn" id="downBtn">▼</div>
+    </div>
+
+    <div id="gameOver">
+        <h1 id="resultTitle">LEVEL COMPLETE!</h1>
+        <p>TOTAL COINS: <span id="totalCoins">0</span></p>
+        <p>TIME BONUS: <span id="timeBonus">0</span></p>
+        <p>FINAL SCORE: <span id="finalScore">0</span></p>
+        <button id="restartBtn">NEXT LEVEL</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        canvas.width = Math.min(window.innerWidth, 500);
+        canvas.height = Math.min(window.innerHeight - 350, 500);
+
+        let gameActive = false;
+        let level = 1;
+        let coins = 0;
+        let totalCoins = 0;
+        let timeLeft = 90;
+        let timerInterval = null;
+
+        const cellSize = 25;
+        const cols = Math.floor(canvas.width / cellSize);
+        const rows = Math.floor(canvas.height / cellSize);
+
+        const player = {
+            x: 1,
+            y: 1,
+            size: cellSize - 4
+        };
+
+        let maze = [];
+        let coinPositions = [];
+        let exit = { x: 0, y: 0 };
+        let maxCoins = 5;
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(freq, duration) {
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            oscillator.frequency.value = freq;
+            gainNode.gain.value = 0.1;
+            
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + duration);
+        }
+
+        function generateMaze() {
+            // Initialize maze with all walls
+            maze = [];
+            for (let y = 0; y < rows; y++) {
+                maze[y] = [];
+                for (let x = 0; x < cols; x++) {
+                    maze[y][x] = 1;
+                }
+            }
+            
+            // Recursive backtracking maze generation
+            function carve(x, y) {
+                maze[y][x] = 0;
+                
+                const directions = [
+                    [0, -2], [2, 0], [0, 2], [-2, 0]
+                ].sort(() => Math.random() - 0.5);
+                
+                for (let [dx, dy] of directions) {
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    
+                    if (nx > 0 && nx < cols - 1 && ny > 0 && ny < rows - 1 && maze[ny][nx] === 1) {
+                        maze[y + dy/2][x + dx/2] = 0;
+                        carve(nx, ny);
+                    }
+                }
+            }
+            
+            // Start carving from position (1, 1)
+            carve(1, 1);
+            
+            // Make sure exit area is open
+            exit.x = cols - 2;
+            exit.y = rows - 2;
+            maze[exit.y][exit.x] = 0;
+            if (exit.x - 1 >= 0) maze[exit.y][exit.x - 1] = 0;
+            if (exit.y - 1 >= 0) maze[exit.y - 1][exit.x] = 0;
+            
+            // Place coins
+            coinPositions = [];
+            maxCoins = 5 + level;
+            let placed = 0;
+            let attempts = 0;
+            
+            while (placed < maxCoins && attempts < 100) {
+                const x = Math.floor(Math.random() * (cols - 4)) + 2;
+                const y = Math.floor(Math.random() * (rows - 4)) + 2;
+                
+                if (maze[y][x] === 0 && 
+                    !(x === 1 && y === 1) && 
+                    !(Math.abs(x - exit.x) < 2 && Math.abs(y - exit.y) < 2) &&
+                    !coinPositions.some(c => c.x === x && c.y === y)) {
+                    coinPositions.push({ x, y, collected: false });
+                    placed++;
+                }
+                attempts++;
+            }
+        }
+
+        function init() {
+            gameActive = true;
+            level = 1;
+            coins = 0;
+            totalCoins = 0;
+            timeLeft = 90;
+            
+            player.x = 1;
+            player.y = 1;
+            
+            generateMaze();
+            
+            document.getElementById('gameOver').style.display = 'none';
+            
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                if (gameActive) {
+                    timeLeft--;
+                    document.getElementById('time').textContent = timeLeft;
+                    
+                    if (timeLeft <= 0) {
+                        gameOver(false);
+                    }
+                }
+            }, 1000);
+            
+            gameLoop();
+        }
+
+        function nextLevel() {
+            level++;
+            coins = 0;
+            timeLeft = Math.max(60 - (level * 3), 40);
+            
+            player.x = 1;
+            player.y = 1;
+            
+            generateMaze();
+            
+            document.getElementById('gameOver').style.display = 'none';
+            gameActive = true;
+            
+            gameLoop();
+        }
+
+        function move(dx, dy) {
+            if (!gameActive) return;
+            
+            const newX = player.x + dx;
+            const newY = player.y + dy;
+            
+            // Check bounds and wall collision
+            if (newX >= 0 && newX < cols && 
+                newY >= 0 && newY < rows && 
+                maze[newY][newX] === 0) {
+                
+                player.x = newX;
+                player.y = newY;
+                playSound(300, 0.05);
+                
+                // Check coin collection
+                coinPositions.forEach(coin => {
+                    if (!coin.collected && coin.x === player.x && coin.y === player.y) {
+                        coin.collected = true;
+                        coins++;
+                        totalCoins++;
+                        playSound(800, 0.15);
+                    }
+                });
+                
+                // Check exit - need all coins first
+                if (player.x === exit.x && player.y === exit.y) {
+                    if (coins >= maxCoins) {
+                        gameOver(true);
+                    }
+                }
+            } else {
+                playSound(150, 0.1);
+            }
+        }
+
+        function update() {
+            if (!gameActive) return;
+            
+            document.getElementById('level').textContent = level;
+            document.getElementById('coins').textContent = coins + '/' + maxCoins;
+        }
+
+        function draw() {
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw maze
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    if (maze[y][x] === 1) {
+                        ctx.fillStyle = '#34495e';
+                        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                        
+                        ctx.fillStyle = '#2c3e50';
+                        ctx.fillRect(x * cellSize + 2, y * cellSize + 2, cellSize - 4, cellSize - 4);
+                    } else {
+                        ctx.fillStyle = '#2a2a2a';
+                        ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                    }
+                }
+            }
+            
+            // Draw coins
+            coinPositions.forEach(coin => {
+                if (!coin.collected) {
+                    ctx.fillStyle = '#f39c12';
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#f39c12';
+                    ctx.beginPath();
+                    ctx.arc(
+                        coin.x * cellSize + cellSize / 2,
+                        coin.y * cellSize + cellSize / 2,
+                        cellSize / 3,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                    ctx.shadowBlur = 0;
+                }
+            });
+            
+            // Draw exit
+            if (coins >= maxCoins) {
+                ctx.fillStyle = '#27ae60';
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#27ae60';
+            } else {
+                ctx.fillStyle = '#7f8c8d';
+                ctx.shadowBlur = 5;
+                ctx.shadowColor = '#7f8c8d';
+            }
+            ctx.fillRect(
+                exit.x * cellSize + 3,
+                exit.y * cellSize + 3,
+                cellSize - 6,
+                cellSize - 6
+            );
+            ctx.shadowBlur = 0;
+            
+            // Draw player
+            ctx.fillStyle = '#3498db';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#3498db';
+            ctx.beginPath();
+            ctx.arc(
+                player.x * cellSize + cellSize / 2,
+                player.y * cellSize + cellSize / 2,
+                player.size / 2,
+                0,
+                Math.PI * 2
+            );
+            ctx.fill();
+            
+            // Eyes
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(
+                player.x * cellSize + cellSize / 2 - 4,
+                player.y * cellSize + cellSize / 2 - 3,
+                3,
+                0,
+                Math.PI * 2
+            );
+            ctx.arc(
+                player.x * cellSize + cellSize / 2 + 4,
+                player.y * cellSize + cellSize / 2 - 3,
+                3,
+                0,
+                Math.PI * 2
+            );
+            ctx.fill();
+            
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(
+                player.x * cellSize + cellSize / 2 - 4,
+                player.y * cellSize + cellSize / 2 - 3,
+                1.5,
+                0,
+                Math.PI * 2
+            );
+            ctx.arc(
+                player.x * cellSize + cellSize / 2 + 4,
+                player.y * cellSize + cellSize / 2 - 3,
+                1.5,
+                0,
+                Math.PI * 2
+            );
+            ctx.fill();
+            
+            ctx.shadowBlur = 0;
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            if (gameActive) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        function gameOver(completed) {
+            gameActive = false;
+            clearInterval(timerInterval);
+            
+            if (completed) {
+                const timeBonus = timeLeft * 10;
+                const score = totalCoins * 100 + timeBonus;
+                
+                document.getElementById('resultTitle').textContent = 'LEVEL COMPLETE!';
+                document.getElementById('totalCoins').textContent = totalCoins;
+                document.getElementById('timeBonus').textContent = timeBonus;
+                document.getElementById('finalScore').textContent = score;
+                document.getElementById('restartBtn').textContent = 'NEXT LEVEL';
+                
+                playSound(1000, 0.3);
+            } else {
+                document.getElementById('resultTitle').textContent = 'TIME UP!';
+                document.getElementById('totalCoins').textContent = totalCoins;
+                document.getElementById('timeBonus').textContent = 0;
+                document.getElementById('finalScore').textContent = totalCoins * 100;
+                document.getElementById('restartBtn').textContent = 'RETRY';
+                
+                playSound(200, 0.5);
+            }
+            
+            document.getElementById('gameOver').style.display = 'block';
+        }
+
+        // Controls
+        document.getElementById('upBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            move(0, -1);
+        });
+
+        document.getElementById('downBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            move(0, 1);
+        });
+
+        document.getElementById('leftBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            move(-1, 0);
+        });
+
+        document.getElementById('rightBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            move(1, 0);
+        });
+
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp' || e.key === 'w') move(0, -1);
+            if (e.key === 'ArrowDown' || e.key === 's') move(0, 1);
+            if (e.key === 'ArrowLeft' || e.key === 'a') move(-1, 0);
+            if (e.key === 'ArrowRight' || e.key === 'd') move(1, 0);
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', () => {
+            if (document.getElementById('restartBtn').textContent === 'NEXT LEVEL') {
+                nextLevel();
+            } else {
+                init();
+            }
+        });
+
+        init();
+    </script>
+</body>
+</html>
+

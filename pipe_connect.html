@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Pipe Connect</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Kanit:wght@400;700;900&family=Nunito:wght@700;900&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;}
+body{min-height:100vh;background:#0E1621;overflow:hidden;font-family:'Nunito',sans-serif;color:white;display:flex;flex-direction:column;align-items:center;touch-action:manipulation;}
+
+#hud{width:100%;max-width:480px;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:6px;}
+.hpill{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:6px 12px;font-size:.9rem;font-weight:700;text-align:center;flex:1;}
+.hpill span{display:block;font-size:.5rem;color:rgba(255,255,255,.3);letter-spacing:1px;text-transform:uppercase;margin-bottom:1px;}
+
+#grid-wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:6px 8px;}
+#pipe-grid{display:grid;gap:2px;}
+
+.pcell{border-radius:8px;background:#1A2535;cursor:pointer;display:flex;align-items:center;justify-content:center;position:relative;overflow:visible;border:1.5px solid rgba(255,255,255,.04);transition:transform .1s;}
+.pcell:active{transform:scale(.85);}
+.pcell.lit{background:#0F2A1A;}
+.pcell.source,.pcell.sink{cursor:default;}
+.pcell canvas{pointer-events:none;display:block;}
+
+#bottom-bar{padding:8px 16px 12px;width:100%;max-width:480px;display:flex;gap:8px;}
+#flow-btn{flex:2;background:linear-gradient(135deg,#38BDF8,#0284C7);color:white;border:none;border-radius:12px;padding:13px 0;font-family:'Kanit';font-size:1rem;font-weight:700;cursor:pointer;letter-spacing:1px;box-shadow:0 4px 16px rgba(56,189,248,.25);}
+#flow-btn:active{transform:scale(.95);}
+#hint-btn{flex:1;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.5);border-radius:12px;padding:13px 0;font-family:'Kanit';font-size:.85rem;cursor:pointer;}
+#hint-btn:active{transform:scale(.95);}
+
+/* SCREENS */
+.screen{position:fixed;inset:0;z-index:400;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px;}
+#start-screen{background:radial-gradient(ellipse at 50% 30%,#1E3A5F,#0E1621);}
+#win-screen{background:radial-gradient(ellipse at 50% 40%,#0F2A1A,#0E1621);}
+#fail-screen{background:radial-gradient(ellipse at 50% 40%,#2A0F0F,#0E1621);}
+.pipe-title{font-family:'Kanit';font-size:3.2rem;font-weight:900;background:linear-gradient(135deg,#38BDF8,#A3E635);-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-align:center;letter-spacing:3px;margin-bottom:4px;}
+.pipe-sub{font-size:.65rem;color:rgba(255,255,255,.3);letter-spacing:4px;text-transform:uppercase;margin-bottom:20px;}
+.info-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:14px 20px;margin-bottom:20px;max-width:300px;font-size:.87rem;color:rgba(255,255,255,.55);line-height:1.9;text-align:center;}
+.pipe-btn{background:linear-gradient(135deg,#38BDF8,#0284C7);color:white;border:none;border-radius:12px;padding:14px 50px;font-family:'Kanit';font-size:1.1rem;font-weight:700;cursor:pointer;letter-spacing:2px;box-shadow:0 5px 18px rgba(56,189,248,.3);}
+.pipe-btn:active{transform:scale(.95);}
+.pipe-btn.green{background:linear-gradient(135deg,#34D399,#059669);box-shadow:0 5px 18px rgba(52,211,153,.3);}
+.pipe-btn.ghost{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);box-shadow:none;margin-top:10px;}
+.win-big{font-family:'Kanit';font-size:4rem;font-weight:900;background:linear-gradient(135deg,#A3E635,#38BDF8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:4px 0;}
+.win-stars{font-size:2.8rem;margin:6px 0;}
+.wstats{display:flex;gap:10px;margin:8px 0 18px;width:100%;max-width:280px;}
+.wst{flex:1;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:10px 4px;text-align:center;}
+.wstv{font-family:'Kanit';font-size:1.3rem;color:white;font-weight:700;}
+.wstl{font-size:.5rem;color:rgba(255,255,255,.3);letter-spacing:1px;text-transform:uppercase;margin-top:2px;}
+
+/* level progress dots */
+#level-dots{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;margin:10px 0;}
+.ldot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.15);}
+.ldot.done{background:#38BDF8;}
+.ldot.current{background:#A3E635;box-shadow:0 0 6px #A3E635;}
+
+/* flow animation */
+@keyframes flowPulse{0%,100%{opacity:.5;}50%{opacity:1;}}
+</style>
+</head>
+<body>
+<div id="hud">
+  <div class="hpill"><span>LEVEL</span><span id="lv-v" style="color:#FB923C;font-size:1.1rem">1</span></div>
+  <div class="hpill"><span>GRID</span><span id="grid-v" style="color:#38BDF8;font-size:1rem">4×4</span></div>
+  <div class="hpill"><span>TAPS</span><span id="taps-v" style="color:#A3E635;font-size:1.1rem">0</span></div>
+  <div class="hpill"><span>SCORE</span><span id="score-v" style="color:#F472B6;font-size:1rem">0</span></div>
+</div>
+
+<div id="grid-wrap"><div id="pipe-grid"></div></div>
+
+<div id="bottom-bar">
+  <button id="hint-btn" onclick="doHint()">💡 Hint</button>
+  <button id="flow-btn" onclick="doFlow()">▶ Flow Water</button>
+</div>
+
+<!-- START -->
+<div class="screen" id="start-screen" style="display:none">
+  <div style="font-size:3.5rem;margin-bottom:10px">🔧</div>
+  <div class="pipe-title">PIPE CONNECT</div>
+  <div class="pipe-sub">Route The Water</div>
+  <button class="pipe-btn" onclick="startGame()">Start Plumbing! 🔧</button>
+</div>
+
+<!-- WIN -->
+<div class="screen" id="win-screen" style="display:none">
+  <div class="win-stars" id="wstars">⭐⭐⭐</div>
+  <div style="font-size:2.5rem">💧✅</div>
+  <div class="win-big" id="wscore">+500</div>
+  <p style="color:rgba(255,255,255,.3);font-size:.7rem;margin-bottom:6px;letter-spacing:2px">LEVEL COMPLETE</p>
+  <div class="wstats">
+    <div class="wst"><div class="wstv" id="wlv">1</div><div class="wstl">Level</div></div>
+    <div class="wst"><div class="wstv" id="wtaps">0</div><div class="wstl">Taps</div></div>
+    <div class="wst"><div class="wstv" id="wtotal">0</div><div class="wstl">Total</div></div>
+  </div>
+  <button class="pipe-btn green" onclick="nextLevel()">Next Level ▶</button>
+  <button class="pipe-btn ghost" onclick="goMenu()">Menu</button>
+</div>
+
+<!-- FAIL (no path) -->
+<div class="screen" id="fail-screen" style="display:none">
+  <div style="font-size:3rem;margin-bottom:8px">🚫💧</div>
+  <div style="font-family:'Kanit';font-size:2rem;font-weight:900;color:#EF4444;margin-bottom:6px">NO FLOW!</div>
+  <p style="color:rgba(255,255,255,.4);font-size:.9rem;margin-bottom:20px;text-align:center">The water can't reach the drain.<br>Rotate more pipes and try again!</p>
+  <button class="pipe-btn" onclick="hideFail()">Keep Trying 🔧</button>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+   PIPE TYPES
+   connections[rot] = [top, right, bottom, left]
+══════════════════════════════════════════════ */
+const PT = {
+  // Straight
+  I: { r:[[1,0,1,0],[0,1,0,1]] },
+  // Elbow
+  L: { r:[[1,1,0,0],[0,1,1,0],[0,0,1,1],[1,0,0,1]] },
+  // T junction
+  T: { r:[[1,1,1,0],[1,1,0,1],[0,1,1,1],[1,0,1,1]] },
+  // Cross
+  X: { r:[[1,1,1,1]] },
+};
+
+function conn(type, rot){
+  if(type==='S'||type==='D') return [1,1,1,1];
+  return PT[type].r[rot % PT[type].r.length];
+}
+
+function maxRot(type){
+  if(!PT[type]) return 1;
+  return PT[type].r.length;
+}
+
+/* ══════════════════════════════════════════════
+   LEVEL CONFIG — grows harder
+══════════════════════════════════════════════ */
+function getLevelConfig(lv){
+  // Grid size
+  const size = lv<=5?4 : lv<=10?5 : lv<=16?6 : lv<=22?7 : 8;
+  // Allow T-junctions from lv 4, X from lv 10
+  const useT = lv>=4;
+  const useX = lv>=10;
+  // Minimum path length
+  const minPath = Math.min(size*size*0.5, 4+lv*1.2);
+  return {size, useT, useX, minPath};
+}
+
+/* ══════════════════════════════════════════════
+   LEVEL GENERATOR
+   1. Carve a random path from src to dst
+   2. Fill remaining cells with random pipes
+   3. Rotate every non-src/dst pipe randomly
+══════════════════════════════════════════════ */
+function generateLevel(lv){
+  const cfg = getLevelConfig(lv);
+  const N = cfg.size;
+
+  // Place source top-left-ish, sink bottom-right-ish (vary by level)
+  const srcR = 0, srcC = Math.floor(Math.random()*(N/2));
+  const dstR = N-1, dstC = N-1 - Math.floor(Math.random()*(N/2));
+
+  // Generate solution path using random walk with backtracking
+  const path = randomPath(N, srcR, srcC, dstR, dstC);
+
+  // Build solution grid
+  const solution = Array.from({length:N},()=>Array(N).fill(null));
+
+  // Assign pipe types based on path turns
+  for(let i=0;i<path.length;i++){
+    const [r,c] = path[i];
+    if(i===0){ solution[r][c]={t:'S',r:0,origR:0}; continue; }
+    if(i===path.length-1){ solution[r][c]={t:'D',r:0,origR:0}; continue; }
+    const [pr,pc] = path[i-1];
+    const [nr,nc] = path[i+1];
+    const fromDir = getDir(pr,pc,r,c);  // direction we came FROM
+    const toDir = getDir(r,c,nr,nc);    // direction we go TO
+    const {type,rot} = pickPipe(fromDir, toDir, cfg);
+    solution[r][c] = {t:type, r:rot, origR:rot};
+  }
+
+  // Fill empty cells
+  for(let r=0;r<N;r++){
+    for(let c=0;c<N;c++){
+      if(!solution[r][c]){
+        const type = pickRandomPipe(cfg);
+        const rot = Math.floor(Math.random()*maxRot(type));
+        solution[r][c] = {t:type, r:rot, origR:rot};
+      }
+    }
+  }
+
+  // Shuffle rotations of non-src/dst pipes
+  const puzzle = solution.map(row=>row.map(cell=>{
+    if(cell.t==='S'||cell.t==='D') return {...cell};
+    const scrambled = Math.floor(Math.random()*maxRot(cell.t));
+    return {...cell, r:scrambled};
+  }));
+
+  return {N, srcR, srcC, dstR, dstC, puzzle, solution};
+}
+
+// Dirs: 0=up,1=right,2=down,3=left
+const DR=[-1,0,1,0], DC=[0,1,0,-1];
+function getDir(r1,c1,r2,c2){
+  if(r2<r1) return 0; if(c2>c1) return 1;
+  if(r2>r1) return 2; return 3;
+}
+
+function randomPath(N,sr,sc,dr,dc){
+  // BFS with randomized neighbor order to get varied paths
+  for(let attempt=0;attempt<200;attempt++){
+    const visited = new Set([`${sr},${sc}`]);
+    const path = [[sr,sc]];
+    let ok = dfs(N,sr,sc,dr,dc,visited,path,0);
+    if(ok) return path;
+  }
+  // Fallback: straight-ish path
+  return fallbackPath(N,sr,sc,dr,dc);
+}
+
+function dfs(N,r,c,dr_,dc_,visited,path,depth){
+  if(r===dr_&&c===dc_) return true;
+  if(depth>N*N) return false;
+  // Shuffle directions
+  const dirs=[0,1,2,3].sort(()=>Math.random()-.5);
+  // Bias toward destination
+  dirs.sort((a,b)=>{
+    const na_r=r+DR[a],na_c=c+DC[a];
+    const nb_r=r+DR[b],nb_c=c+DC[b];
+    const da=Math.abs(na_r-dr_)+Math.abs(na_c-dc_);
+    const db=Math.abs(nb_r-dr_)+Math.abs(nb_c-dc_);
+    return (da-db)*(Math.random()<.7?1:-1);
+  });
+  for(const d of dirs){
+    const nr=r+DR[d], nc=c+DC[d];
+    if(nr<0||nr>=N||nc<0||nc>=N) continue;
+    const key=`${nr},${nc}`;
+    if(visited.has(key)) continue;
+    visited.add(key); path.push([nr,nc]);
+    if(dfs(N,nr,nc,dr_,dc_,visited,path,depth+1)) return true;
+    visited.delete(key); path.pop();
+  }
+  return false;
+}
+
+function fallbackPath(N,sr,sc,dr,dc){
+  const path=[[sr,sc]];
+  let r=sr,c=sc;
+  while(r!==dr){path.push([r+=r<dr?1:-1,c]);}
+  while(c!==dc){path.push([r,c+=c<dc?1:-1]);}
+  return path;
+}
+
+// Given incoming direction and outgoing direction, pick correct pipe type+rotation
+function pickPipe(from, to, cfg){
+  // from: direction we arrived from (0-3), to: direction we leave toward
+  // 'from' means the connection on that side must be OPEN
+  // incoming side = opposite of from direction
+  const inSide = (from+2)%4; // side that connects back
+  const outSide = to;
+
+  // Straight: in & out are opposite
+  if(inSide === (outSide+2)%4){
+    // I pipe
+    if(inSide===0||inSide===2) return {type:'I',rot:0}; // vertical
+    return {type:'I',rot:1}; // horizontal
+  }
+
+  // T junction (3 openings) — optionally
+  if(cfg.useT && Math.random()<0.15){
+    // find T rotation that includes both inSide and outSide open
+    for(let rot=0;rot<4;rot++){
+      const c=PT.T.r[rot];
+      if(c[inSide]&&c[outSide]) return {type:'T',rot};
+    }
+  }
+
+  // Cross
+  if(cfg.useX && Math.random()<0.08) return {type:'X',rot:0};
+
+  // Elbow: find L rotation with inSide and outSide open
+  for(let rot=0;rot<4;rot++){
+    const c=PT.L.r[rot];
+    if(c[inSide]&&c[outSide]) return {type:'L',rot};
+  }
+  return {type:'L',rot:0};
+}
+
+function pickRandomPipe(cfg){
+  const pool=['I','I','L','L'];
+  if(cfg.useT) pool.push('T');
+  if(cfg.useX) pool.push('X');
+  return pool[Math.floor(Math.random()*pool.length)];
+}
+
+/* ══════════════════════════════════════════════
+   BFS — check if water flows from src to dst
+══════════════════════════════════════════════ */
+function bfsFlow(N, grid){
+  const src = findCell(grid,'S');
+  const dst = findCell(grid,'D');
+  if(!src||!dst) return {flow:new Set(),solved:false};
+
+  const flow = new Set([`${src[0]},${src[1]}`]);
+  const queue = [src];
+  while(queue.length){
+    const [r,c] = queue.shift();
+    const myConn = conn(grid[r][c].t, grid[r][c].r);
+    for(let d=0;d<4;d++){
+      if(!myConn[d]) continue;
+      const nr=r+DR[d], nc=c+DC[d];
+      if(nr<0||nr>=N||nc<0||nc>=N) continue;
+      const key=`${nr},${nc}`;
+      if(flow.has(key)) continue;
+      const theirConn = conn(grid[nr][nc].t, grid[nr][nc].r);
+      if(theirConn[(d+2)%4]){
+        flow.add(key);
+        queue.push([nr,nc]);
+      }
+    }
+  }
+  return {flow, solved:flow.has(`${dst[0]},${dst[1]}`)};
+}
+
+function findCell(grid,type){
+  for(let r=0;r<grid.length;r++)
+    for(let c=0;c<grid[r].length;c++)
+      if(grid[r][c].t===type) return [r,c];
+  return null;
+}
+
+/* ══════════════════════════════════════════════
+   RENDER
+══════════════════════════════════════════════ */
+let currentLevel = null; // {N, puzzle, solution, srcR,srcC,dstR,dstC}
+let taps = 0, totalScore = 0, levelNum = 1;
+let flowSet = new Set();
+
+function cellSize(){
+  const maxW = Math.min(window.innerWidth-20, 480);
+  const maxH = window.innerHeight - 155;
+  const N = currentLevel.N;
+  return Math.min(Math.floor((maxW-N*2)/N), Math.floor((maxH-N*2)/N), 76);
+}
+
+function renderGrid(){
+  const {N, puzzle} = currentLevel;
+  const cs = cellSize();
+  const grid = document.getElementById('pipe-grid');
+  grid.style.gridTemplateColumns = `repeat(${N},${cs}px)`;
+  grid.innerHTML = '';
+
+  for(let r=0;r<N;r++){
+    for(let c=0;c<N;c++){
+      const cell = document.createElement('div');
+      cell.className = 'pcell';
+      if(flowSet.has(`${r},${c}`)) cell.classList.add('lit');
+      const d = puzzle[r][c];
+      if(d.t==='S') cell.classList.add('source');
+      if(d.t==='D') cell.classList.add('sink');
+      cell.style.width = cell.style.height = cs+'px';
+
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = cs;
+      drawPipeCell(cv.getContext('2d'), d.t, d.r, cs, flowSet.has(`${r},${c}`));
+      cell.appendChild(cv);
+
+      if(d.t!=='S'&&d.t!=='D'){
+        const tap = ()=>{
+          puzzle[r][c].r = (puzzle[r][c].r+1) % maxRot(d.t);
+          taps++;
+          document.getElementById('taps-v').textContent = taps;
+          flowSet = new Set();
+          renderGrid();
+        };
+        cell.addEventListener('click', tap);
+        cell.addEventListener('touchstart',e=>{e.preventDefault();tap();},{passive:false});
+      }
+      grid.appendChild(cell);
+    }
+  }
+}
+
+function drawPipeCell(ctx, type, rot, sz, lit){
+  const mid = sz/2, th = sz*0.2;
+  const pipeCol = lit ? '#38BDF8' : '#3D5A78';
+  const glowCol = lit ? 'rgba(56,189,248,.7)' : 'transparent';
+  ctx.clearRect(0,0,sz,sz);
+
+  if(type==='S'){
+    // Source: blue filled circle with water drop
+    const g = ctx.createRadialGradient(mid,mid,0,mid,mid,sz*.38);
+    g.addColorStop(0,'#38BDF8'); g.addColorStop(1,'#0284C7');
+    ctx.fillStyle=g;
+    ctx.beginPath();ctx.arc(mid,mid,sz*.38,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='white';
+    ctx.font=`${sz*.38}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('💧',mid,mid+1);
+    return;
+  }
+  if(type==='D'){
+    // Drain: orange circle
+    const g = ctx.createRadialGradient(mid,mid,0,mid,mid,sz*.38);
+    g.addColorStop(0,'#FB923C'); g.addColorStop(1,'#C2410C');
+    ctx.fillStyle=g;
+    ctx.beginPath();ctx.arc(mid,mid,sz*.38,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='white';
+    ctx.font=`${sz*.35}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('🕳️',mid,mid+1);
+    return;
+  }
+
+  const c = conn(type,rot);
+  // draw pipe arms
+  ctx.strokeStyle = pipeCol;
+  ctx.lineWidth = th;
+  ctx.lineCap = 'round';
+  if(lit){ctx.shadowColor=glowCol;ctx.shadowBlur=10;}
+
+  const arms = [[mid,0,mid,mid],[sz,mid,mid,mid],[mid,sz,mid,mid],[0,mid,mid,mid]];
+  c.forEach((open,i)=>{
+    if(!open) return;
+    ctx.beginPath();
+    ctx.moveTo(arms[i][0],arms[i][1]);
+    ctx.lineTo(arms[i][2],arms[i][3]);
+    ctx.stroke();
+  });
+
+  // center node
+  ctx.shadowBlur=0;
+  ctx.fillStyle = pipeCol;
+  ctx.beginPath();ctx.arc(mid,mid,th*.55,0,Math.PI*2);ctx.fill();
+
+  // Water flow dots when lit
+  if(lit){
+    ctx.fillStyle = 'rgba(255,255,255,.5)';
+    ctx.beginPath();ctx.arc(mid,mid,th*.25,0,Math.PI*2);ctx.fill();
+  }
+}
+
+/* ══════════════════════════════════════════════
+   ACTIONS
+══════════════════════════════════════════════ */
+function doFlow(){
+  const {N, puzzle} = currentLevel;
+  const {flow, solved} = bfsFlow(N, puzzle);
+  flowSet = flow;
+  renderGrid();
+
+  if(solved){
+    const par = N*N*0.6;
+    const pts = Math.max(50, Math.round(500 + levelNum*20 - taps*3));
+    const stars = taps<=par?'⭐⭐⭐':taps<=par*1.5?'⭐⭐':'⭐';
+    totalScore += pts;
+    document.getElementById('score-v').textContent = totalScore;
+    document.getElementById('wstars').textContent = stars;
+    document.getElementById('wscore').textContent = '+'+pts;
+    document.getElementById('wlv').textContent = levelNum;
+    document.getElementById('wtaps').textContent = taps;
+    document.getElementById('wtotal').textContent = totalScore;
+    setTimeout(()=>document.getElementById('win-screen').style.display='flex', 500);
+  } else {
+    // Flash button red briefly
+    const btn = document.getElementById('flow-btn');
+    btn.style.background = 'linear-gradient(135deg,#EF4444,#B91C1C)';
+    btn.textContent = '✗ Path Broken!';
+    setTimeout(()=>{
+      btn.style.background='';
+      btn.textContent='▶ Flow Water';
+    }, 800);
+    setTimeout(()=>document.getElementById('fail-screen').style.display='flex', 400);
+  }
+}
+
+function hideFail(){
+  document.getElementById('fail-screen').style.display='none';
+  flowSet=new Set();
+  renderGrid();
+}
+
+function doHint(){
+  // Correct one wrong pipe
+  const {N, puzzle, solution} = currentLevel;
+  for(let r=0;r<N;r++){
+    for(let c=0;c<N;c++){
+      const p=puzzle[r][c], s=solution[r][c];
+      if(p.t==='S'||p.t==='D') continue;
+      if(p.r!==s.origR){
+        puzzle[r][c].r = s.origR;
+        taps+=2;
+        document.getElementById('taps-v').textContent=taps;
+        flowSet=new Set();
+        renderGrid();
+        return;
+      }
+    }
+  }
+}
+
+/* ══════════════════════════════════════════════
+   GAME FLOW
+══════════════════════════════════════════════ */
+function startGame(){
+  document.getElementById('start-screen').style.display='none';
+  levelNum=1; taps=0; totalScore=0; flowSet=new Set();
+  document.getElementById('score-v').textContent='0';
+  loadLevel();
+}
+
+function loadLevel(){
+  currentLevel = generateLevel(levelNum);
+  taps=0; flowSet=new Set();
+  document.getElementById('lv-v').textContent = levelNum;
+  document.getElementById('grid-v').textContent = currentLevel.N+'×'+currentLevel.N;
+  document.getElementById('taps-v').textContent = '0';
+  renderGrid();
+}
+
+function nextLevel(){
+  document.getElementById('win-screen').style.display='none';
+  levelNum++;
+  loadLevel();
+}
+
+function goMenu(){
+  document.getElementById('win-screen').style.display='none';
+  document.getElementById('start-screen').style.display='flex';
+}
+
+window.addEventListener('resize',()=>{ if(currentLevel) renderGrid(); });
+
+startGame();
+</script>
+</body>
+</html>

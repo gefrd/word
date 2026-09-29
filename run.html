@@ -1,0 +1,1596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+  />
+  <title>Sunny Subway Runner</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #8fd6ff;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      touch-action: none;
+    }
+
+    canvas {
+      display: block;
+      touch-action: none;
+    }
+
+    #hud {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      pointer-events: none;
+      color: #14324a;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.65);
+      z-index: 10;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    #hint,
+    #status {
+      background: rgba(255, 255, 255, 0.55);
+      border: 1px solid rgba(18, 55, 78, 0.12);
+      border-radius: 14px;
+      padding: 10px 12px;
+      backdrop-filter: blur(6px);
+      max-width: min(48vw, 380px);
+    }
+
+    #status {
+      text-align: right;
+      margin-left: auto;
+    }
+
+    #flash {
+      position: fixed;
+      inset: 0;
+      background: rgba(255, 78, 78, 0);
+      pointer-events: none;
+      z-index: 9;
+      transition: background 0.08s linear;
+    }
+
+    @media (max-width: 720px) {
+      #hud {
+        flex-direction: column;
+        align-items: stretch;
+        font-size: 12px;
+      }
+
+      #hint,
+      #status {
+        max-width: none;
+      }
+
+      #status {
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div id="hint" hidden></div>
+    <div id="status"></div>
+  </div>
+  <div id="flash"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.min.js"></script>
+  <script>
+    (() => {
+      if (typeof THREE === "undefined") {
+        alert("Three.js failed to load. Check the CDN connection.");
+        return;
+      }
+
+      const hudStatus = document.getElementById("status");
+      const flash = document.getElementById("flash");
+
+      const CFG = {
+        laneX: [3.4, 0, -3.4],
+        laneChangeSpeed: 26,
+        baseSpeed: 18,
+        maxSpeed: 36,
+        speedGain: 0.3,
+        gravity: 34,
+        jumpVelocity: 12.4,
+        rollDuration: 0.6,
+        playerZLookAhead: 11,
+        trainRoofY: 3.2,
+        trainHeight: 3.0,
+        trainWidth: 2.8,
+        rampLength: 5.8,
+        trackSegmentLength: 20,
+        trackSegmentCount: 18,
+        cleanupBehind: 34,
+        spawnAhead: 220,
+        jetpackHeight: 11.5,
+        hoverboardDuration: 8,
+        hoverboardShieldTime: 0.95,
+        superSneakersDuration: 9,
+        jetpackDuration: 10
+      };
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x8fd6ff);
+      scene.fog = new THREE.Fog(0x8fd6ff, 80, 235);
+
+      const renderer = new THREE.WebGLRenderer({
+        antialias: false,
+        alpha: false,
+        powerPreference: "high-performance"
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      document.body.appendChild(renderer.domElement);
+
+      const camera = new THREE.PerspectiveCamera(
+        62,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        400
+      );
+
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x88bc4f, 1.3);
+      scene.add(hemi);
+
+      const sun = new THREE.DirectionalLight(0xffffff, 1.15);
+      sun.position.set(10, 18, 6);
+      scene.add(sun);
+
+      const fill = new THREE.DirectionalLight(0xbddfff, 0.35);
+      fill.position.set(-12, 10, -8);
+      scene.add(fill);
+
+      const sunBall = new THREE.Mesh(
+        new THREE.SphereGeometry(3.8, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xfff2a8 })
+      );
+      sunBall.position.set(-22, 22, 90);
+      scene.add(sunBall);
+
+      const geoBox = new THREE.BoxGeometry(1, 1, 1);
+      const geoHead = new THREE.IcosahedronGeometry(0.52, 0);
+      const geoRamp = createRampGeometry();
+
+      const materials = {
+        grass: new THREE.MeshLambertMaterial({ color: 0x7fc44e }),
+        ballast: new THREE.MeshLambertMaterial({ color: 0x8f7964 }),
+        sideDirt: new THREE.MeshLambertMaterial({ color: 0xa58a6c }),
+        rail: new THREE.MeshLambertMaterial({ color: 0xc2cbd7 }),
+        sleeper: new THREE.MeshLambertMaterial({ color: 0x6f503b }),
+        pole: new THREE.MeshLambertMaterial({ color: 0x77818a }),
+        wire: new THREE.MeshBasicMaterial({ color: 0x4d5660 }),
+        cloud: new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.88
+        }),
+        playerBody: new THREE.MeshLambertMaterial({ color: 0x1fb56c }),
+        playerTrim: new THREE.MeshLambertMaterial({ color: 0xf7f2e7 }),
+        playerDark: new THREE.MeshLambertMaterial({ color: 0x1f2b37 }),
+        hoverboard: new THREE.MeshLambertMaterial({ color: 0xffc135 }),
+        hoverboardGlow: new THREE.MeshBasicMaterial({
+          color: 0xffefb5,
+          transparent: true,
+          opacity: 0.45
+        }),
+        jetpack: new THREE.MeshLambertMaterial({ color: 0xd65242 }),
+        flame: new THREE.MeshBasicMaterial({ color: 0xff7a1f }),
+        ramp: new THREE.MeshLambertMaterial({ color: 0xd5943f }),
+        rampEdge: new THREE.MeshLambertMaterial({ color: 0x8a5f28 }),
+        trainBody: new THREE.MeshLambertMaterial({ color: 0x5077dc }),
+        trainAccent: new THREE.MeshLambertMaterial({ color: 0xffd44a }),
+        trainRoof: new THREE.MeshLambertMaterial({ color: 0xd9e2f4 }),
+        trainDark: new THREE.MeshLambertMaterial({ color: 0x30415c }),
+        trainWindow: new THREE.MeshBasicMaterial({ color: 0xbfeeff }),
+        movingTrain: new THREE.MeshLambertMaterial({ color: 0xe3674b }),
+        hurdle: new THREE.MeshLambertMaterial({ color: 0xe07d27 }),
+        sign: new THREE.MeshLambertMaterial({ color: 0xce3535 }),
+        signTrim: new THREE.MeshLambertMaterial({ color: 0xfee28d }),
+        wall: new THREE.MeshLambertMaterial({ color: 0x64504a }),
+        wallTrim: new THREE.MeshLambertMaterial({ color: 0xffcd5f }),
+        pickupSneakers: new THREE.MeshBasicMaterial({ color: 0x72ff76 }),
+        pickupBoard: new THREE.MeshBasicMaterial({ color: 0xffbc42 }),
+        pickupJetpack: new THREE.MeshBasicMaterial({ color: 0xff6247 }),
+        pickupShell: new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.23
+        }),
+        sparkWarm: new THREE.MeshBasicMaterial({
+          color: 0xffe17d,
+          transparent: true,
+          opacity: 0.95
+        }),
+        sparkGreen: new THREE.MeshBasicMaterial({
+          color: 0x82ff9f,
+          transparent: true,
+          opacity: 0.95
+        }),
+        sparkRed: new THREE.MeshBasicMaterial({
+          color: 0xff8a73,
+          transparent: true,
+          opacity: 0.95
+        })
+      };
+
+      const trackSegments = [];
+      const worldRoot = new THREE.Group();
+      const effectRoot = new THREE.Group();
+      scene.add(worldRoot);
+      scene.add(effectRoot);
+
+      const worldObjects = [];
+      const burstEffects = [];
+
+      const player = buildPlayer();
+      scene.add(player.group);
+
+      const state = {
+        time: 0,
+        speed: CFG.baseSpeed,
+        nextChunkZ: 26,
+        nextPickupZ: 42,
+        nextMovingTrainSpawn: 78,
+        crashed: false,
+        restartTimer: 0,
+        flashAlpha: 0,
+        flashColor: "255,78,78"
+      };
+
+      const groundPatterns = [
+        [null, "hurdle", "sign"],
+        ["hurdle", null, "wall"],
+        ["sign", null, "hurdle"],
+        ["wall", "sign", null],
+        [null, "wall", "hurdle"],
+        ["hurdle", null, "sign"],
+        [null, null, "wall"],
+        ["sign", "wall", null],
+        ["wall", null, null],
+        [null, "hurdle", null]
+      ];
+
+      const pointerState = {
+        startX: 0,
+        startY: 0,
+        startTime: 0,
+        down: false,
+        lastTapTime: 0,
+        lastTapX: 0,
+        lastTapY: 0
+      };
+
+      initTrack();
+      resetGame();
+      bindInput();
+
+      const clock = new THREE.Clock();
+      requestAnimationFrame(loop);
+
+      function loop() {
+        const dt = Math.min(clock.getDelta(), 0.033);
+        update(dt);
+        renderer.render(scene, camera);
+        requestAnimationFrame(loop);
+      }
+
+      function update(dt) {
+        updateFlash(dt);
+
+        if (state.crashed) {
+          state.restartTimer -= dt;
+          animatePlayer(dt);
+          updateCamera(dt);
+          updateBursts(dt);
+          if (state.restartTimer <= 0) {
+            resetGame();
+          }
+          updateHud();
+          return;
+        }
+
+        state.time += dt;
+        state.speed = Math.min(CFG.maxSpeed, CFG.baseSpeed + state.time * CFG.speedGain);
+
+        player.z += state.speed * dt;
+        player.x = moveTowards(
+          player.x,
+          CFG.laneX[player.targetLane],
+          CFG.laneChangeSpeed * dt
+        );
+
+        generateAhead();
+        updateTrack();
+        updateWorldObjects(dt);
+        updatePlayerPhysics(dt);
+        animatePlayer(dt);
+        handleCollisions();
+        cleanupWorld();
+        updateCamera(dt);
+        updateBursts(dt);
+        updateHud();
+      }
+
+      function buildPlayer() {
+        const runner = {
+          group: new THREE.Group(),
+          bodyPivot: new THREE.Group(),
+          body: null,
+          head: null,
+          leftLeg: null,
+          rightLeg: null,
+          leftArm: null,
+          rightArm: null,
+          boardGroup: new THREE.Group(),
+          boardGlow: null,
+          jetpackGroup: new THREE.Group(),
+          jetFlameL: null,
+          jetFlameR: null,
+          x: CFG.laneX[1],
+          y: 0,
+          z: 0,
+          targetLane: 1,
+          verticalVelocity: 0,
+          grounded: true,
+          rollTimer: 0,
+          rollVisual: 0,
+          invulnerableTimer: 0,
+          superSneakersTimer: 0,
+          hoverboardReady: false,
+          hoverboardActive: false,
+          hoverboardTimer: 0,
+          jetpackTimer: 0
+        };
+
+        runner.group.add(runner.bodyPivot);
+
+        runner.body = addBox(
+          runner.bodyPivot,
+          geoBox,
+          materials.playerBody,
+          0,
+          1.4,
+          0,
+          1.02,
+          1.45,
+          0.72
+        );
+
+        runner.head = new THREE.Mesh(geoHead, materials.playerTrim);
+        runner.head.position.set(0, 2.45, 0.02);
+        runner.bodyPivot.add(runner.head);
+
+        addBox(runner.bodyPivot, geoBox, materials.playerTrim, 0, 2.05, 0.38, 0.52, 0.18, 0.16);
+        runner.leftLeg = addBox(
+          runner.bodyPivot,
+          geoBox,
+          materials.playerDark,
+          -0.23,
+          0.55,
+          0,
+          0.3,
+          1.06,
+          0.32
+        );
+        runner.rightLeg = addBox(
+          runner.bodyPivot,
+          geoBox,
+          materials.playerDark,
+          0.23,
+          0.55,
+          0,
+          0.3,
+          1.06,
+          0.32
+        );
+        runner.leftArm = addBox(
+          runner.bodyPivot,
+          geoBox,
+          materials.playerTrim,
+          -0.74,
+          1.55,
+          0,
+          0.24,
+          0.98,
+          0.24
+        );
+        runner.rightArm = addBox(
+          runner.bodyPivot,
+          geoBox,
+          materials.playerTrim,
+          0.74,
+          1.55,
+          0,
+          0.24,
+          0.98,
+          0.24
+        );
+
+        addBox(runner.boardGroup, geoBox, materials.hoverboard, 0, 0.1, 0, 1.55, 0.12, 0.55);
+        addBox(runner.boardGroup, geoBox, materials.playerDark, 0, 0.18, 0, 1.1, 0.08, 0.3);
+        runner.boardGlow = addBox(
+          runner.boardGroup,
+          geoBox,
+          materials.hoverboardGlow,
+          0,
+          0.1,
+          0,
+          1.9,
+          0.06,
+          0.85
+        );
+        runner.boardGroup.visible = false;
+        runner.group.add(runner.boardGroup);
+
+        addBox(runner.jetpackGroup, geoBox, materials.jetpack, -0.25, 1.45, -0.42, 0.26, 0.95, 0.26);
+        addBox(runner.jetpackGroup, geoBox, materials.jetpack, 0.25, 1.45, -0.42, 0.26, 0.95, 0.26);
+        addBox(runner.jetpackGroup, geoBox, materials.playerDark, 0, 1.5, -0.32, 0.7, 1.05, 0.18);
+        runner.jetFlameL = addBox(
+          runner.jetpackGroup,
+          geoBox,
+          materials.flame,
+          -0.25,
+          0.78,
+          -0.42,
+          0.18,
+          0.5,
+          0.18
+        );
+        runner.jetFlameR = addBox(
+          runner.jetpackGroup,
+          geoBox,
+          materials.flame,
+          0.25,
+          0.78,
+          -0.42,
+          0.18,
+          0.5,
+          0.18
+        );
+        runner.jetpackGroup.visible = false;
+        runner.group.add(runner.jetpackGroup);
+
+        return runner;
+      }
+
+      function initTrack() {
+        for (let i = 0; i < CFG.trackSegmentCount; i += 1) {
+          const segment = createTrackSegment();
+          trackSegments.push(segment);
+          scene.add(segment);
+        }
+      }
+
+      function createTrackSegment() {
+        const group = new THREE.Group();
+
+        addBox(group, geoBox, materials.grass, 0, -0.5, 0, 40, 1, CFG.trackSegmentLength);
+        addBox(group, geoBox, materials.ballast, 0, -0.14, 0, 15.4, 0.42, CFG.trackSegmentLength);
+        addBox(group, geoBox, materials.sideDirt, -11.6, -0.18, 0, 8.2, 0.34, CFG.trackSegmentLength);
+        addBox(group, geoBox, materials.sideDirt, 11.6, -0.18, 0, 8.2, 0.34, CFG.trackSegmentLength);
+
+        for (const lane of CFG.laneX) {
+          addBox(group, geoBox, materials.rail, lane - 0.52, 0.06, 0, 0.1, 0.12, CFG.trackSegmentLength);
+          addBox(group, geoBox, materials.rail, lane + 0.52, 0.06, 0, 0.1, 0.12, CFG.trackSegmentLength);
+        }
+
+        for (let i = -8; i <= 8; i += 4) {
+          addBox(group, geoBox, materials.sleeper, 0, 0.01, i, 14.2, 0.1, 0.38);
+        }
+
+        for (const side of [-1, 1]) {
+          addBox(group, geoBox, materials.pole, side * 8.2, 3.1, -3.8, 0.16, 6.2, 0.16);
+          addBox(group, geoBox, materials.pole, side * 8.2, 3.1, 4.1, 0.16, 6.2, 0.16);
+          addBox(group, geoBox, materials.pole, side * 5.8, 5.9, -3.8, 4.8, 0.12, 0.12);
+          addBox(group, geoBox, materials.pole, side * 5.8, 5.9, 4.1, 4.8, 0.12, 0.12);
+        }
+
+        addBox(group, geoBox, materials.wire, 0, 6.2, -3.8, 12.8, 0.05, 0.05);
+        addBox(group, geoBox, materials.wire, 0, 6.2, 4.1, 12.8, 0.05, 0.05);
+
+        const leftStack = new THREE.Group();
+        addBox(leftStack, geoBox, materials.wall, 0, 0.75, 0, 2.2, 1.5, 2.8);
+        addBox(leftStack, geoBox, materials.wallTrim, 0, 1.45, 0, 2.28, 0.12, 2.9);
+        group.add(leftStack);
+
+        const rightStack = new THREE.Group();
+        addBox(rightStack, geoBox, materials.trainDark, 0, 1.05, 0, 2.8, 2.1, 3.2);
+        addBox(rightStack, geoBox, materials.trainAccent, 0, 1.9, 0, 2.86, 0.18, 3.3);
+        group.add(rightStack);
+
+        const cloud = new THREE.Group();
+        addBox(cloud, geoBox, materials.cloud, 0, 0, 0, 4.4, 1.4, 1.5);
+        addBox(cloud, geoBox, materials.cloud, -1.7, 0.4, 0, 2.8, 1.2, 1.4);
+        addBox(cloud, geoBox, materials.cloud, 1.5, 0.35, 0, 2.4, 1.05, 1.2);
+        group.add(cloud);
+
+        group.userData.leftStack = leftStack;
+        group.userData.rightStack = rightStack;
+        group.userData.cloud = cloud;
+
+        return group;
+      }
+
+      function updateTrack() {
+        const baseIndex = Math.floor(player.z / CFG.trackSegmentLength) - 2;
+
+        for (let i = 0; i < trackSegments.length; i += 1) {
+          const index = baseIndex + i;
+          const segment = trackSegments[i];
+          segment.position.z = index * CFG.trackSegmentLength + CFG.trackSegmentLength * 0.5;
+          decorateSegment(segment, index);
+        }
+
+        sunBall.position.z = player.z + 110;
+      }
+
+      function decorateSegment(segment, index) {
+        const leftSeed = seeded01(index * 2.17 + 0.3);
+        const rightSeed = seeded01(index * 3.41 + 0.7);
+        const cloudSeed = seeded01(index * 1.89 + 0.9);
+
+        const leftStack = segment.userData.leftStack;
+        leftStack.visible = leftSeed > 0.22;
+        leftStack.position.set(-12.4 - leftSeed * 2.5, 0, -4 + seeded01(index * 7.1) * 8);
+        leftStack.children[0].scale.set(1.6 + leftSeed * 2.4, 1.2 + leftSeed * 1.4, 2.2 + leftSeed * 3.1);
+        leftStack.children[1].position.y = leftStack.children[0].scale.y * 0.5 + 0.7;
+        leftStack.children[1].scale.set(
+          leftStack.children[0].scale.x * 1.03,
+          0.12,
+          leftStack.children[0].scale.z * 1.03
+        );
+
+        const rightStack = segment.userData.rightStack;
+        rightStack.visible = rightSeed > 0.3;
+        rightStack.position.set(12.2 + rightSeed * 2.6, 0, -4 + seeded01(index * 5.5) * 8);
+        rightStack.children[0].scale.set(1.8 + rightSeed * 2.8, 1.7 + rightSeed * 1.4, 2.4 + rightSeed * 3.6);
+        rightStack.children[1].position.y = rightStack.children[0].scale.y * 0.5 + 0.85;
+        rightStack.children[1].scale.set(
+          rightStack.children[0].scale.x * 1.02,
+          0.16,
+          rightStack.children[0].scale.z * 1.02
+        );
+
+        const cloud = segment.userData.cloud;
+        cloud.position.set(
+          -8 + cloudSeed * 16,
+          10.5 + seeded01(index * 4.6) * 3.2,
+          -5 + seeded01(index * 9.2) * 10
+        );
+        const cloudScale = 0.8 + cloudSeed * 0.9;
+        cloud.scale.set(cloudScale, cloudScale, cloudScale);
+      }
+
+      function resetGame() {
+        state.time = 0;
+        state.speed = CFG.baseSpeed;
+        state.nextChunkZ = 26;
+        state.nextPickupZ = 42;
+        state.nextMovingTrainSpawn = 78;
+        state.crashed = false;
+        state.restartTimer = 0;
+        state.flashAlpha = 0;
+
+        clearWorld();
+
+        player.x = CFG.laneX[1];
+        player.y = 0;
+        player.z = 0;
+        player.targetLane = 1;
+        player.verticalVelocity = 0;
+        player.grounded = true;
+        player.rollTimer = 0;
+        player.rollVisual = 0;
+        player.invulnerableTimer = 0;
+        player.superSneakersTimer = 0;
+        player.hoverboardReady = false;
+        player.hoverboardActive = false;
+        player.hoverboardTimer = 0;
+        player.jetpackTimer = 0;
+
+        generateAhead();
+        updateTrack();
+        updateHud();
+      }
+
+      function clearWorld() {
+        while (worldObjects.length) {
+          const obj = worldObjects.pop();
+          if (obj.group && obj.group.parent) {
+            obj.group.parent.remove(obj.group);
+          }
+        }
+
+        while (burstEffects.length) {
+          const burst = burstEffects.pop();
+          if (burst.group.parent) {
+            burst.group.parent.remove(burst.group);
+          }
+        }
+      }
+
+      function generateAhead() {
+        while (state.nextChunkZ < player.z + CFG.spawnAhead) {
+          if (Math.random() < 0.48) {
+            state.nextChunkZ = spawnGroundChunk(state.nextChunkZ);
+          } else {
+            state.nextChunkZ = spawnTrainChunk(state.nextChunkZ);
+          }
+        }
+
+        while (state.nextPickupZ < player.z + CFG.spawnAhead - 35) {
+          spawnPickupAhead(state.nextPickupZ);
+          state.nextPickupZ += randomRange(34, 48);
+        }
+
+        while (state.nextMovingTrainSpawn < player.z + CFG.spawnAhead - 70) {
+          spawnMovingTrainAhead();
+          state.nextMovingTrainSpawn += randomRange(72, 108);
+        }
+      }
+
+      function spawnGroundChunk(baseZ) {
+        const rowCount = Math.random() < 0.6 ? 2 : 3;
+        let z = baseZ + randomRange(0.5, 2);
+
+        for (let row = 0; row < rowCount; row += 1) {
+          let pattern = groundPatterns[randomInt(0, groundPatterns.length - 1)].slice();
+          if (Math.random() < 0.5) {
+            pattern.reverse();
+          }
+
+          for (let lane = 0; lane < 3; lane += 1) {
+            const token = pattern[lane];
+            if (!token) {
+              continue;
+            }
+
+            if (token === "hurdle") {
+              createHurdle(lane, z, 0);
+            } else if (token === "sign") {
+              createSign(lane, z, 0);
+            } else {
+              createWall(lane, z, 0);
+            }
+          }
+
+          z += randomRange(7.2, 8.4);
+        }
+
+        return z + randomRange(6, 9);
+      }
+
+      function spawnTrainChunk(baseZ) {
+        const leadLane = randomInt(0, 2);
+        const lanes = [leadLane];
+
+        if (Math.random() < 0.42) {
+          if (leadLane === 1) {
+            lanes.push(Math.random() < 0.5 ? 0 : 2);
+          } else {
+            lanes.push(1);
+          }
+        }
+
+        lanes.sort();
+
+        const trainStart = baseZ + 8.5;
+        const trainLength = randomRange(17, 22.5);
+
+        for (const lane of lanes) {
+          createRamp(lane, trainStart - CFG.rampLength, trainStart, CFG.trainRoofY);
+          createStationaryTrain(lane, trainStart, trainLength);
+        }
+
+        for (const lane of lanes) {
+          const roofCount = lanes.length === 2 ? 1 : Math.random() < 0.35 ? 2 : 1;
+          for (let i = 0; i < roofCount; i += 1) {
+            const roofZ =
+              trainStart +
+              3.8 +
+              ((i + 1) / (roofCount + 1)) * (trainLength - 7.6) +
+              randomRange(-0.8, 0.8);
+
+            if (Math.random() < 0.55) {
+              createHurdle(lane, roofZ, CFG.trainRoofY);
+            } else {
+              createSign(lane, roofZ, CFG.trainRoofY);
+            }
+          }
+        }
+
+        const openLanes = [0, 1, 2].filter((lane) => !lanes.includes(lane));
+        if (openLanes.length) {
+          const blockerLane = openLanes[randomInt(0, openLanes.length - 1)];
+          createHurdle(blockerLane, trainStart + trainLength * 0.35, 0);
+
+          if (openLanes.length > 1 && Math.random() < 0.45) {
+            const secondLane = openLanes.find((lane) => lane !== blockerLane);
+            createSign(secondLane, trainStart + trainLength * 0.7, 0);
+          }
+        }
+
+        return trainStart + trainLength + randomRange(10, 14);
+      }
+
+      function spawnPickupAhead(z) {
+        const type = randomPickupType();
+
+        for (let attempt = 0; attempt < 8; attempt += 1) {
+          const lane = randomInt(0, 2);
+          const zPos = z + randomRange(-3, 3);
+          const supportY = getSupportHeight(CFG.laneX[lane], zPos);
+
+          if (laneRangeBusy(lane, zPos - 1.2, zPos + 1.2, ["hurdle", "sign", "wall", "movingTrain"])) {
+            continue;
+          }
+
+          createPickup(type, lane, zPos, supportY);
+          return;
+        }
+      }
+
+      function spawnMovingTrainAhead() {
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          const lane = randomInt(0, 2);
+          const startZ = player.z + randomRange(82, 108);
+          const length = randomRange(17, 24);
+
+          if (laneRangeBusy(lane, startZ - 10, startZ + length + 10, ["train", "movingTrain"])) {
+            continue;
+          }
+
+          createMovingTrain(lane, startZ, length, randomRange(11.5, 15.5) + state.speed * 0.15);
+          return;
+        }
+      }
+
+      function createStationaryTrain(lane, zStart, length) {
+        const group = new THREE.Group();
+        group.position.set(CFG.laneX[lane], 0, zStart + length * 0.5);
+
+        addBox(group, geoBox, materials.trainBody, 0, CFG.trainHeight * 0.5, 0, CFG.trainWidth, CFG.trainHeight, length);
+        addBox(group, geoBox, materials.trainRoof, 0, CFG.trainHeight + 0.05, 0, CFG.trainWidth + 0.06, 0.12, length);
+        addBox(group, geoBox, materials.trainAccent, 0, 1.45, 0, CFG.trainWidth + 0.08, 0.22, length * 0.82);
+        addBox(group, geoBox, materials.trainDark, 0, 1.5, -length * 0.5 + 0.55, CFG.trainWidth * 0.92, 2.25, 0.8);
+        addBox(group, geoBox, materials.trainDark, 0, 1.5, length * 0.5 - 0.55, CFG.trainWidth * 0.92, 2.25, 0.8);
+        addBox(group, geoBox, materials.trainWindow, -1.32, 1.55, 0, 0.1, 0.65, length * 0.72);
+        addBox(group, geoBox, materials.trainWindow, 1.32, 1.55, 0, 0.1, 0.65, length * 0.72);
+
+        worldRoot.add(group);
+        worldObjects.push({
+          kind: "train",
+          lane,
+          group,
+          x: CFG.laneX[lane],
+          zStart,
+          zEnd: zStart + length,
+          roofY: CFG.trainRoofY,
+          supportHalfWidth: 1.48,
+          box: {
+            minX: CFG.laneX[lane] - 1.34,
+            maxX: CFG.laneX[lane] + 1.34,
+            minY: 0,
+            maxY: CFG.trainRoofY - 0.5, // Смягчаем верхнюю грань
+            minZ: zStart + 0.8,
+            maxZ: zStart + length
+          },
+          active: true
+        });
+      }
+
+      function createMovingTrain(lane, zStart, length, speed) {
+        const group = new THREE.Group();
+        group.position.set(CFG.laneX[lane], 0, zStart + length * 0.5);
+
+        addBox(group, geoBox, materials.movingTrain, 0, CFG.trainHeight * 0.5, 0, CFG.trainWidth, CFG.trainHeight, length);
+        addBox(group, geoBox, materials.trainRoof, 0, CFG.trainHeight + 0.05, 0, CFG.trainWidth + 0.06, 0.12, length);
+        addBox(group, geoBox, materials.trainDark, 0, 1.5, -length * 0.5 + 0.8, CFG.trainWidth * 0.95, 2.35, 1.1);
+        addBox(group, geoBox, materials.trainAccent, 0, 1.4, 0, CFG.trainWidth + 0.08, 0.18, length * 0.84);
+        addBox(group, geoBox, materials.trainWindow, -1.32, 1.55, 0, 0.1, 0.65, length * 0.7);
+        addBox(group, geoBox, materials.trainWindow, 1.32, 1.55, 0, 0.1, 0.65, length * 0.7);
+
+        worldRoot.add(group);
+        worldObjects.push({
+          kind: "movingTrain",
+          lane,
+          group,
+          x: CFG.laneX[lane],
+          zStart,
+          zEnd: zStart + length,
+          speed,
+          box: {
+            minX: CFG.laneX[lane] - 1.34,
+            maxX: CFG.laneX[lane] + 1.34,
+            minY: 0,
+            maxY: CFG.trainRoofY + 0.2,
+            minZ: zStart,
+            maxZ: zStart + length
+          },
+          active: true
+        });
+      }
+
+      function createRamp(lane, zStart, zEnd, roofY) {
+        const length = zEnd - zStart;
+        const group = new THREE.Group();
+        group.position.set(CFG.laneX[lane], 0, zStart + length * 0.5);
+
+        const rampMesh = new THREE.Mesh(geoRamp, materials.ramp);
+        rampMesh.scale.set(CFG.trainWidth - 0.16, roofY, length);
+        group.add(rampMesh);
+
+        addBox(group, geoBox, materials.rampEdge, -1.18, roofY * 0.58, 0, 0.12, roofY * 0.84, length * 0.88);
+        addBox(group, geoBox, materials.rampEdge, 1.18, roofY * 0.58, 0, 0.12, roofY * 0.84, length * 0.88);
+
+        worldRoot.add(group);
+        worldObjects.push({
+          kind: "ramp",
+          lane,
+          group,
+          x: CFG.laneX[lane],
+          zStart,
+          zEnd,
+          roofY,
+          supportHalfWidth: 1.48,
+          active: true
+        });
+      }
+
+      function createHurdle(lane, z, baseY) {
+        if (laneRangeBusy(lane, z - 0.65, z + 0.65, ["hurdle", "sign", "wall"])) {
+          return;
+        }
+
+        const group = new THREE.Group();
+        group.position.set(CFG.laneX[lane], baseY, z);
+
+        addBox(group, geoBox, materials.hurdle, -0.62, 0.42, 0, 0.18, 0.84, 0.18);
+        addBox(group, geoBox, materials.hurdle, 0.62, 0.42, 0, 0.18, 0.84, 0.18);
+        addBox(group, geoBox, materials.hurdle, 0, 0.78, 0, 1.52, 0.18, 0.24);
+        addBox(group, geoBox, materials.wallTrim, 0, 0.68, 0.14, 1.15, 0.08, 0.08);
+
+        worldRoot.add(group);
+        worldObjects.push({
+          kind: "hurdle",
+          lane,
+          group,
+          x: CFG.laneX[lane],
+          zStart: z - 0.55,
+          zEnd: z + 0.55,
+          box: {
+            minX: CFG.laneX[lane] - 0.95,
+            maxX: CFG.laneX[lane] + 0.95,
+            minY: baseY,
+            maxY: baseY + 1.02,
+            minZ: z - 0.48,
+            maxZ: z + 0.48
+          },
+          active: true
+        });
+      }
+
+      function createSign(lane, z, baseY) {
+        if (laneRangeBusy(lane, z - 0.7, z + 0.7, ["hurdle", "sign", "wall"])) {
+          return;
+        }
+
+        const group = new THREE.Group();
+        group.position.set(CFG.laneX[lane], baseY, z);
+
+        addBox(group, geoBox, materials.pole, -0.72, 1.2, 0, 0.16, 2.4, 0.16);
+        addBox(group, geoBox, materials.pole, 0.72, 1.2, 0, 0.16, 2.4, 0.16);
+        addBox(group, geoBox, materials.sign, 0, 2.25, 0, 1.92, 0.66, 0.3);
+        addBox(group, geoBox, materials.signTrim, 0, 2.25, 0.18, 1.68, 0.12, 0.08);
+
+        worldRoot.add(group);
+        worldObjects.push({
+          kind: "sign",
+          lane,
+          group,
+          x: CFG.laneX[lane],
+          zStart: z - 0.55,
+          zEnd: z + 0.55,
+          box: {
+            minX: CFG.laneX[lane] - 1.14,
+            maxX: CFG.laneX[lane] + 1.14,
+            minY: baseY + 1.38,
+            maxY: baseY + 2.58,
+            minZ: z - 0.36,
+            maxZ: z + 0.36
+          },
+          active: true
+        });
+      }
+
+      function createWall(lane, z, baseY) {
+        if (laneRangeBusy(lane, z - 0.9, z + 0.9, ["hurdle", "sign", "wall"])) {
+          return;
+        }
+
+        const group = new THREE.Group();
+        group.position.set(CFG.laneX[lane], baseY, z);
+
+        addBox(group, geoBox, materials.wall, 0, 1.2, 0, 2.22, 2.4, 0.62);
+        addBox(group, geoBox, materials.wallTrim, 0, 2.1, 0.18, 1.84, 0.18, 0.1);
+        addBox(group, geoBox, materials.wallTrim, 0, 0.55, 0.18, 1.84, 0.18, 0.1);
+
+        worldRoot.add(group);
+        worldObjects.push({
+          kind: "wall",
+          lane,
+          group,
+          x: CFG.laneX[lane],
+          zStart: z - 0.55,
+          zEnd: z + 0.55,
+          box: {
+            minX: CFG.laneX[lane] - 1.14,
+            maxX: CFG.laneX[lane] + 1.14,
+            minY: baseY,
+            maxY: baseY + 2.4,
+            minZ: z - 0.34,
+            maxZ: z + 0.34
+          },
+          active: true
+        });
+      }
+
+      function createPickup(type, lane, z, baseY) {
+        const group = new THREE.Group();
+        group.position.set(CFG.laneX[lane], baseY + 1.15, z);
+
+        const colorMaterial =
+          type === "sneakers"
+            ? materials.pickupSneakers
+            : type === "board"
+              ? materials.pickupBoard
+              : materials.pickupJetpack;
+
+        addBox(group, geoBox, colorMaterial, 0, 0, 0, 0.72, 0.72, 0.72);
+        addBox(group, geoBox, materials.pickupShell, 0, 0, 0, 1.1, 1.1, 1.1);
+        addBox(group, geoBox, materials.pickupShell, 0, 0, 0, 1.45, 0.08, 1.45);
+
+        worldRoot.add(group);
+        worldObjects.push({
+          kind: "pickup",
+          subtype: type,
+          lane,
+          group,
+          x: CFG.laneX[lane],
+          zStart: z - 0.55,
+          zEnd: z + 0.55,
+          baseY,
+          hoverOffset: Math.random() * Math.PI * 2,
+          box: {
+            minX: CFG.laneX[lane] - 0.6,
+            maxX: CFG.laneX[lane] + 0.6,
+            minY: baseY + 0.5,
+            maxY: baseY + 1.8,
+            minZ: z - 0.45,
+            maxZ: z + 0.45
+          },
+          active: true
+        });
+      }
+
+      function updateWorldObjects(dt) {
+        for (const obj of worldObjects) {
+          if (!obj.active) {
+            continue;
+          }
+
+          if (obj.kind === "movingTrain") {
+            const dz = obj.speed * dt;
+            obj.zStart -= dz;
+            obj.zEnd -= dz;
+            obj.group.position.z -= dz;
+            obj.box.minZ -= dz;
+            obj.box.maxZ -= dz;
+          } else if (obj.kind === "pickup") {
+            obj.group.rotation.y += dt * 2.8;
+            obj.group.rotation.x += dt * 1.3;
+            obj.group.position.y =
+              obj.baseY + 1.15 + Math.sin(state.time * 5 + obj.hoverOffset) * 0.16;
+          }
+        }
+
+        player.invulnerableTimer = Math.max(0, player.invulnerableTimer - dt);
+        player.superSneakersTimer = Math.max(0, player.superSneakersTimer - dt);
+        player.hoverboardTimer = Math.max(0, player.hoverboardTimer - dt);
+        player.jetpackTimer = Math.max(0, player.jetpackTimer - dt);
+
+        if (player.hoverboardActive && player.hoverboardTimer <= 0) {
+          player.hoverboardActive = false;
+        }
+      }
+
+      function updatePlayerPhysics(dt) {
+        if (player.rollTimer > 0) {
+          player.rollTimer -= dt;
+        }
+
+        if (player.jetpackTimer > 0) {
+          player.grounded = false;
+          player.verticalVelocity = 0;
+          player.y = damp(player.y, CFG.jetpackHeight, 6, dt);
+        } else {
+          const supportY = getSupportHeight(player.x, player.z + 0.6);
+
+          player.verticalVelocity -= CFG.gravity * dt;
+          player.y += player.verticalVelocity * dt;
+
+          if (player.y <= supportY) {
+            player.y = supportY;
+            player.verticalVelocity = 0;
+            player.grounded = true;
+          } else {
+            player.grounded = false;
+          }
+        }
+
+        player.group.position.set(player.x, player.y, player.z);
+      }
+
+      function animatePlayer(dt) {
+        const rolling = player.rollTimer > 0 && player.jetpackTimer <= 0;
+        player.rollVisual = damp(player.rollVisual, rolling ? 1 : 0, 14, dt);
+
+        const strideSpeed = player.hoverboardActive ? 11.5 : 14.2;
+        const stride = Math.sin(state.time * strideSpeed);
+        const armSwing = player.jetpackTimer > 0 ? 0.12 : stride * 0.68 * (1 - player.rollVisual);
+        const legSwing = player.jetpackTimer > 0 ? 0.08 : -stride * 0.82 * (1 - player.rollVisual);
+
+        player.leftArm.rotation.x = armSwing;
+        player.rightArm.rotation.x = -armSwing;
+        player.leftLeg.rotation.x = legSwing;
+        player.rightLeg.rotation.x = -legSwing;
+
+        player.bodyPivot.rotation.z = 0;
+        player.bodyPivot.rotation.x = -0.08 * player.rollVisual;
+        player.body.position.y = lerp(1.4, 0.82, player.rollVisual);
+        player.body.scale.y = lerp(1, 0.54, player.rollVisual);
+
+        player.head.position.y = lerp(2.45, 1.18, player.rollVisual);
+        player.head.scale.set(
+          1,
+          lerp(1, 0.66, player.rollVisual),
+          1
+        );
+
+        player.leftArm.position.y = lerp(1.55, 0.92, player.rollVisual);
+        player.rightArm.position.y = lerp(1.55, 0.92, player.rollVisual);
+        player.leftLeg.position.y = 0.55;
+        player.rightLeg.position.y = 0.55;
+
+        player.boardGroup.visible = player.hoverboardActive;
+        if (player.hoverboardActive) {
+          player.boardGroup.position.y = 0.06 + Math.sin(state.time * 18) * 0.02;
+          player.boardGlow.scale.set(
+            1 + Math.sin(state.time * 16) * 0.08,
+            1,
+            1 + Math.sin(state.time * 16) * 0.08
+          );
+        }
+
+        player.jetpackGroup.visible = player.jetpackTimer > 0 || player.y > CFG.trainRoofY + 3.4;
+        if (player.jetpackGroup.visible) {
+          const flameScale = 0.8 + Math.sin(state.time * 24) * 0.15;
+          player.jetFlameL.scale.y = flameScale;
+          player.jetFlameR.scale.y = flameScale;
+        }
+
+        if (player.invulnerableTimer > 0) {
+          const blink = Math.sin(state.time * 38) > 0;
+          player.body.visible = blink;
+          player.head.visible = blink;
+          player.leftArm.visible = blink;
+          player.rightArm.visible = blink;
+          player.leftLeg.visible = blink;
+          player.rightLeg.visible = blink;
+        } else {
+          player.body.visible = true;
+          player.head.visible = true;
+          player.leftArm.visible = true;
+          player.rightArm.visible = true;
+          player.leftLeg.visible = true;
+          player.rightLeg.visible = true;
+        }
+      }
+
+      function handleCollisions() {
+        if (player.jetpackTimer > 0) {
+          return;
+        }
+
+        const playerBox = getPlayerBox();
+
+        for (const obj of worldObjects) {
+          if (!obj.active || !obj.box || !boxesOverlap(playerBox, obj.box)) {
+            continue;
+          }
+
+          if (obj.kind === "pickup") {
+            collectPickup(obj);
+            continue;
+          }
+
+          if (player.invulnerableTimer > 0) {
+            continue;
+          }
+
+          triggerCrash(obj);
+          return;
+        }
+      }
+
+      function collectPickup(obj) {
+        obj.active = false;
+        if (obj.group.parent) {
+          obj.group.parent.remove(obj.group);
+        }
+
+        if (obj.subtype === "sneakers") {
+          player.superSneakersTimer = CFG.superSneakersDuration;
+          spawnBurst(obj.x, obj.baseY + 1.1, obj.zStart + 0.55, materials.sparkGreen);
+        } else if (obj.subtype === "board") {
+          if (player.hoverboardActive) {
+            player.hoverboardTimer = Math.min(
+              CFG.hoverboardDuration + 2,
+              player.hoverboardTimer + 3
+            );
+          } else {
+            player.hoverboardReady = true;
+          }
+          spawnBurst(obj.x, obj.baseY + 1.1, obj.zStart + 0.55, materials.sparkWarm);
+        } else {
+          player.jetpackTimer = CFG.jetpackDuration;
+          player.verticalVelocity = 0;
+          spawnBurst(obj.x, obj.baseY + 1.1, obj.zStart + 0.55, materials.sparkRed);
+        }
+      }
+
+      function triggerCrash(obj) {
+        if (player.hoverboardActive) {
+          player.hoverboardActive = false;
+          player.hoverboardTimer = 0;
+          player.invulnerableTimer = CFG.hoverboardShieldTime;
+          player.verticalVelocity = Math.max(player.verticalVelocity, 2.2);
+          player.z = Math.max(player.z, obj.zEnd + 1.2);
+          spawnBurst(player.x, player.y + 0.8, player.z, materials.sparkWarm);
+          flashScreen("255,205,92", 0.55);
+          return;
+        }
+
+        state.crashed = true;
+        state.restartTimer = 0.7;
+        flashScreen("255,78,78", 0.9);
+      }
+
+      function updateCamera(dt) {
+        const lift = player.y * 0.72;
+        const jetBoost = player.jetpackTimer > 0 ? 2.4 : 0;
+
+        const cameraTarget = {
+          x: player.x * 0.28,
+          y: 4.7 + lift + jetBoost,
+          z: player.z - 11.5
+        };
+        camera.position.x = damp(camera.position.x, cameraTarget.x, 7.5, dt);
+        camera.position.y = damp(camera.position.y, cameraTarget.y, 6.2, dt);
+        camera.position.z = damp(camera.position.z, cameraTarget.z, 7.2, dt);
+
+        const lookX = player.x * 0.12;
+        const lookY = 1.9 + lift + jetBoost * 0.5;
+        const lookZ = player.z + CFG.playerZLookAhead;
+        camera.lookAt(lookX, lookY, lookZ);
+      }
+
+      function cleanupWorld() {
+        for (let i = worldObjects.length - 1; i >= 0; i -= 1) {
+          const obj = worldObjects[i];
+          if (
+            !obj.active ||
+            obj.zEnd < player.z - CFG.cleanupBehind ||
+            obj.zStart > player.z + CFG.spawnAhead + 40
+          ) {
+            if (obj.group.parent) {
+              obj.group.parent.remove(obj.group);
+            }
+            worldObjects.splice(i, 1);
+          }
+        }
+      }
+
+      function updateHud() {
+        const parts = [`Speed ${state.speed.toFixed(1)}`];
+
+        if (player.superSneakersTimer > 0) {
+          parts.push(`Super shoes ${player.superSneakersTimer.toFixed(1)}s`);
+        }
+
+        if (player.hoverboardActive) {
+          parts.push(`Hoverboard ${player.hoverboardTimer.toFixed(1)}s`);
+        } else if (player.hoverboardReady) {
+          parts.push("Hoverboard ready");
+        }
+
+        if (player.jetpackTimer > 0) {
+          parts.push(`Jetpack ${player.jetpackTimer.toFixed(1)}s`);
+        }
+
+        hudStatus.textContent = parts.join("  •  ");
+      }
+
+      function bindInput() {
+        window.addEventListener("keydown", (event) => {
+          if (state.crashed) {
+            return;
+          }
+
+          switch (event.code) {
+            case "ArrowLeft":
+            case "KeyA":
+              event.preventDefault();
+              shiftLane(-1);
+              break;
+            case "ArrowRight":
+            case "KeyD":
+              event.preventDefault();
+              shiftLane(1);
+              break;
+            case "ArrowUp":
+            case "KeyW":
+            case "Space":
+              event.preventDefault();
+              jump();
+              break;
+            case "ArrowDown":
+            case "KeyS":
+              event.preventDefault();
+              roll();
+              break;
+            case "KeyB":
+              event.preventDefault();
+              activateHoverboard();
+              break;
+            default:
+              break;
+          }
+        });
+
+        renderer.domElement.addEventListener("pointerdown", (event) => {
+          pointerState.down = true;
+          pointerState.startX = event.clientX;
+          pointerState.startY = event.clientY;
+          pointerState.startTime = performance.now();
+        });
+
+        renderer.domElement.addEventListener("pointerup", (event) => {
+          if (!pointerState.down) {
+            return;
+          }
+
+          pointerState.down = false;
+
+          const dx = event.clientX - pointerState.startX;
+          const dy = event.clientY - pointerState.startY;
+          const absX = Math.abs(dx);
+          const absY = Math.abs(dy);
+          const elapsed = performance.now() - pointerState.startTime;
+
+          if ((absX > 24 || absY > 24) && elapsed < 550) {
+            if (absX > absY) {
+              shiftLane(dx > 0 ? 1 : -1);
+            } else {
+              if (dy < 0) {
+                jump();
+              } else {
+                roll();
+              }
+            }
+            return;
+          }
+
+          const now = performance.now();
+          if (
+            now - pointerState.lastTapTime < 280 &&
+            distance2D(event.clientX, event.clientY, pointerState.lastTapX, pointerState.lastTapY) < 32
+          ) {
+            activateHoverboard();
+            pointerState.lastTapTime = 0;
+          } else {
+            pointerState.lastTapTime = now;
+            pointerState.lastTapX = event.clientX;
+            pointerState.lastTapY = event.clientY;
+          }
+        });
+
+        renderer.domElement.addEventListener("pointercancel", () => {
+          pointerState.down = false;
+        });
+
+        window.addEventListener("resize", () => {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+        });
+      }
+
+      function shiftLane(delta) {
+        player.targetLane = clamp(player.targetLane + delta, 0, 2);
+      }
+
+      function jump() {
+        if (player.jetpackTimer > 0) {
+          return;
+        }
+
+        const supportY = getSupportHeight(player.x, player.z + 0.15);
+        if (player.grounded || player.y <= supportY + 0.06) {
+          const velocityMultiplier = player.superSneakersTimer > 0 ? Math.sqrt(3) : 1;
+          player.verticalVelocity = CFG.jumpVelocity * velocityMultiplier;
+          player.grounded = false;
+        }
+      }
+
+      function roll() {
+        if (player.jetpackTimer > 0) {
+          return;
+        }
+
+        if (player.grounded) {
+          player.rollTimer = Math.max(player.rollTimer, CFG.rollDuration);
+        }
+      }
+
+      function activateHoverboard() {
+        if (player.hoverboardReady && !player.hoverboardActive && player.jetpackTimer <= 0) {
+          player.hoverboardReady = false;
+          player.hoverboardActive = true;
+          player.hoverboardTimer = CFG.hoverboardDuration;
+          flashScreen("255,225,128", 0.28);
+        }
+      }
+
+      function getSupportHeight(x, z) {
+        let supportY = 0;
+
+        for (const obj of worldObjects) {
+          if (!obj.active || obj.supportHalfWidth === undefined) {
+            continue;
+          }
+
+          if (Math.abs(x - obj.x) > obj.supportHalfWidth) {
+            continue;
+          }
+
+          if (z < obj.zStart || z > obj.zEnd) {
+            continue;
+          }
+
+          if (obj.kind === "ramp") {
+            const t = clamp((z - obj.zStart) / (obj.zEnd - obj.zStart), 0, 1);
+            supportY = Math.max(supportY, obj.roofY * t);
+          } else if (obj.kind === "train") {
+            supportY = Math.max(supportY, obj.roofY);
+          }
+        }
+
+        return supportY;
+      }
+
+      function laneRangeBusy(lane, minZ, maxZ, kinds) {
+        for (const obj of worldObjects) {
+          if (!obj.active || obj.lane !== lane) {
+            continue;
+          }
+
+          if (kinds && !kinds.includes(obj.kind)) {
+            continue;
+          }
+
+          if (rangesOverlap(minZ, maxZ, obj.zStart, obj.zEnd)) {
+            return true;
+          }
+        }
+
+        return false;
+      }
+
+      function getPlayerBox() {
+        const rollVisual = player.rollVisual;
+        const halfWidth = 0.52;
+        const halfDepth = 0.42;
+        const minY = player.y + 0.02;
+        const maxY = player.y + lerp(2.55, 1.02, rollVisual);
+
+        return {
+          minX: player.x - halfWidth,
+          maxX: player.x + halfWidth,
+          minY,
+          maxY,
+          minZ: player.z - halfDepth,
+          maxZ: player.z + halfDepth
+        };
+      }
+
+      function updateBursts(dt) {
+        for (let i = burstEffects.length - 1; i >= 0; i -= 1) {
+          const burst = burstEffects[i];
+          burst.life -= dt;
+
+          for (let j = 0; j < burst.parts.length; j += 1) {
+            const part = burst.parts[j];
+            const velocity = burst.velocities[j];
+            part.position.x += velocity.x * dt;
+            part.position.y += velocity.y * dt;
+            part.position.z += velocity.z * dt;
+            velocity.y -= 16 * dt;
+            part.rotation.x += velocity.x * dt * 0.5;
+            part.rotation.y += velocity.z * dt * 0.5;
+          }
+
+          if (burst.life <= 0) {
+            if (burst.group.parent) {
+              burst.group.parent.remove(burst.group);
+            }
+            burstEffects.splice(i, 1);
+          }
+        }
+      }
+
+      function spawnBurst(x, y, z, material) {
+        const group = new THREE.Group();
+        group.position.set(x, y, z);
+        effectRoot.add(group);
+
+        const parts = [];
+        const velocities = [];
+
+        for (let i = 0; i < 8; i += 1) {
+          const piece = new THREE.Mesh(geoBox, material);
+          const size = 0.12 + Math.random() * 0.12;
+          piece.scale.set(size, size, size);
+          group.add(piece);
+          parts.push(piece);
+          velocities.push(
+            new THREE.Vector3(
+              randomRange(-4, 4),
+              randomRange(3, 7),
+              randomRange(-4, 4)
+            )
+          );
+        }
+
+        burstEffects.push({
+          group,
+          parts,
+          velocities,
+          life: 0.52
+        });
+      }
+
+      function flashScreen(rgb, alpha) {
+        state.flashColor = rgb;
+        state.flashAlpha = Math.max(state.flashAlpha, alpha);
+      }
+
+      function updateFlash(dt) {
+        state.flashAlpha = Math.max(0, state.flashAlpha - dt * 1.8);
+        flash.style.background = `rgba(${state.flashColor}, ${state.flashAlpha})`;
+      }
+
+      function addBox(parent, geometry, material, x, y, z, sx, sy, sz) {
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(x, y, z);
+        mesh.scale.set(sx, sy, sz);
+        parent.add(mesh);
+        return mesh;
+      }
+
+      function createRampGeometry() {
+        const vertices = new Float32Array([
+          -0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, 0.5,
+          -0.5, 0, -0.5, 0.5, 0, 0.5, -0.5, 0, 0.5,
+
+          -0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 1, 0.5,
+          -0.5, 0, -0.5, 0.5, 1, 0.5, -0.5, 1, 0.5,
+
+          -0.5, 0, -0.5, -0.5, 0, 0.5, -0.5, 1, 0.5,
+          0.5, 0, -0.5, 0.5, 1, 0.5, 0.5, 0, 0.5,
+
+          -0.5, 0, 0.5, 0.5, 0, 0.5, 0.5, 1, 0.5,
+          -0.5, 0, 0.5, 0.5, 1, 0.5, -0.5, 1, 0.5
+        ]);
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+        geometry.computeVertexNormals();
+        return geometry;
+      }
+
+      function boxesOverlap(a, b) {
+        return !(
+          a.maxX < b.minX ||
+          a.minX > b.maxX ||
+          a.maxY < b.minY ||
+          a.minY > b.maxY ||
+          a.maxZ < b.minZ ||
+          a.minZ > b.maxZ
+        );
+      }
+
+      function rangesOverlap(aMin, aMax, bMin, bMax) {
+        return aMin <= bMax && aMax >= bMin;
+      }
+
+      function moveTowards(current, target, maxDelta) {
+        if (Math.abs(target - current) <= maxDelta) {
+          return target;
+        }
+        return current + Math.sign(target - current) * maxDelta;
+      }
+
+      function damp(current, target, smoothing, dt) {
+        return THREE.MathUtils.lerp(current, target, 1 - Math.exp(-smoothing * dt));
+      }
+
+      function lerp(a, b, t) {
+        return a + (b - a) * t;
+      }
+
+      function clamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+      }
+
+      function randomRange(min, max) {
+        return min + Math.random() * (max - min);
+      }
+
+      function randomInt(min, max) {
+        return Math.floor(randomRange(min, max + 1));
+      }
+
+      function randomPickupType() {
+        const roll = Math.random();
+        if (roll < 0.4) {
+          return "sneakers";
+        }
+        if (roll < 0.7) {
+          return "board";
+        }
+        return "jetpack";
+      }
+
+      function seeded01(seed) {
+        const value = Math.sin(seed * 127.1) * 43758.5453123;
+        return value - Math.floor(value);
+      }
+
+      function distance2D(ax, ay, bx, by) {
+        const dx = ax - bx;
+        const dy = ay - by;
+        return Math.hypot(dx, dy);
+      }
+    })();
+  </script>
+</body>
+</html>

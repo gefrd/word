@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Hangman</title>
+<style>
+  :root {
+    --bg-dark: #0f172a;
+    --bg-panel: #1e293b;
+    --accent: #38bdf8;
+    --correct: #22c55e;
+    --wrong: #ef4444;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --kb-key: #334155;
+    --kb-key-active: #475569;
+    safe-area-inset-top: env(safe-area-inset-top);
+    safe-area-inset-bottom: env(safe-area-inset-bottom);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; font-family: 'Segoe UI', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+
+  body {
+    background: radial-gradient(circle at 50% 30%, #1e293b 0%, #0f172a 100%);
+    color: var(--text-main);
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .screen {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: calc(20px + var(--safe-area-inset-top, 0px)) 20px calc(20px + var(--safe-area-inset-bottom, 0px));
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .screen.active {
+    opacity: 1;
+    pointer-events: auto;
+    z-index: 20;
+  }
+
+  h1 { font-size: 2.5rem; text-align: center; text-transform: uppercase; letter-spacing: 4px; margin-bottom: 20px; color: var(--accent); text-shadow: 0 0 15px rgba(56, 189, 248, 0.5); }
+  h2 { font-size: 1.5rem; text-align: center; margin-bottom: 15px; color: var(--text-muted); }
+
+  .btn {
+    background: linear-gradient(145deg, #2563eb, #1d4ed8);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 15px 30px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    box-shadow: 0 4px 15px rgba(37, 99, 235, 0.4), inset 0 2px 0 rgba(255,255,255,0.2);
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.1s;
+    width: 100%;
+    margin-bottom: 15px;
+  }
+  .btn:active { transform: translateY(2px); box-shadow: 0 2px 5px rgba(37, 99, 235, 0.4); }
+
+  .scroll-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+  
+  .category-btn {
+    background: var(--bg-panel);
+    border: 2px solid #334155;
+    border-radius: 10px;
+    padding: 15px;
+    color: var(--text-main);
+    font-size: 1.1rem;
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .category-btn.selected { border-color: var(--accent); background: rgba(56, 189, 248, 0.1); }
+
+  .diff-select { display: flex; gap: 10px; margin-bottom: 20px; }
+  .diff-btn { flex: 1; padding: 10px; border-radius: 8px; border: 1px solid #334155; background: var(--bg-panel); color: var(--text-muted); text-align: center; font-size: 0.9rem; }
+  .diff-btn.selected { background: var(--accent); color: white; border-color: var(--accent); }
+
+  /* GAME SCREEN */
+  .top-bar { display: flex; justify-content: space-between; font-size: 1rem; color: var(--text-muted); font-weight: bold; margin-bottom: 10px; }
+  
+  #canvas-container { position: relative; width: 100%; height: 200px; display: flex; justify-content: center; align-items: center; margin-bottom: 20px; }
+  canvas { background: transparent; filter: drop-shadow(0 0 10px rgba(0,0,0,0.5)); }
+
+  .word-display { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-bottom: 20px; min-height: 50px; }
+  .letter-box { width: 35px; height: 45px; border-bottom: 3px solid var(--text-main); display: flex; justify-content: center; align-items: flex-end; font-size: 2rem; font-weight: bold; text-transform: uppercase; padding-bottom: 5px; color: transparent; transition: color 0.3s; }
+  .letter-box.revealed { color: var(--text-main); border-bottom-color: transparent; background: rgba(255,255,255,0.1); border-radius: 4px; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+  .letter-box.correct-reveal { color: var(--correct); background: rgba(34, 197, 94, 0.2); }
+
+  @keyframes popIn { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+
+  .keyboard { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding-bottom: 10px; }
+  .key-row { display: flex; justify-content: center; gap: 6px; }
+  .key { flex: 1; max-width: 40px; height: 50px; background: var(--kb-key); border-radius: 6px; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: bold; box-shadow: 0 4px 0 rgba(0,0,0,0.3); transition: all 0.1s; cursor: pointer; text-transform: uppercase; }
+  .key:active { transform: translateY(4px); box-shadow: 0 0 0 rgba(0,0,0,0); background: var(--kb-key-active); }
+  .key.correct { background: var(--correct); color: white; opacity: 0.8; pointer-events: none; }
+  .key.wrong { background: var(--wrong); color: white; opacity: 0.4; pointer-events: none; }
+
+  .hint-container { display: flex; justify-content: center; margin-bottom: 10px; }
+  .hint-btn { background: #eab308; color: #422006; border: none; border-radius: 20px; padding: 8px 20px; font-weight: bold; display: flex; align-items: center; gap: 5px; box-shadow: 0 4px 0 #ca8a04; transition: transform 0.1s; }
+  .hint-btn:active { transform: translateY(4px); box-shadow: 0 0 0 #ca8a04; }
+  .hint-btn:disabled { background: #71717a; box-shadow: 0 4px 0 #52525b; color: #a1a1aa; pointer-events: none; }
+
+  /* OVER SCREEN */
+  .result-box { background: var(--bg-panel); border-radius: 15px; padding: 30px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin: auto 0; }
+  .result-title { font-size: 2.5rem; font-weight: bold; margin-bottom: 10px; }
+  .result-title.win { color: var(--correct); text-shadow: 0 0 15px rgba(34,197,94,0.5); }
+  .result-title.lose { color: var(--wrong); text-shadow: 0 0 15px rgba(239,68,68,0.5); }
+  .result-word { font-size: 1.8rem; letter-spacing: 2px; color: var(--accent); margin: 20px 0; font-weight: bold; text-transform: uppercase; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; }
+  .stat-item { background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; }
+  .stat-label { font-size: 0.8rem; color: var(--text-muted); }
+  .stat-value { font-size: 1.2rem; font-weight: bold; }
+
+  /* Particles */
+  .particle { position: absolute; pointer-events: none; z-index: 100; }
+</style>
+</head>
+<body>
+
+<!-- START SCREEN -->
+<div id="start-screen" class="screen active">
+  <h1>Hangman</h1>
+  
+  <div class="diff-select">
+    <div class="diff-btn selected" data-diff="easy">Easy<br><small>4-5 chars</small></div>
+    <div class="diff-btn" data-diff="medium">Medium<br><small>6-8 chars</small></div>
+    <div class="diff-btn" data-diff="hard">Hard<br><small>9+ chars</small></div>
+  </div>
+
+  <h2>Select Category</h2>
+  <div class="scroll-container" id="category-list">
+    <!-- Categories injected here -->
+  </div>
+
+  <button class="btn" id="start-btn">PLAY GAME</button>
+</div>
+
+<!-- GAME SCREEN -->
+<div id="game-screen" class="screen">
+  <div class="top-bar">
+    <div id="ui-score">Score: 0</div>
+    <div id="ui-streak">Streak: 0</div>
+    <div id="ui-category">Animals</div>
+  </div>
+  
+  <div id="canvas-container">
+    <canvas id="hangman-canvas" width="200" height="200"></canvas>
+  </div>
+
+  <div class="hint-container">
+    <button class="hint-btn" id="hint-btn">💡 Hint (<span id="hint-count">3</span>)</button>
+  </div>
+
+  <div class="word-display" id="word-display">
+    <!-- Letters injected here -->
+  </div>
+
+  <div class="keyboard" id="keyboard">
+    <!-- QWERTY injected here -->
+  </div>
+</div>
+
+<!-- GAME OVER SCREEN -->
+<div id="over-screen" class="screen">
+  <div class="result-box">
+    <div class="result-title" id="result-title">YOU WIN!</div>
+    <div style="color:var(--text-muted)">The word was:</div>
+    <div class="result-word" id="result-word">WORD</div>
+    
+    <div class="stats-grid">
+      <div class="stat-item">
+        <div class="stat-label">Score</div>
+        <div class="stat-value" id="res-score">0</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Streak</div>
+        <div class="stat-value" id="res-streak">0</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Best Streak</div>
+        <div class="stat-value" id="res-best">0</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Games Won</div>
+        <div class="stat-value" id="res-won">0</div>
+      </div>
+    </div>
+
+    <button class="btn" id="restart-btn" style="background: linear-gradient(145deg, #10b981, #059669); box-shadow: 0 4px 15px rgba(16,185,129,0.4), inset 0 2px 0 rgba(255,255,255,0.2);">Play Again</button>
+    <button class="btn" id="menu-btn" style="background: var(--bg-panel); color: var(--text-main); box-shadow: none; border: 1px solid #334155; margin-top: 10px;">Main Menu</button>
+  </div>
+</div>
+
+<script>
+// Data
+const CATEGORIES = {
+  "Animals": "lion,tiger,bear,elephant,giraffe,monkey,kangaroo,penguin,dolphin,whale,shark,eagle,owl,snake,crocodile,frog,turtle,rabbit,mouse,horse,cow,pig,sheep,goat,chicken,duck,turkey,deer,wolf,fox,zebra,hippopotamus,rhinoceros,camel,leopard,cheetah,hyena,gorilla,chimpanzee,orangutan,sloth,armadillo,porcupine,skunk,raccoon,badger,beaver,otter,seal,walrus",
+  "Countries": "usa,canada,mexico,brazil,argentina,uk,france,germany,italy,spain,portugal,russia,china,japan,korea,india,australia,egypt,southafrica,nigeria,kenya,turkey,greece,sweden,norway,finland,denmark,poland,ukraine,vietnam,thailand,indonesia,philippines,malaysia,singapore,newzealand,chile,peru,colombia,venezuela,cuba,jamaica,morocco,algeria,saudiarabia,iran,iraq,israel,pakistan,bangladesh",
+  "Movies": "avatar,titanic,inception,matrix,gladiator,jaws,rocky,alien,terminator,predator,shrek,toy,story,nemo,lion,king,aladdin,mulan,frozen,moana,batman,superman,spiderman,avengers,ironman,thor,hulk,wolverine,deadpool,joker,godfather,goodfellas,scarface,casino,psycho,vertigo,birds,shining,exorcist,halloween,scream,saw,hostel,ring,grudge,conjuring,insidious,sinister,babadook,hereditary",
+  "Food & Drinks": "pizza,burger,hotdog,taco,burrito,sushi,ramen,udon,soba,pasta,spaghetti,macaroni,lasagna,ravioli,gnocchi,risotto,paella,tapas,curry,kebab,shawarma,falafel,hummus,pita,naan,roti,dosa,idli,samosa,pakora,biryani,pulao,fried,rice,noodles,dumplings,spring,rolls,buns,dimsum,cake,pie,tart,cookie,brownie,muffin,cupcake,donut,icecream,gelato",
+  "Sports": "soccer,football,basketball,baseball,tennis,golf,cricket,rugby,volleyball,hockey,badminton,table,swimming,diving,gymnastics,athletics,track,field,marathon,triathlon,cycling,boxing,wrestling,judo,karate,taekwondo,fencing,archery,shooting,weightlifting,rowing,sailing,canoeing,kayaking,surfing,skateboarding,snowboarding,skiing,skating,bobsleigh,curling,luge,skeleton,biathlon,equestrian,polo,lacrosse,handball,water,polo",
+  "Technology": "computer,laptop,tablet,smartphone,smartwatch,television,camera,microphone,speaker,headphones,earbuds,router,modem,keyboard,mouse,monitor,printer,scanner,projector,console,controller,battery,charger,cable,adapter,drive,memory,processor,motherboard,graphics,card,software,hardware,network,internet,website,browser,search,engine,database,server,cloud,virtual,reality,augmented,artificial,intelligence,machine,learning,robotics",
+  "Nature": "tree,flower,grass,leaf,branch,root,seed,fruit,vegetable,plant,bush,shrub,vine,fern,moss,algae,fungus,mushroom,rock,stone,pebble,boulder,mountain,hill,valley,canyon,cliff,cave,river,stream,creek,lake,pond,ocean,sea,gulf,bay,beach,coast,island,peninsula,continent,planet,star,moon,sun,galaxy,universe,space,comet"
+};
+
+const QWERTY = [
+  ['q','w','e','r','t','y','u','i','o','p'],
+  ['a','s','d','f','g','h','j','k','l'],
+  ['z','x','c','v','b','n','m']
+];
+
+// State
+let state = {
+  difficulty: 'easy', // easy: 4-5, medium: 6-8, hard: 9+
+  category: 'Animals',
+  word: '',
+  guessed: new Set(),
+  wrongCount: 0,
+  maxWrong: 6,
+  hints: 3,
+  score: 0,
+  streak: 0,
+  stats: {
+    bestStreak: parseInt(localStorage.getItem('hm_bestStreak')) || 0,
+    gamesWon: parseInt(localStorage.getItem('hm_gamesWon')) || 0
+  }
+};
+
+// DOM Elements
+const screens = {
+  start: document.getElementById('start-screen'),
+  game: document.getElementById('game-screen'),
+  over: document.getElementById('over-screen')
+};
+
+const UI = {
+  diffBtns: document.querySelectorAll('.diff-btn'),
+  catList: document.getElementById('category-list'),
+  startBtn: document.getElementById('start-btn'),
+  
+  canvas: document.getElementById('hangman-canvas'),
+  ctx: document.getElementById('hangman-canvas').getContext('2d'),
+  wordDisp: document.getElementById('word-display'),
+  kb: document.getElementById('keyboard'),
+  hintBtn: document.getElementById('hint-btn'),
+  hintCount: document.getElementById('hint-count'),
+  uiScore: document.getElementById('ui-score'),
+  uiStreak: document.getElementById('ui-streak'),
+  uiCat: document.getElementById('ui-category'),
+  
+  resTitle: document.getElementById('result-title'),
+  resWord: document.getElementById('result-word'),
+  resScore: document.getElementById('res-score'),
+  resStreak: document.getElementById('res-streak'),
+  resBest: document.getElementById('res-best'),
+  resWon: document.getElementById('res-won'),
+  restartBtn: document.getElementById('restart-btn'),
+  menuBtn: document.getElementById('menu-btn')
+};
+
+// Audio context setup
+let audioCtx;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
+
+function playTone(freq, type, duration, vol=0.1) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function sound(type) {
+  initAudio();
+  if(type === 'correct') { playTone(600, 'sine', 0.2, 0.1); setTimeout(()=>playTone(800, 'sine', 0.3, 0.1), 100); }
+  if(type === 'wrong') { playTone(200, 'sawtooth', 0.4, 0.1); }
+  if(type === 'win') { 
+    [400, 500, 600, 800].forEach((f, i) => setTimeout(()=>playTone(f, 'square', 0.2, 0.1), i*150));
+  }
+  if(type === 'lose') {
+    [300, 250, 200, 150].forEach((f, i) => setTimeout(()=>playTone(f, 'sawtooth', 0.3, 0.1), i*300));
+  }
+}
+
+function vibrate(ms) {
+  if (navigator.vibrate) navigator.vibrate(ms);
+}
+
+// Setup Start Screen
+function initStartScreen() {
+  UI.diffBtns.forEach(b => {
+    b.addEventListener('click', () => {
+      UI.diffBtns.forEach(x => x.classList.remove('selected'));
+      b.classList.add('selected');
+      state.difficulty = b.dataset.diff;
+      vibrate(10);
+    });
+  });
+
+  UI.catList.innerHTML = '';
+  Object.keys(CATEGORIES).forEach((cat, i) => {
+    const d = document.createElement('div');
+    d.className = 'category-btn' + (i===0 ? ' selected' : '');
+    d.innerHTML = `<span>${cat}</span><span>HighScore: ${localStorage.getItem('hm_hs_'+cat) || 0}</span>`;
+    d.addEventListener('click', () => {
+      document.querySelectorAll('.category-btn').forEach(x => x.classList.remove('selected'));
+      d.classList.add('selected');
+      state.category = cat;
+      vibrate(10);
+    });
+    UI.catList.appendChild(d);
+  });
+
+  UI.startBtn.addEventListener('click', () => {
+    vibrate(20);
+    startGame();
+  });
+}
+
+function getWord() {
+  const words = CATEGORIES[state.category].split(',');
+  let filtered = [];
+  if (state.difficulty === 'easy') filtered = words.filter(w => w.length >= 4 && w.length <= 5);
+  else if (state.difficulty === 'medium') filtered = words.filter(w => w.length >= 6 && w.length <= 8);
+  else filtered = words.filter(w => w.length >= 9);
+  
+  if(filtered.length === 0) filtered = words; // fallback
+  
+  return filtered[Math.floor(Math.random() * filtered.length)].toUpperCase();
+}
+
+function switchScreen(id) {
+  Object.values(screens).forEach(s => s.classList.remove('active'));
+  screens[id].classList.add('active');
+}
+
+function buildKeyboard() {
+  UI.kb.innerHTML = '';
+  QWERTY.forEach(row => {
+    const r = document.createElement('div');
+    r.className = 'key-row';
+    row.forEach(l => {
+      const k = document.createElement('div');
+      k.className = 'key';
+      k.textContent = l;
+      k.id = 'key-' + l.toUpperCase();
+      k.addEventListener('click', () => handleGuess(l.toUpperCase()));
+      r.appendChild(k);
+    });
+    UI.kb.appendChild(r);
+  });
+}
+
+function drawHangman(step) {
+  const ctx = UI.ctx;
+  ctx.strokeStyle = '#94a3b8';
+  ctx.lineWidth = 4;
+  ctx.lineCap = 'round';
+  
+  if (step === 0) {
+    ctx.clearRect(0,0,200,200);
+    // Base & Gallows
+    ctx.strokeStyle = '#8b5a2b';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(20, 180); ctx.lineTo(180, 180);
+    ctx.moveTo(50, 180); ctx.lineTo(50, 20);
+    ctx.moveTo(50, 20); ctx.lineTo(120, 20);
+    ctx.moveTo(120, 20); ctx.lineTo(120, 40); // rope
+    ctx.stroke();
+    return;
+  }
+
+  ctx.strokeStyle = '#f8fafc';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  
+  if(step === 1) { // Head
+    ctx.arc(120, 60, 20, 0, Math.PI*2);
+  } else if (step === 2) { // Body
+    ctx.moveTo(120, 80); ctx.lineTo(120, 130);
+  } else if (step === 3) { // Left arm
+    ctx.moveTo(120, 90); ctx.lineTo(90, 110);
+  } else if (step === 4) { // Right arm
+    ctx.moveTo(120, 90); ctx.lineTo(150, 110);
+  } else if (step === 5) { // Left leg
+    ctx.moveTo(120, 130); ctx.lineTo(100, 170);
+  } else if (step === 6) { // Right leg
+    ctx.moveTo(120, 130); ctx.lineTo(140, 170);
+    // Sad face
+    ctx.moveTo(112, 55); ctx.lineTo(116, 59); // X eye
+    ctx.moveTo(116, 55); ctx.lineTo(112, 59);
+    ctx.moveTo(124, 55); ctx.lineTo(128, 59); // X eye
+    ctx.moveTo(128, 55); ctx.lineTo(124, 59);
+    ctx.moveTo(113, 70); ctx.quadraticCurveTo(120, 65, 127, 70); // frown
+  }
+  ctx.stroke();
+}
+
+function updateWordDisplay() {
+  UI.wordDisp.innerHTML = '';
+  for(let i=0; i<state.word.length; i++) {
+    const l = state.word[i];
+    const b = document.createElement('div');
+    b.className = 'letter-box';
+    if(state.guessed.has(l)) {
+      b.textContent = l;
+      b.classList.add('revealed');
+    } else {
+      b.textContent = '_';
+    }
+    UI.wordDisp.appendChild(b);
+  }
+}
+
+function checkWinLose() {
+  let won = true;
+  for(let l of state.word) {
+    if(!state.guessed.has(l)) { won = false; break; }
+  }
+
+  if (won) {
+    sound('win');
+    vibrate([50, 50, 50, 50, 100]);
+    state.streak++;
+    state.stats.gamesWon++;
+    if(state.streak > state.stats.bestStreak) state.stats.bestStreak = state.streak;
+    
+    // score calc
+    const diffMult = state.difficulty === 'easy' ? 1 : state.difficulty === 'medium' ? 2 : 3;
+    const bonus = (state.maxWrong - state.wrongCount) * 10 * diffMult;
+    state.score += (state.word.length * 5 * diffMult) + bonus;
+
+    saveStats();
+    showGameOver(true);
+  } else if (state.wrongCount >= state.maxWrong) {
+    sound('lose');
+    vibrate(500);
+    state.streak = 0;
+    saveStats();
+    showGameOver(false);
+  }
+}
+
+function saveStats() {
+  localStorage.setItem('hm_bestStreak', state.stats.bestStreak);
+  localStorage.setItem('hm_gamesWon', state.stats.gamesWon);
+  const hsKey = 'hm_hs_' + state.category;
+  const curHs = parseInt(localStorage.getItem(hsKey)) || 0;
+  if(state.score > curHs) localStorage.setItem(hsKey, state.score);
+}
+
+function handleGuess(letter) {
+  if (state.wrongCount >= state.maxWrong || state.guessed.has(letter)) return;
+  initAudio();
+  
+  state.guessed.add(letter);
+  const keyEl = document.getElementById('key-' + letter);
+  
+  if (state.word.includes(letter)) {
+    keyEl.classList.add('correct');
+    sound('correct');
+    vibrate(10);
+    
+    // highlight newly revealed
+    updateWordDisplay();
+    Array.from(UI.wordDisp.children).forEach((el, i) => {
+      if(state.word[i] === letter) {
+        el.classList.add('correct-reveal');
+        setTimeout(() => el.classList.remove('correct-reveal'), 500);
+      }
+    });
+
+  } else {
+    keyEl.classList.add('wrong');
+    state.wrongCount++;
+    sound('wrong');
+    vibrate(50);
+    
+    // wobble canvas
+    UI.canvas.style.transform = 'translate(-5px, 0)';
+    setTimeout(() => UI.canvas.style.transform = 'translate(5px, 0)', 50);
+    setTimeout(() => UI.canvas.style.transform = 'translate(0, 0)', 100);
+    
+    drawHangman(state.wrongCount);
+  }
+
+  checkWinLose();
+}
+
+UI.hintBtn.addEventListener('click', () => {
+  if(state.hints <= 0) return;
+  vibrate(20);
+  state.hints--;
+  UI.hintCount.textContent = state.hints;
+  if(state.hints === 0) UI.hintBtn.disabled = true;
+
+  // find unrevealed letter
+  const unrevealed = Array.from(new Set(state.word)).filter(l => !state.guessed.has(l));
+  if(unrevealed.length > 0) {
+    const hintL = unrevealed[Math.floor(Math.random() * unrevealed.length)];
+    handleGuess(hintL);
+  }
+});
+
+function startGame() {
+  state.word = getWord();
+  state.guessed.clear();
+  state.wrongCount = 0;
+  state.hints = 3;
+  
+  UI.hintBtn.disabled = false;
+  UI.hintCount.textContent = state.hints;
+  UI.uiScore.textContent = 'Score: ' + state.score;
+  UI.uiStreak.textContent = 'Streak: ' + state.streak;
+  UI.uiCat.textContent = state.difficulty === 'hard' ? '???' : state.category;
+  
+  drawHangman(0);
+  buildKeyboard();
+  updateWordDisplay();
+  
+  switchScreen('game');
+}
+
+function showGameOver(win) {
+  setTimeout(() => {
+    switchScreen('over');
+    UI.resTitle.textContent = win ? 'YOU WIN!' : 'GAME OVER';
+    UI.resTitle.className = 'result-title ' + (win ? 'win' : 'lose');
+    UI.resWord.textContent = state.word;
+    
+    UI.resScore.textContent = state.score;
+    UI.resStreak.textContent = state.streak;
+    UI.resBest.textContent = state.stats.bestStreak;
+    UI.resWon.textContent = state.stats.gamesWon;
+    
+    if(win) createConfetti();
+  }, 1000);
+}
+
+UI.restartBtn.addEventListener('click', () => {
+  vibrate(10);
+  startGame();
+});
+
+UI.menuBtn.addEventListener('click', () => {
+  vibrate(10);
+  state.score = 0;
+  state.streak = 0;
+  initStartScreen();
+  switchScreen('start');
+});
+
+// Particles
+function createConfetti() {
+  for(let i=0; i<50; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.width = Math.random() * 10 + 5 + 'px';
+    p.style.height = Math.random() * 10 + 5 + 'px';
+    p.style.backgroundColor = ['#fde047', '#38bdf8', '#22c55e', '#ef4444', '#a855f7'][Math.floor(Math.random()*5)];
+    p.style.left = '50%';
+    p.style.top = '50%';
+    
+    const angle = Math.random() * Math.PI * 2;
+    const velocity = 50 + Math.random() * 100;
+    const tx = Math.cos(angle) * velocity;
+    const ty = Math.sin(angle) * velocity;
+    
+    p.animate([
+      { transform: 'translate(-50%, -50%) rotate(0deg)', opacity: 1 },
+      { transform: `translate(calc(-50% + ${tx}px), calc(-50% + ${ty}px)) rotate(${Math.random()*360}deg)`, opacity: 0 }
+    ], { duration: 1000 + Math.random()*1000, easing: 'cubic-bezier(0, .9, .57, 1)' });
+    
+    document.body.appendChild(p);
+    setTimeout(() => p.remove(), 2000);
+  }
+}
+
+// Init
+initStartScreen();
+
+</script>
+</body>
+</html>
