@@ -7,6 +7,8 @@
 //   4. Done → the frames + poses + box go to the worker.
 //
 // Needs the WebXR "camera-access" feature (Chrome 107+ on ARCore phones).
+// Where the phone has the ARCore depth API, each frame also carries the
+// phone's depth map ("depth-sensing"), used later to carve hollows.
 // iPhones have no WebXR AR in Safari: the normal no-sheet scan is used there.
 
 import * as THREE from 'three';
@@ -52,12 +54,19 @@ export async function startARCapture(overlay, cb = {}) {
     scene.add(ring);
 
     let session;
+    const init = {
+        requiredFeatures: ['hit-test'],
+        optionalFeatures: ['dom-overlay', 'camera-access'],
+        domOverlay: { root: overlay },
+    };
     try {
+        // depth-sensing: the phone's own depth map (ARCore depth API) —
+        // coarse, but metric; carves volume the silhouettes can't see
         session = await navigator.xr.requestSession('immersive-ar', {
-            requiredFeatures: ['hit-test'],
-            optionalFeatures: ['dom-overlay', 'camera-access'],
-            domOverlay: { root: overlay },
-        });
+            ...init,
+            optionalFeatures: [...init.optionalFeatures, 'depth-sensing'],
+            depthSensing: { usagePreference: ['cpu-optimized'], dataFormatPreference: ['float32', 'luminance-alpha'] },
+        }).catch(() => navigator.xr.requestSession('immersive-ar', init)); // a browser that trips over the depth request
     } catch (err) {
         renderer.dispose(); renderer.domElement.remove();
         throw err;
@@ -66,6 +75,9 @@ export async function startARCapture(overlay, cb = {}) {
     await renderer.xr.setSession(session);
     const enabled = session.enabledFeatures || [];
     const cameraAccess = enabled.includes('camera-access');
+    // (only the CPU copy is read; a GPU-only depth map is not used)
+    let depthOn = enabled.includes('depth-sensing') && (!session.depthUsage || session.depthUsage === 'cpu-optimized');
+    let depthFrames = 0;
     // no DOM overlay (some browsers): taps drive it — place, start, finish
     const domOverlay = enabled.includes('dom-overlay');
     const viewerSpace = await session.requestReferenceSpace('viewer');
@@ -80,7 +92,7 @@ export async function startARCapture(overlay, cb = {}) {
     let floor = null;             // AR world point, metres
     const cells = new Map();      // sector:band → count
     let frames = 0, lastShot = 0, lastPose = null, lastTime = 0, busy = false, fb = null;
-    const emit = (extra = {}) => cb.onState && cb.onState({ state, frames, covered: cells.size, sectors: SECTORS * 2, domOverlay, canFinish: frames >= MIN_FRAMES, ...extra });
+    const emit = (extra = {}) => cb.onState && cb.onState({ state, frames, covered: cells.size, sectors: SECTORS * 2, domOverlay, canFinish: frames >= MIN_FRAMES, depth: depthOn, depthFrames, ...extra });
     emit();
 
     const controller = renderer.xr.getController(0);
@@ -125,6 +137,34 @@ export async function startARCapture(overlay, cb = {}) {
             tmp.set(px.subarray(a, a + row)); px.copyWithin(a, b, b + row); px.set(tmp, b);
         }
         return { px, w, h };
+    }
+
+    /**
+     * The phone's depth map for this view, resampled to the view's shape
+     * (top-left origin, like the camera picture read the right way).
+     * Only valid inside this frame's callback. Metres, 0 = no depth.
+     */
+    function grabDepth(frame, view, w, h) {
+        if (!depthOn) return null;
+        try {
+            const di = frame.getDepthInformation(view);
+            if (!di) return null;
+            // about as many samples as the sensor has pixels (e.g. 160×90)
+            const n = Math.min(256 * 192, di.width * di.height), ar = w / h;
+            const dW = Math.max(8, Math.round(Math.sqrt(n * ar))), dH = Math.max(8, Math.round(dW / ar));
+            const m = new Float32Array(dW * dH);
+            let valid = 0;
+            for (let y = 0; y < dH; y++) for (let x = 0; x < dW; x++) {
+                const d = di.getDepthInMeters((x + 0.5) / dW, (y + 0.5) / dH);
+                if (d > 0.05 && d < 8) { m[y * dW + x] = d; valid++; }
+            }
+            return valid > 0.2 * dW * dH ? { m, w: dW, h: dH } : null;
+        } catch (err) {
+            // not available after all (other data format, no permission): scan without
+            depthOn = false;
+            console.log('[scan] depth sensing off:', err && err.message);
+            return null;
+        }
     }
 
     async function encode(px, w, h, longSide = 1280) {
@@ -175,13 +215,15 @@ export async function startARCapture(overlay, cb = {}) {
                 else if ((cells.get(key) || 0) < 1 && now - lastShot > 350) {
                     busy = true; lastShot = now;
                     const shot = grabCamera(frame, view);
+                    const depth = grabDepth(frame, view, shot.w, shot.h);
+                    if (depth) depthFrames++;
                     const K = xrIntrinsics(proj, shot.w, shot.h);
                     const obj = xrPoseToObject(view.transform.matrix, floor);
                     cells.set(key, (cells.get(key) || 0) + 1);
                     sectorMats[sector].color.set(cells.has(sector + ':0') && cells.has(sector + ':1') ? 0x4cc38a : 0xc9d65a);
                     encode(shot.px, shot.w, shot.h).then(({ blob, width }) => {
                         frames++;
-                        cb.onFrame && cb.onFrame(blob, { pose: obj, f: K.f * width / shot.w, imageWidth: width });
+                        cb.onFrame && cb.onFrame(blob, { pose: obj, f: K.f * width / shot.w, imageWidth: width, depth });
                         emit({ hint: 'arGot' });
                         // every side covered: done by itself (tap-driven mode has no Done button)
                         if (!domOverlay && cells.size >= SECTORS * 2 - 4) api.finish();

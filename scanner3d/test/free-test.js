@@ -4,6 +4,7 @@ import { loadRMBG, segmentObject, segmentCrop } from '/src/rmbg.js';
 import { reconstructWithMasks } from '/src/reconstruct.js';
 import { poseErrors, gridIoU, gridIoUScaleFit, hollowEmpty } from './eval-util.js';
 import { labelMask, objectThumb, fixMasks, buildKnownPoseModel } from '/src/markerless.js';
+import { fakeARCoreDepth } from './fake-arcore-depth.js';
 
 async function decode(url, w, h) {
     const img = new Image(); img.src = url; await img.decode();
@@ -51,10 +52,11 @@ window.runFree = async (o = {}) => {
     let t0 = t();
     const prof = PROFILES[o.profile || 'mid'];
     const nFr = o.n || 30;
-    const depthIdx = o.depth ? Array.from({ length: o.depthViews || 8 }, (_, k) => Math.floor((k + 0.5) * nFr / (o.depthViews || 8))) : null;
+    // --ardepth: every frame gets a phone-depth-sensor map (see fake-arcore-depth.js)
+    const depthIdx = o.ardepth ? 'all' : o.depth ? Array.from({ length: o.depthViews || 8 }, (_, k) => Math.floor((k + 0.5) * nFr / (o.depthViews || 8))) : null;
     const data = o.mode === 'turntable'
-        ? window.renderTurntable(nFr, { masks: o.masks === 'gt', depthIdx, ...o.render })
-        : window.renderWalk(nFr, { masks: o.masks === 'gt', depthIdx, ...o.render });
+        ? window.renderTurntable(nFr, { masks: o.masks === 'gt', depthIdx, depthAll: !!o.ardepth, ...o.render })
+        : window.renderWalk(nFr, { masks: o.masks === 'gt', depthIdx, depthAll: !!o.ardepth, ...o.render });
     T.render = t() - t0;
     const s = prof.featSide / Math.max(data.width, data.height);
     const w = Math.round(data.width * s), h = Math.round(data.height * s);
@@ -83,7 +85,12 @@ window.runFree = async (o = {}) => {
         const feat = frameFeatures(rgba, w, h, prob, { maxFeatures: prof.maxFeatures });
         T.features += t() - t0;
         const entry = { feat, prob, thumb: objectThumb(rgba, w, h, prob) };
-        if (fr.depth) entry.depth = await fakeNetworkDepth(fr.depth, w, h, frames.length, data.width, data.height);
+        if (fr.depth && o.ardepth) {
+            const d = fakeARCoreDepth(await decode(fr.depth, data.width, data.height), data.width, data.height, frames.length, { noise: o.arNoise ?? 1 });
+            const inv = new Float32Array(d.m.length);
+            for (let i = 0; i < inv.length; i++) inv[i] = d.m[i] > 0 ? 1 / (d.m[i] * 1000) : 0;
+            entry.arDepth = { inv, w: d.w, h: d.h };
+        } else if (fr.depth) entry.depth = await fakeNetworkDepth(fr.depth, w, h, frames.length, data.width, data.height);
         frames.push(entry);
     }
     if (o.masks !== 'gt' && o.fixMasks !== false) {
@@ -139,7 +146,9 @@ window.runFree = async (o = {}) => {
                 box: { x0: lo[0] - mg, x1: hi[0] + mg, y0: lo[1] - mg, y1: hi[1] + mg, z0: 0, z1: hi[2] + mg }, f: data.f * s,
                 recrop: o.masks === 'gt' ? null : async (i, box) => segmentCrop(await decode(data.frames[i].url, w, h), w, h, box, o.segSide || prof.segSide),
                 gridRes: o.gridRes || prof.gridRes, colorSide: prof.colorSide, log: (m) => logs.push(m), mvs: o.mvs, mvsSide: o.mvsSide, mvsPlanes: o.mvsPlanes, texture: !!o.texture,
+                arDepth: o.arDepthOff ? false : undefined, arDepthMinViews: o.arMinViews, arDepthHitRatio: o.arHitRatio,
             });
+            if (out.info.refine && out.info.refine.arDepthViews != null) logs.push('phone depth: ' + JSON.stringify(out.info.refine));
             // AR poses are metric: compare in the true frame without any fitting
             out.poses = out.poses.map((p) => p && { R: p.R, t: p.t });
         } catch (e) { err = e.message; }

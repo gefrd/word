@@ -530,7 +530,9 @@ async function finishFreeJob(job, ui, opts = {}, view = {}) {
     const secs = ((performance.now() - t0) / 1000).toFixed(0);
     const cov = Math.round(r.info.coverageDeg || 0);
     // the job stays alive in the viewer: "Adjust box" rebuilds from it
-    viewerScreen({ mesh, name: 'Scan ' + new Date().toLocaleString(), kind: 'free', note: `${r.info.registered}/${r.info.frames} views · ${cov}° around · ${secs} s${view.real ? ' · ' + t('arRealSize') : ''}`, sizeEdit: view.real ? 'ar' : true, job, viewBox: r.info.viewBox });
+    const rf = r.info.refine || {};
+    const depthNote = rf.arDepthViews ? ' · ' + t('arDepthUsed', { n: rf.arDepthViews }) : '';
+    viewerScreen({ mesh, name: 'Scan ' + new Date().toLocaleString(), kind: 'free', note: `${r.info.registered}/${r.info.frames} views · ${cov}° around · ${secs} s${view.real ? ' · ' + t('arRealSize') : ''}${depthNote}`, sizeEdit: view.real ? 'ar' : true, job, viewBox: r.info.viewBox });
 }
 
 function freeFail(ui, e) {
@@ -663,7 +665,7 @@ async function freeAR() {
         <button class="btn primary" id="arGo" disabled data-i18n="arGo"></button>
       </div>
       <div class="ar-panel ar-bottom" id="arScanBar" hidden>
-        <span class="count"><span id="arCount">0</span> ${t('shots')} · <span id="arCov">0</span> %</span>
+        <span class="count"><span id="arCount">0</span> ${t('shots')} · <span id="arCov">0</span> %<span id="arDepth" hidden> · ${t('arDepthOn')}</span></span>
         <button class="btn primary" id="arDone" disabled data-i18n="done"></button>
       </div>
       <div class="ar-panel ar-bottom" id="arNoCam" hidden>
@@ -704,6 +706,7 @@ async function freeAR() {
         $('#arCount').textContent = st.frames;
         $('#arCov').textContent = Math.round(100 * st.covered / st.sectors);
         $('#arDone').disabled = !st.canFinish;
+        $('#arDepth').hidden = !(st.depth && st.depthFrames);
     };
     const onFrame = (blob, meta) => {
         shots.push({ blob, meta });

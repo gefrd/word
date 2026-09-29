@@ -13,7 +13,7 @@
 // Both are conservative: small margins, several agreeing views, and a
 // safety stop if a pass wants to remove too much (bad lighting, reflections).
 
-import { FOREGROUND } from './reconstruct.js';
+import { FOREGROUND, BACKGROUND } from './reconstruct.js';
 
 const cam = (v) => {
     const { R, t } = v;
@@ -118,6 +118,10 @@ function sampleF(a, w, x, y) {
 export function depthCarve(grid, depthViews, opts = {}) {
     const { occ, nx, ny, nz, voxel } = grid;
     const votes = new Uint8Array(occ.length);
+    // hitRatio: many noisy maps (a phone's depth sensor) — a voxel that other
+    // maps see right on the surface ("hits") is kept unless the "empty"
+    // votes outnumber them hitRatio to one
+    const hits = opts.hitRatio ? new Uint8Array(occ.length) : null;
     const perView = [];
     for (const v of depthViews) {
         let tested = 0, cast = 0;
@@ -139,14 +143,16 @@ export function depthCarve(grid, depthViews, opts = {}) {
             if (!(inv > 0)) continue;
             const zs = 1 / inv;
             tested++;
-            if (z < zs - margin(zs) && votes[n] < 255) { votes[n]++; cast++; }
+            const mz = margin(zs);
+            if (z < zs - mz) { if (votes[n] < 255) { votes[n]++; cast++; } }
+            else if (hits && z <= zs + mz && hits[n] < 255) hits[n]++;
         }
         perView.push([tested, cast, +fit.spread.toFixed(3)]);
     }
     if (opts.log) opts.log(`depth views [tested, votes, spread]: ${JSON.stringify(perView)}`);
     let removed = 0;
-    const minViews = opts.minViews ?? 2;
-    for (let n = 0; n < occ.length; n++) if (occ[n] && votes[n] >= minViews) { occ[n] = 0; removed++; }
+    const minViews = opts.minViews ?? 2, hitRatio = opts.hitRatio;
+    for (let n = 0; n < occ.length; n++) if (occ[n] && votes[n] >= minViews && !(hits && votes[n] < hitRatio * hits[n])) { occ[n] = 0; removed++; }
     void nx; void ny; void nz;
     return removed;
 }
@@ -206,6 +212,161 @@ export function fitDepthToShape(grid, view, extraPts = []) {
     const pos = rows.map(r => (1 / r[3] - 1 / (p[0] * r[0] + p[1] + p[2] * r[1] + p[3] * r[2])) * r[3]).filter(e => e > 0).sort((x, y) => x - y);
     if (pos.length < 20) return null;
     return { a: p[0], b: p[1], c: p[2], e: p[3], spread: pos[Math.floor(pos.length * 0.68)] };
+}
+
+// ---------------------------------------------------------------------
+// Metric depth from the phone (ARCore depth API via WebXR "depth-sensing")
+// ---------------------------------------------------------------------
+
+// (same as flipImage in markerless.js, which imports this file)
+function flipped(a, w, h, flip) {
+    if (flip === 'none') return a;
+    const fx = flip === 'x' || flip === 'xy', fy = flip === 'y' || flip === 'xy';
+    const out = new a.constructor(a.length);
+    for (let y = 0; y < h; y++) {
+        const sy = fy ? h - 1 - y : y;
+        for (let x = 0; x < w; x++) out[y * w + x] = a[sy * w + (fx ? w - 1 - x : x)];
+    }
+    return out;
+}
+
+/**
+ * Drop depth pixels on a depth edge (a cup's rim against its inside): the
+ * phone's map is smooth there, a mix of near and far that is neither, and
+ * would cut into the rim. Edges are found on a lightly smoothed copy (the
+ * raw map is noisy) and widened by r pixels. Returns a copy.
+ */
+function dropDepthEdges(depth, w, h, rel = 0.02, r = 1) {
+    const sm = new Float32Array(depth.length);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let s = 0, n = 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const xx = x + dx, yy = y + dy;
+            if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+            const v = depth[yy * w + xx];
+            if (v > 0) { s += v; n++; }
+        }
+        sm[y * w + x] = depth[y * w + x] > 0 && n >= 3 ? s / n : 0;
+    }
+    const edge = new Uint8Array(depth.length);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x, q = sm[i];
+        if (!(q > 0)) continue;
+        // (inverse depth: a relative step is the same as for depth)
+        if ((x > 0 && sm[i - 1] > 0 && Math.abs(sm[i - 1] - q) > rel * q) || (y > 0 && sm[i - w] > 0 && Math.abs(sm[i - w] - q) > rel * q)) {
+            edge[i] = 1; if (x > 0) edge[i - 1] = 1; if (y > 0) edge[i - w] = 1;
+        }
+    }
+    const out = new Float32Array(depth.length);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (!(depth[i] > 0)) continue;
+        let near = false;
+        for (let dy = -r; dy <= r && !near; dy++) for (let dx = -r; dx <= r; dx++) {
+            const xx = x + dx, yy = y + dy;
+            if (xx >= 0 && yy >= 0 && xx < w && yy < h && edge[yy * w + xx]) { near = true; break; }
+        }
+        if (!near) out[i] = depth[i];
+    }
+    return out;
+}
+
+/**
+ * Check one phone depth map against the carved shape. The map is metric
+ * and shares its scale with the phone's own tracking (the poses), so it is
+ * not re-fitted — a fit would be pulled by the very hollows we are after.
+ * The shape's front surface can only be nearer than (or on) the true
+ * surface, so where the phone says "nearer than the shape" that is noise:
+ * its size gives the margin. A map that is mostly "nearer" is misaligned
+ * or wrong and is not used. Returns { a: 1, b: 0, spread, bad, ok } or null
+ * (too little of the object in the map to tell).
+ */
+function checkMetricView(grid, v, surf, opts = {}) {
+    const { depth, dW, dH, width, height, mask } = v;
+    const zb = zBuffers(grid, surf, [{ ...v, zw: dW, zh: dH }])[0];
+    const res = [];
+    for (let py = 1; py < dH - 1; py++) for (let px = 1; px < dW - 1; px++) {
+        const z = zb[py * dW + px], q = depth[py * dW + px];
+        if (!isFinite(z) || !(q > 0)) continue;
+        const mx = Math.min(width - 1, Math.floor((px + 0.5) * width / dW)), my = Math.min(height - 1, Math.floor((py + 0.5) * height / dH));
+        if (mask[my * width + mx] !== FOREGROUND) continue;
+        res.push(q * z - 1);        // > 0: the phone sees the surface nearer than the shape
+    }
+    if (res.length < 30) return null;
+    const pos = res.filter(e => e > 0).sort((p, q) => p - q);
+    const spread = pos.length >= 10 ? pos[Math.floor(pos.length * 0.68)] : 0.004;
+    const bad = res.filter(e => e > 0.08).length / res.length;
+    return { a: 1, b: 0, spread, bad, ok: spread <= (opts.maxSpread ?? 0.05) && bad <= (opts.maxBad ?? 0.15) };
+}
+
+/**
+ * How well a depth map fits the floor (object frame z = 0) where the mask
+ * says background: median relative error, or null (too little floor seen).
+ * Unlike the object, the floor is never symmetric in the picture — its
+ * distance grows towards the top of the view — so a map read upside down
+ * fails this clearly.
+ */
+function floorError(v) {
+    const { depth, dW, dH, R, t, f, width, height, label } = v;
+    if (!label) return null;
+    const C = cam(v), errs = [];
+    for (let py = 0; py < dH; py += 2) for (let px = 0; px < dW; px += 2) {
+        const q = depth[py * dW + px];
+        if (!(q > 0)) continue;
+        const u = (px + 0.5) * width / dW, w = (py + 0.5) * height / dH;
+        if (label[Math.min(height - 1, w | 0) * width + Math.min(width - 1, u | 0)] !== BACKGROUND) continue;
+        // ray (camera z = 1) in the object frame; where it meets z = 0
+        const dx = (u - width / 2) / f, dy = (w - height / 2) / f;
+        const rz = R[2] * dx + R[5] * dy + R[8];
+        if (rz >= -1e-3) continue;
+        const lam = -C[2] / rz;
+        if (!(lam > 0 && lam < 2500)) continue;
+        errs.push(Math.abs(q * lam - 1));
+    }
+    if (errs.length < 40) return null;
+    errs.sort((a, b) => a - b);
+    return errs[errs.length >> 1];
+}
+
+/**
+ * Get the phone's depth maps ready for depthCarve.
+ *   items: [{ frame, depth (Float32 1/mm, 0 = none), dW, dH, R, t, f, width, height,
+ *             mask (eroded object), label (mask labels, for the floor check) }]
+ * The map orientation is checked on a few views rather than assumed (the
+ * spec says top-left origin; a browser that disagrees must not ruin the
+ * model). Returns { views, flip, rejected, spread }.
+ */
+export function prepareMetricDepth(grid, items, opts = {}) {
+    const surf = surfaceVoxels(grid);
+    items = items.map(v => ({ ...v, depth: dropDepthEdges(v.depth, v.dW, v.dH) }));
+    const step = Math.max(1, Math.floor(items.length / 8));
+    const sample = items.filter((_, k) => k % step === 0).slice(0, 8);
+    // score: the floor around the object (clear-cut), else noise + share of
+    // impossible ("nearer than the shape") pixels on the object
+    const score = {};
+    for (const flip of ['none', 'y', 'x', 'xy']) {
+        const sc = sample.map(v => {
+            const fv = { ...v, depth: flipped(v.depth, v.dW, v.dH, flip) };
+            const fe = floorError(fv);
+            if (fe != null) return fe;
+            const q = checkMetricView(grid, fv, surf, opts);
+            return q ? q.spread + q.bad : 1;
+        }).sort((p, q) => p - q);
+        score[flip] = sc.length ? sc[sc.length >> 1] : 1;
+    }
+    // stay with the documented reading unless another one is clearly better
+    let flip = 'none';
+    for (const k of ['y', 'x', 'xy']) if (score[k] < 0.6 * score[flip]) flip = k;
+    const views = [];
+    let rejected = 0;
+    for (const v of items) {
+        const depth = flipped(v.depth, v.dW, v.dH, flip);
+        const fit = checkMetricView(grid, { ...v, depth }, surf, opts);
+        if (fit && fit.ok) views.push({ ...v, depth, fit }); else rejected++;
+    }
+    const sp = views.map(v => v.fit.spread).sort((p, q) => p - q);
+    if (opts.log) opts.log(`phone depth: orientation ${flip} (${Object.entries(score).map(([k, v]) => `${k} ${v.toFixed(3)}`).join(', ')}), ${views.length} maps used, ${rejected} rejected`);
+    return { views, flip, rejected, spread: sp.length ? sp[sp.length >> 1] : null };
 }
 
 function solve4(A, b) {

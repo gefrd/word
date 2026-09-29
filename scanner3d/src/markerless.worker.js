@@ -85,6 +85,12 @@ async function addFrame(index, blob, meta) {
         // f given for the image as captured; scale it to the working size
         frames[index].pose = meta.pose;
         frames[index].fWork = meta.f * fr.width / meta.imageWidth;
+        // the phone's depth map (metres, view orientation) → 1/mm like the other depth maps
+        if (meta.depth && meta.depth.m) {
+            const m = meta.depth.m, inv = new Float32Array(m.length);
+            for (let i = 0; i < m.length; i++) inv[i] = m[i] > 0 ? 1 / (m[i] * 1000) : 0;
+            frames[index].arDepth = { inv, w: meta.depth.w, h: meta.depth.h };
+        }
     }
     post({ type: 'added', index, coverage: cov, features: feat.n });
 }

@@ -178,18 +178,21 @@ const depthMat = new THREE.ShaderMaterial({
     fragmentShader: 'varying float vz; void main() { float v = clamp(vz / 4000.0, 0.0, 1.0) * 16777215.0; float r = floor(v / 65536.0); float g = floor((v - r * 65536.0) / 256.0); float b = v - r * 65536.0 - g * 256.0; gl_FragColor = vec4(r / 255.0, g / 255.0, b / 255.0, 1.0); }',
 });
 depthMat.toneMapped = false;
-function depthURL() {
+// all = true: the whole scene (table, clutter) like a phone's depth sensor sees it
+function depthURL(all = false) {
     const bg = scene.background, saved = [];
     scene.background = new THREE.Color(0x000000);
-    scene.traverse(o => { if (o.isMesh || o.isLight) { saved.push([o, o.visible]); if (!objects.children.includes(o)) o.visible = false; } });
-    const mats = objects.children.map(o => o.material);
-    objects.children.forEach(o => { o.material = depthMat; o.visible = true; });
+    scene.traverse(o => { if (o.isMesh || o.isLight) { saved.push([o, o.visible]); if (!all && !objects.children.includes(o)) o.visible = false; } });
+    const drawn = [];
+    scene.traverse(o => { if (o.isMesh && (all ? o.visible : objects.children.includes(o))) drawn.push(o); });
+    const mats = drawn.map(o => o.material);
+    drawn.forEach(o => { o.material = depthMat; o.visible = true; });
     const oe = renderer.outputColorSpace; renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
     renderer.shadowMap.enabled = false;
     renderer.render(scene, camera);
     const url = renderer.domElement.toDataURL('image/png');
     renderer.outputColorSpace = oe;
-    objects.children.forEach((o, i) => { o.material = mats[i]; });
+    drawn.forEach((o, i) => { o.material = mats[i]; });
     saved.forEach(([o, v]) => { o.visible = v; });
     scene.background = bg; renderer.shadowMap.enabled = !NOSHADOW;
     return url;
@@ -225,7 +228,7 @@ window.renderWalk = (n = 30, opts = {}) => {
     for (let i = 0; i < n; i++) {
         walkCamera(i / n, opts.loops || [25, 45], opts);
         renderer.render(scene, camera);
-        out.push({ url: renderer.domElement.toDataURL('image/jpeg', 0.9), ...cvPose(), mask: opts.masks ? maskURL() : null, depth: opts.depthIdx && opts.depthIdx.includes(i) ? depthURL() : null });
+        out.push({ url: renderer.domElement.toDataURL('image/jpeg', 0.9), ...cvPose(), mask: opts.masks ? maskURL() : null, depth: opts.depthIdx && (opts.depthIdx === 'all' || opts.depthIdx.includes(i)) ? depthURL(!!opts.depthAll) : null });
     }
     return { frames: out, f: opts.f || 1000, width: W, height: H };
 };
@@ -237,7 +240,7 @@ window.renderTurntable = (n = 30, opts = {}) => {
     for (let i = 0; i < n; i++) {
         turntableCamera(i / n, opts);
         renderer.render(scene, camera);
-        out.push({ url: renderer.domElement.toDataURL('image/jpeg', 0.9), ...cvPose(), mask: opts.masks ? maskURL() : null, depth: opts.depthIdx && opts.depthIdx.includes(i) ? depthURL() : null });
+        out.push({ url: renderer.domElement.toDataURL('image/jpeg', 0.9), ...cvPose(), mask: opts.masks ? maskURL() : null, depth: opts.depthIdx && (opts.depthIdx === 'all' || opts.depthIdx.includes(i)) ? depthURL(!!opts.depthAll) : null });
     }
     objects.rotation.z = 0; stool.visible = false;
     return { frames: out, f: opts.f || 1000, width: W, height: H };

@@ -4,7 +4,9 @@
 // the camera picture as a GL texture (getCameraImage), and a hit-test result
 // on the table. Everything after that is the real app: overlay, box sliders,
 // automatic frames, worker, model, viewer.
-//   node test/e2e-ar.mjs [--obj=sneaker] [--n=36] [--gpu] [--cpu=4] [--noise] [--stored=flipY|none]
+//   node test/e2e-ar.mjs [--obj=sneaker] [--n=36] [--gpu] [--cpu=4] [--noise] [--stored=flipY|none] [--nodepth]
+//   The fake also has the depth sensor ("depth-sensing", see fake-arcore-depth.js)
+//   unless --nodepth.
 //   --stored=none: the texture holds the picture top row first (the other
 //   way round) — the app must notice by itself and still get it right.
 // Needs: dev server on 5190 (synthetic scene), built app served on 5191,
@@ -20,7 +22,21 @@ fs.mkdirSync('test/out', { recursive: true });
 const gen = await browser.newPage();
 await gen.goto(`http://localhost:5190/test/synth-free.html?obj=${obj}`);
 await gen.waitForFunction(() => window.ready);
-const walk = await gen.evaluate((o) => window.renderWalk(o.n, { w: o.W, h: o.H, f: o.F, loops: [25, 45] }), { n, W, H, F });
+const withDepth = !process.argv.includes('--nodepth');
+const walk = await gen.evaluate((o) => window.renderWalk(o.n, { w: o.W, h: o.H, f: o.F, loops: [25, 45], depthIdx: o.withDepth ? 'all' : null, depthAll: true }), { n, W, H, F, withDepth });
+// the phone's depth sensor (ARCore depth API), imitated from the true depth
+const depthMaps = withDepth ? await gen.evaluate(async (o) => {
+    const { fakeARCoreDepth } = await import('/test/fake-arcore-depth.js');
+    const out = [];
+    for (let k = 0; k < o.urls.length; k++) {
+        const img = new Image(); img.src = o.urls[k]; await img.decode();
+        const c = document.createElement('canvas'); c.width = o.W; c.height = o.H;
+        const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0);
+        const d = fakeARCoreDepth(x.getImageData(0, 0, o.W, o.H).data, o.W, o.H, k);
+        out.push({ m: Array.from(d.m), w: d.w, h: d.h });
+    }
+    return out;
+}, { urls: walk.frames.map(f => f.depth), W, H }) : null;
 const gtBox = await gen.evaluate(() => window.gtBox());
 await gen.close();
 
@@ -70,12 +86,13 @@ await ctx.addInitScript(({ W, H, F, FLOOR }) => {
         return [r[0], r[1], r[2], 0, r[4], r[5], r[6], 0, r[8], r[9], r[10], 0,
             -(r[0] * t[0] + r[4] * t[1] + r[8] * t[2]), -(r[1] * t[0] + r[5] * t[1] + r[9] * t[2]), -(r[2] * t[0] + r[6] * t[1] + r[10] * t[2]), 1];
     };
-    const X = window.__xr = { poses: [], images: [], index: 0, session: null, shots: 0, texReads: 0 };
+    const X = window.__xr = { poses: [], images: [], depth: null, index: 0, session: null, shots: 0, texReads: 0, depthReads: 0 };
     const source = { handedness: 'none', targetRayMode: 'screen', targetRaySpace: {}, profiles: [], gamepad: null };
     class FakeSession extends EventTarget {
         constructor(init) {
             super();
             this.enabledFeatures = ['hit-test', 'dom-overlay', 'camera-access'];
+            if (X.depth && (init.optionalFeatures || []).includes('depth-sensing') && init.depthSensing) { this.enabledFeatures.push('depth-sensing'); this.depthUsage = 'cpu-optimized'; this.depthDataFormat = 'float32'; }
             this.renderState = { baseLayer: null, depthNear: 0.1, depthFar: 1000 };
             this.inputSources = [source];
             this.environmentBlendMode = 'alpha-blend';
@@ -98,6 +115,18 @@ await ctx.addInitScript(({ W, H, F, FLOOR }) => {
                 session,
                 getViewerPose: () => ({ emulatedPosition: false, transform, views: [view] }),
                 getPose: () => null,
+                getDepthInformation: () => {
+                    const d = X.depth && X.depth[X.index];
+                    if (!d) return null;
+                    X.depthReads++;
+                    return {
+                        width: d.w, height: d.h, rawValueToMeters: 1,
+                        getDepthInMeters: (x, y) => {
+                            if (x < 0 || y < 0 || x > 1 || y > 1) throw new RangeError('out of range');
+                            return d.m[Math.min(d.h - 1, Math.floor(y * d.h)) * d.w + Math.min(d.w - 1, Math.floor(x * d.w))];
+                        },
+                    };
+                },
                 getHitTestResults: () => [{ getPose: () => ({ transform: { matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, FLOOR[0], FLOOR[1], FLOOR[2], 1]) } }) }],
             };
         }
@@ -142,11 +171,12 @@ await page.goto('http://localhost:5191/');
 await page.waitForSelector('#freeAR', { state: 'visible', timeout: 15000 });
 await page.screenshot({ path: 'test/out/ui-ar-home.png', fullPage: true });
 // the camera pictures and poses go to the fake device
-await page.evaluate(async ({ urls, poses, stored }) => {
+await page.evaluate(async ({ urls, poses, stored, depthMaps }) => {
     window.__xr.poses = poses;
+    window.__xr.depth = depthMaps && depthMaps.map(d => ({ m: Float32Array.from(d.m), w: d.w, h: d.h }));
     // flipY: stored the GL way, bottom row first (like a GL camera texture)
     window.__xr.images = await Promise.all(urls.map(async (u) => createImageBitmap(await (await fetch(u)).blob(), { imageOrientation: stored })));
-}, { urls: walk.frames.map(f => f.url), poses, stored: arg('stored', 'flipY') === 'none' ? 'from-image' : 'flipY' });
+}, { urls: walk.frames.map(f => f.url), poses, depthMaps, stored: arg('stored', 'flipY') === 'none' ? 'from-image' : 'flipY' });
 if (cpu > 1) { const cdp = await ctx.newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu }); }
 let peak = 0;
 const mem = setInterval(() => {
@@ -183,7 +213,7 @@ for (let i = 0; i < n; i++) {
     seen.add(await hint());
 }
 console.log('3. hints while walking:', [...seen].join(' | '));
-console.log('   counter:', await page.textContent('#arCount'), 'frames,', await page.textContent('#arCov'), '% covered; camera reads', await page.evaluate(() => window.__xr.texReads));
+console.log('   counter:', await page.textContent('#arCount'), 'frames,', await page.textContent('#arCov'), '% covered; camera reads', await page.evaluate(() => window.__xr.texReads), '; depth reads', await page.evaluate(() => window.__xr.depthReads), '; depth chip', await page.evaluate(() => !document.querySelector('#arDepth').hidden));
 await page.screenshot({ path: 'test/out/ui-ar-scan.png' });
 await page.waitForFunction(() => !document.querySelector('#arDone').disabled, null, { timeout: 10000 });
 await page.click('#arDone');

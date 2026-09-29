@@ -16,7 +16,7 @@ import { detectFeatures, rgbaToGray, matchFeatures } from './features.js';
 import { maskStats, planMaskFixes, isStillCamera, staticPixels, smallGrey } from './maskfix.js';
 import { bakeTexture, viewGains } from './texture.js';
 import { gpuAvailable, planeSweep, pickNeighbours, consistencyFilter } from './mvs.js';
-import { fitDepth, fitDepthToShape, depthCarve, erodeForeground, colourCarve, prepColourViews } from './refine.js';
+import { fitDepth, fitDepthToShape, depthCarve, erodeForeground, colourCarve, prepColourViews, prepareMetricDepth } from './refine.js';
 
 const mul3 = (A, B) => {
     const C = new Array(9);
@@ -784,6 +784,27 @@ export async function carveInBox(scene, box) {
             refineInfo.depthSpread = +(dviews.reduce((a, v) => a + v.fit.spread, 0) / dviews.length).toFixed(4);
             refineInfo.depthRemoved = depthCarve(grid, dviews, { minViews: 2, log });
         }
+        // the phone's own depth sensor (ARCore depth, AR scan): metric but
+        // coarse and noisy — many maps vote, a voxel goes only when the maps
+        // that see through it clearly outnumber those that see it on the surface
+        const arFrames = reg.filter(i => frames[i].arDepth);
+        if (arFrames.length >= 3 && opts.arDepth !== false) {
+            if (!scene.arDepthCache) {
+                const items = arFrames.map((i) => {
+                    const d = frames[i].arDepth;
+                    // depth is blurred across the outline: stay a couple of depth pixels inside
+                    const r = Math.min(12, Math.ceil(2 * width / d.w));
+                    return { frame: i, depth: d.inv, dW: d.w, dH: d.h, R: poses[i].R, t: poses[i].t, f: sfm.f, width, height, mask: erodeForeground(labels[i], width, height, r), label: labels[i] };
+                });
+                const p = prepareMetricDepth(grid, items, { log });
+                scene.arDepthCache = p.views.map(v => ({ ...v, R: null, t: null, label: null }));
+                scene.arDepthInfo = { flip: p.flip, rejected: p.rejected, spread: p.spread };
+            }
+            // (a box rebuild reuses the checked maps: they don't depend on the box)
+            const dv = scene.arDepthCache.map(d => ({ ...d, R: poses[d.frame].R, t: poses[d.frame].t }));
+            Object.assign(refineInfo, { arDepthViews: dv.length, arDepthRejected: scene.arDepthInfo.rejected, arDepthFlip: scene.arDepthInfo.flip, arDepthSpread: scene.arDepthInfo.spread });
+            refineInfo.arDepthRemoved = dv.length >= 3 ? depthCarve(grid, dv, { minViews: opts.arDepthMinViews ?? 3, hitRatio: opts.arDepthHitRatio ?? 1.5 }) : 0;
+        }
         // dense depth on the GPU (plane sweep) → carve what lies in front of it
         if (opts.mvs && scene.mvsCache) {
             // box rebuild: the depth maps don't depend on the box — reuse them
@@ -857,7 +878,7 @@ export async function carveInBox(scene, box) {
         poses: regPoses, f: sfm.f, fullWidth: width, fullHeight: height,
     }, {
         bounds, voxel, bgFrac: opts.bgFrac ?? 0.08, keepFrac: 0.15, skipBg: 5, colorSide: opts.colorSide || 960,
-        smooth: opts.smooth ?? 4, onProgress: report, refineGrid: opts.refine || opts.mvs ? refineGrid : null,
+        smooth: opts.smooth ?? 4, onProgress: report, refineGrid: opts.refine || opts.mvs || reg.some(i => frames[i].arDepth) ? refineGrid : null,
     });
     // photo texture (sharp colours instead of one colour per vertex)
     let textured = null;
